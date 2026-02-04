@@ -2,18 +2,29 @@ import Link from "next/link";
 import { Button } from "./ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./logout-button";
+import { User } from "lucide-react";
 
 export async function AuthButton() {
   const supabase = await createClient();
 
-  // You can also use getUser() which will be slower.
-  const { data } = await supabase.auth.getClaims();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const user = data?.claims;
+  // Get user metadata for name
+  const fullName = user?.user_metadata?.full_name;
+  const displayName = fullName || user?.email?.split("@")[0] || "User";
 
   return user ? (
-    <div className="flex items-center gap-4">
-      Hey, {user.email}!
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-muted-foreground hidden sm:inline">
+        Hey, <span className="text-foreground font-medium">{displayName}</span>!
+      </span>
+      <Link 
+        href="/protected/profile"
+        className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center hover:from-primary/30 hover:to-accent/30 transition-colors"
+        title="View Profile"
+      >
+        <User className="w-4 h-4" />
+      </Link>
       <LogoutButton />
     </div>
   ) : (

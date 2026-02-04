@@ -5,14 +5,15 @@ import { Suspense } from "react";
 
 async function getUserName() {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  if (error || !data?.claims) {
+  if (error || !user) {
     redirect("/auth/login");
   }
 
-  const email = data.claims.email as string;
-  return email.split("@")[0];
+  // Get name from user metadata, fallback to email prefix
+  const fullName = user.user_metadata?.full_name;
+  return fullName || user.email?.split("@")[0] || "User";
 }
 
 export default async function ProtectedPage() {
