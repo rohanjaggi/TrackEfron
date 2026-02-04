@@ -1,61 +1,22 @@
-"use client";
-
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
-import { LayoutGrid, List } from "lucide-react";
+import { DashboardClient } from "@/components/dashboard-client";
+import { Suspense } from "react";
 
-type ViewType = "grid" | "list";
-type Tab = "home" | "library";
+async function getUserName() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
 
-const mockItems = [
-  {
-    id: 1,
-    title: "Breaking Bad",
-    type: "TV Show",
-    year: 2008,
-    rating: 9.5,
-    reviewed: true,
-  },
-  {
-    id: 2,
-    title: "Inception",
-    type: "Movie",
-    year: 2010,
-    rating: 9,
-    reviewed: true,
-  },
-  {
-    id: 3,
-    title: "The Office",
-    type: "TV Show",
-    year: 2005,
-    rating: 8.5,
-    reviewed: false,
-  },
-];
+  if (error || !data?.claims) {
+    redirect("/auth/login");
+  }
 
-export default function ProtectedPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("home");
-  const [viewType, setViewType] = useState<ViewType>("grid");
-  const [userName, setUserName] = useState("");
+  const email = data.claims.email as string;
+  return email.split("@")[0];
+}
 
-  useEffect(() => {
-    const getUserInfo = async () => {
-      const supabase = await createClient();
-      const { data, error } = await supabase.auth.getClaims();
-
-      if (error || !data?.claims) {
-        redirect("/auth/login");
-      }
-
-      const email = data.claims.email as string;
-      setUserName(email.split("@")[0]);
-    };
-
-    getUserInfo();
-  }, []);
+export default async function ProtectedPage() {
+  const userName = await getUserName();
 
   return (
     <div className="flex-1 flex flex-col gap-8 py-8">
