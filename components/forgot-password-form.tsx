@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 
 export function ForgotPasswordForm({
   className,
@@ -46,6 +47,13 @@ export function ForgotPasswordForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
+      <Link
+        href="/auth/login"
+        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft size={16} />
+        Back
+      </Link>
       {success ? (
         <Card>
           <CardHeader>
