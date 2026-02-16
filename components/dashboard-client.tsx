@@ -41,7 +41,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   return (
     <div className="flex flex-col gap-10">
       {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
             Welcome back,{" "}
@@ -53,10 +53,15 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             Ready to track your next watch?
           </p>
         </div>
-        <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25" asChild>
+        <Button 
+          size="lg"
+          className="relative group bg-gradient-to-r from-accent via-secondary to-primary hover:shadow-2xl hover:shadow-primary/40 hover:scale-105 transition-all duration-300 shadow-xl shadow-primary/30 text-white font-semibold text-base px-8 py-6 h-auto overflow-hidden" 
+          asChild
+        >
           <Link href="/protected/log">
-            <Plus className="w-4 h-4 mr-2" />
-            Log a Watch
+            <div className="absolute inset-0 bg-gradient-to-r from-primary via-accent to-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <Plus className="w-5 h-5 mr-2 relative z-10 group-hover:rotate-90 transition-transform duration-300" />
+            <span className="relative z-10">Log a Watch</span>
           </Link>
         </Button>
       </div>
