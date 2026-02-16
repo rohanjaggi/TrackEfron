@@ -53,9 +53,11 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             Ready to track your next watch?
           </p>
         </div>
-        <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25">
-          <Plus className="w-4 h-4 mr-2" />
-          Log a Watch
+        <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25" asChild>
+          <Link href="/protected/log">
+            <Plus className="w-4 h-4 mr-2" />
+            Log a Watch
+          </Link>
         </Button>
       </div>
 
@@ -124,8 +126,8 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                 <Film className="w-8 h-8 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground mb-4">No watches yet</p>
-              <Button size="sm" className="bg-primary hover:bg-primary/90">
-                Log Your First Watch
+              <Button size="sm" className="bg-primary hover:bg-primary/90" asChild>
+                <Link href="/protected/log">Log Your First Watch</Link>
               </Button>
             </div>
           ) : (
@@ -210,27 +212,31 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-card/50" asChild>
+        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
           <Link href="/protected/library">
             <Film className="w-5 h-5" />
             <span>My Library</span>
           </Link>
         </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-accent/50 hover:bg-card/50" asChild>
+        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
           <Link href="/protected/watchlist">
             <Clock className="w-5 h-5" />
             <span>Watchlist</span>
           </Link>
         </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-secondary/50 hover:bg-card/50">
-          <Plus className="w-5 h-5" />
-          <span>Add Movie</span>
+        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
+          <Link href="/protected/log">
+            <Plus className="w-5 h-5" />
+            <span>Add Movie</span>
+          </Link>
         </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-secondary/50 hover:bg-card/50">
-          <Tv className="w-5 h-5" />
-          <span>Add TV Show</span>
+        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
+          <Link href="/protected/log">
+            <Tv className="w-5 h-5" />
+            <span>Add TV Show</span>
+          </Link>
         </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-card/50" asChild>
+        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
           <Link href="/protected/discover">
             <Target className="w-5 h-5" />
             <span>Discover</span>

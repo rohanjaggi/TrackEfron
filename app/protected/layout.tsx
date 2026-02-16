@@ -1,4 +1,5 @@
 import { AuthButton } from "@/components/auth-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Film, Home, Library, Sparkles, Clock } from "lucide-react";
@@ -63,9 +64,12 @@ export default function ProtectedLayout({
             </div>
 
             {/* Right Side */}
-            <Suspense>
-              <AuthButton />
-            </Suspense>
+            <div className="flex items-center gap-3">
+              <ThemeToggle />
+              <Suspense>
+                <AuthButton />
+              </Suspense>
+            </div>
           </div>
         </nav>
 
