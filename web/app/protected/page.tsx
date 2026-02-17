@@ -20,8 +20,6 @@ export default async function ProtectedPage() {
   const userName = await getUserName();
 
   return (
-    <Suspense>
       <DashboardClient userName={userName} />
-    </Suspense>
   );
 }

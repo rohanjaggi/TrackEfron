@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Film, Star, BookOpen, Feather, TrendingUp, Users } from "lucide-react";
+import { Film, Star, BookOpen, TrendingUp, Users } from "lucide-react";
 
 export default function Home() {
   return (
