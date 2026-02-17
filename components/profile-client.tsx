@@ -33,7 +33,7 @@ const mockStats = {
   watched: 5,
   reviews: 4,
   avgRating: 9.0,
-  favoriteGenre: "Drama",
+  favouriteGenre: "Drama",
 };
 
 export function ProfileClient({ profile }: ProfileProps) {
@@ -103,24 +103,24 @@ export function ProfileClient({ profile }: ProfileProps) {
   return (
     <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
       {/* Header */}
-      <div className="flex flex-col items-center text-center gap-6 pb-8 border-b border-border/50">
+      <div className="flex flex-col items-center text-center gap-6 pb-8 border-b-2 border-border">
         {/* Avatar */}
         <div className="relative group">
-          <div className="w-28 h-28 rounded-full bg-gradient-to-br from-primary via-accent to-secondary p-1">
-            <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
-              <span className="text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <div className="w-28 h-28 border-4 border-primary p-1">
+            <div className="w-full h-full bg-card flex items-center justify-center">
+              <span className="font-display text-4xl font-bold text-primary">
                 {fullName.charAt(0).toUpperCase() || profile.email.charAt(0).toUpperCase()}
               </span>
             </div>
           </div>
-          <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <button className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
             <Camera className="w-4 h-4" />
           </button>
         </div>
 
         {/* Name & Username */}
         <div>
-          <h1 className="text-3xl font-bold mb-1">{fullName || "Set your name"}</h1>
+          <h1 className="font-display text-3xl font-bold mb-1">{fullName || "Set your name"}</h1>
           <p className="text-muted-foreground">
             @{username || "username"}
           </p>
@@ -135,38 +135,38 @@ export function ProfileClient({ profile }: ProfileProps) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 text-center">
+        <div className="border-2 border-border p-5 text-center">
           <Film className="w-6 h-6 text-primary mx-auto mb-2" />
           <div className="text-2xl font-bold">{mockStats.watched}</div>
           <p className="text-sm text-muted-foreground">Watched</p>
         </div>
-        <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 text-center">
+        <div className="border-2 border-border p-5 text-center">
           <Edit3 className="w-6 h-6 text-accent mx-auto mb-2" />
           <div className="text-2xl font-bold">{mockStats.reviews}</div>
           <p className="text-sm text-muted-foreground">Reviews</p>
         </div>
-        <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 text-center">
+        <div className="border-2 border-border p-5 text-center">
           <Star className="w-6 h-6 text-accent fill-accent mx-auto mb-2" />
           <div className="text-2xl font-bold">{mockStats.avgRating}</div>
           <p className="text-sm text-muted-foreground">Avg Rating</p>
         </div>
-        <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 text-center">
+        <div className="border-2 border-border p-5 text-center">
           <div className="text-2xl mb-2">🎭</div>
-          <div className="text-lg font-bold">{mockStats.favoriteGenre}</div>
+          <div className="text-lg font-bold">{mockStats.favouriteGenre}</div>
           <p className="text-sm text-muted-foreground">Top Genre</p>
         </div>
       </div>
 
       {/* Profile Details */}
-      <div className="bg-card/50 backdrop-blur rounded-2xl border border-border/50 p-6">
+      <div className="border-2 border-border p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold">Profile Details</h2>
+          <h2 className="font-display text-xl font-semibold">Profile Details</h2>
           {!isEditing ? (
             <Button 
               variant="outline" 
               size="sm" 
               onClick={() => setIsEditing(true)}
-              className="border-border/50"
+              className="border-2"
             >
               <Edit3 className="w-4 h-4 mr-2" />
               Edit Profile
@@ -186,7 +186,7 @@ export function ProfileClient({ profile }: ProfileProps) {
                 size="sm" 
                 onClick={handleSave}
                 disabled={isSaving}
-                className="bg-primary hover:bg-primary/90"
+                className="border-2"
               >
                 <Check className="w-4 h-4 mr-2" />
                 {isSaving ? "Saving..." : "Save"}
@@ -196,13 +196,13 @@ export function ProfileClient({ profile }: ProfileProps) {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mb-4 p-3 rounded-lg bg-green-500/10 text-green-500 text-sm">
+          <div className="mb-4 p-3 border-2 border-green-500 bg-green-500/10 text-green-500 text-sm">
             Profile updated successfully!
           </div>
         )}
@@ -219,7 +219,7 @@ export function ProfileClient({ profile }: ProfileProps) {
                 id="fullName"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="bg-card border-border/50"
+                className="bg-card border-2 border-border"
               />
             ) : (
               <p className="text-lg">{fullName || "Not set"}</p>
@@ -238,7 +238,7 @@ export function ProfileClient({ profile }: ProfileProps) {
                   id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                  className="bg-card border-border/50"
+                  className="bg-card border-2 border-border"
                 />
                 <p className="text-xs text-muted-foreground">
                   Lowercase letters, numbers, and underscores only
@@ -264,12 +264,12 @@ export function ProfileClient({ profile }: ProfileProps) {
       </div>
 
       {/* Danger Zone */}
-      <div className="bg-destructive/5 rounded-2xl border border-destructive/20 p-6">
-        <h2 className="text-xl font-semibold text-destructive mb-2">Danger Zone</h2>
+      <div className="bg-destructive/5 border-2 border-destructive p-6">
+        <h2 className="font-display text-xl font-semibold text-destructive mb-2">Danger Zone</h2>
         <p className="text-sm text-muted-foreground mb-4">
           Once you delete your account, there is no going back. Please be certain.
         </p>
-        <Button variant="destructive" size="sm">
+        <Button variant="destructive" size="sm" className="border-2">
           Delete Account
         </Button>
       </div>
