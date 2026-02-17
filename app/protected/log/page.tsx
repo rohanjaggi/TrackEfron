@@ -82,14 +82,14 @@ export default function LogWatchPage() {
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard
         </Link>
-        <h1 className="text-3xl md:text-4xl font-bold mb-2">Log a Watch</h1>
+        <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Log a Watch</h1>
         <p className="text-muted-foreground">
           Add a movie or TV show you've watched to your library
         </p>
       </div>
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="bg-card/50 backdrop-blur rounded-2xl border border-border/50 p-6 md:p-8 space-y-6">
+      <form onSubmit={handleSubmit} className="border-2 border-border p-6 md:p-8 space-y-6">
         {/* Media Type Selection */}
         <div>
           <Label className="text-base mb-3 block">What did you watch?</Label>
@@ -97,10 +97,10 @@ export default function LogWatchPage() {
             <button
               type="button"
               onClick={() => setMediaType("movie")}
-              className={`p-6 rounded-xl border-2 transition-all duration-200 ${
+              className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "movie"
-                  ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
-                  : "border-border/50 hover:border-border bg-card/30"
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50 bg-card"
               }`}
             >
               <Film className={`w-8 h-8 mx-auto mb-2 ${mediaType === "movie" ? "text-primary" : "text-muted-foreground"}`} />
@@ -111,10 +111,10 @@ export default function LogWatchPage() {
             <button
               type="button"
               onClick={() => setMediaType("tv")}
-              className={`p-6 rounded-xl border-2 transition-all duration-200 ${
+              className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "tv"
-                  ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
-                  : "border-border/50 hover:border-border bg-card/30"
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:border-primary/50 bg-card"
               }`}
             >
               <Tv className={`w-8 h-8 mx-auto mb-2 ${mediaType === "tv" ? "text-primary" : "text-muted-foreground"}`} />
@@ -138,7 +138,7 @@ export default function LogWatchPage() {
               placeholder={`Enter ${mediaType === "movie" ? "movie" : "TV show"} title...`}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="pl-10 bg-card border-border/50"
+              className="pl-10 bg-card border-2 border-border"
               required
             />
           </div>
@@ -153,7 +153,7 @@ export default function LogWatchPage() {
             placeholder="2024"
             value={year}
             onChange={(e) => setYear(e.target.value)}
-            className="bg-card border-border/50"
+            className="bg-card border-2 border-border"
             min="1900"
             max={new Date().getFullYear()}
           />
@@ -164,32 +164,73 @@ export default function LogWatchPage() {
           <Label className="text-base">
             Your Rating <span className="text-destructive">*</span>
           </Label>
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setRating(value)}
-                onMouseEnter={() => setHoverRating(value)}
-                onMouseLeave={() => setHoverRating(0)}
-                className="group relative"
-              >
-                <Star
-                  className={`w-8 h-8 transition-all duration-200 ${
-                    value <= (hoverRating || rating)
-                      ? "text-accent fill-accent scale-110"
-                      : "text-muted-foreground/30 hover:text-muted-foreground/50"
-                  }`}
-                />
-                <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                  {value}
-                </span>
-              </button>
-            ))}
+          <div className="flex items-center gap-1">
+            {[1, 2, 3, 4, 5].map((value) => {
+              const isActive = (hoverRating || rating) >= value;
+              const isHalfActive = (hoverRating || rating) >= value - 0.5 && (hoverRating || rating) < value;
+              
+              return (
+                <div key={value} className="group relative flex">
+                  {/* Left half (for .5 rating) */}
+                  <button
+                    type="button"
+                    onClick={() => setRating(value - 0.5)}
+                    onMouseEnter={() => setHoverRating(value - 0.5)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    className="relative w-5 h-10 flex items-center justify-start overflow-hidden"
+                  >
+                    <Star
+                      className={`absolute left-0 w-10 h-10 transition-all duration-300 ${
+                        isActive
+                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
+                          : isHalfActive
+                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
+                          : "text-muted-foreground/30 group-hover:text-accent/50 group-hover:scale-105"
+                      }`}
+                      style={isHalfActive ? { clipPath: 'inset(0 50% 0 0)' } : undefined}
+                    />
+                    {!isActive && !isHalfActive && (
+                      <Star
+                        className="absolute left-0 w-10 h-10 text-transparent stroke-muted-foreground/30"
+                        style={{ clipPath: 'inset(0 50% 0 0)', fill: 'none', strokeWidth: '1.5' }}
+                      />
+                    )}
+                  </button>
+                  
+                  {/* Right half (for full rating) */}
+                  <button
+                    type="button"
+                    onClick={() => setRating(value)}
+                    onMouseEnter={() => setHoverRating(value)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    className="relative w-5 h-10 flex items-center justify-end overflow-hidden"
+                  >
+                    <Star
+                      className={`absolute right-0 w-10 h-10 transition-all duration-300 ${
+                        isActive
+                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
+                          : "text-muted-foreground/30 group-hover:text-accent/50 group-hover:scale-105"
+                      }`}
+                      style={{ clipPath: 'inset(0 0 0 50%)' }}
+                    />
+                    {!isActive && (
+                      <Star
+                        className="absolute right-0 w-10 h-10 text-transparent stroke-muted-foreground/30"
+                        style={{ clipPath: 'inset(0 0 0 50%)', fill: 'none', strokeWidth: '1.5' }}
+                      />
+                    )}
+                  </button>
+                  
+                  <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 text-xs font-semibold text-accent opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100">
+                    {hoverRating >= value - 0.5 && hoverRating < value ? value - 0.5 : hoverRating >= value ? value : ''}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           {rating > 0 && (
-            <p className="text-sm text-muted-foreground">
-              You rated this {rating}/10
+            <p className="text-sm font-semibold text-accent animate-in fade-in duration-300">
+              ★ You rated this {rating}/5
             </p>
           )}
         </div>
@@ -205,7 +246,7 @@ export default function LogWatchPage() {
             type="date"
             value={watchedDate}
             onChange={(e) => setWatchedDate(e.target.value)}
-            className="bg-card border-border/50"
+            className="bg-card border-2 border-border"
             max={new Date().toISOString().split('T')[0]}
           />
         </div>
@@ -221,7 +262,7 @@ export default function LogWatchPage() {
             placeholder="What did you think? Share your thoughts..."
             value={review}
             onChange={(e) => setReview(e.target.value)}
-            className="w-full min-h-32 px-3 py-2 bg-card border border-border/50 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full min-h-32 px-3 py-2 bg-card border-2 border-border resize-none focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <p className="text-xs text-muted-foreground">
             {review.length} characters
@@ -230,7 +271,7 @@ export default function LogWatchPage() {
 
         {/* Error Message */}
         {error && (
-          <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+          <div className="p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
             {error}
           </div>
         )}
@@ -240,13 +281,13 @@ export default function LogWatchPage() {
           <Button
             type="submit"
             disabled={isLoading}
-            className="flex-1 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25"
+            className="group flex-1 bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25"
           >
             {isLoading ? (
               "Saving..."
             ) : (
               <>
-                <Check className="w-4 h-4 mr-2" />
+                <Check className="w-4 h-4 mr-2 transition-transform group-hover:scale-110" />
                 Save to Library
               </>
             )}
@@ -256,7 +297,7 @@ export default function LogWatchPage() {
             variant="outline"
             onClick={() => router.push("/protected")}
             disabled={isLoading}
-            className="border-border/50"
+            className="border-2"
           >
             Cancel
           </Button>
@@ -264,7 +305,7 @@ export default function LogWatchPage() {
       </form>
 
       {/* Tips */}
-      <div className="bg-card/30 rounded-xl border border-border/50 p-4">
+      <div className="border-2 border-border p-4">
         <p className="text-sm text-muted-foreground">
           💡 <strong>Tip:</strong> Your ratings and reviews help us provide better recommendations for you!
         </p>

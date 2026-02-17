@@ -5,12 +5,13 @@ import Link from "next/link";
 import { 
   Film, 
   Star, 
-  TrendingUp, 
+  BookOpen, 
   Plus, 
   ChevronRight,
   Tv,
   Clock,
-  Target
+  Target,
+  Feather
 } from "lucide-react";
 
 // Mock data - will be replaced with Supabase data
@@ -39,85 +40,89 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   };
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-12">
       {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">
+      <div className="flex flex-col gap-6">
+        <div className="flex items-center justify-center gap-3 text-muted-foreground">
+          <div className="w-16 h-[1px] bg-border"></div>
+          <Feather className="w-4 h-4" />
+          <div className="w-16 h-[1px] bg-border"></div>
+        </div>
+        
+        <div className="text-center">
+          <h1 className="font-display text-4xl md:text-5xl font-bold">
             Welcome back,{" "}
-            <span className="bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
+            <span className="italic text-primary">
               {userName}
             </span>
           </h1>
-          <p className="text-muted-foreground text-lg">
-            Ready to track your next watch?
-          </p>
         </div>
-        <Button 
-          size="lg"
-          className="relative group bg-gradient-to-r from-accent via-secondary to-primary hover:shadow-2xl hover:shadow-primary/40 hover:scale-105 transition-all duration-300 shadow-xl shadow-primary/30 text-white font-semibold text-base px-8 py-6 h-auto overflow-hidden" 
-          asChild
-        >
-          <Link href="/protected/log">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary via-accent to-secondary opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <Plus className="w-5 h-5 mr-2 relative z-10 group-hover:rotate-90 transition-transform duration-300" />
-            <span className="relative z-10">Log a Watch</span>
-          </Link>
-        </Button>
+
+        <div className="flex justify-center">
+          <Button 
+            size="lg"
+            className="group font-semibold text-base px-8 py-6 h-auto border-2" 
+            asChild
+          >
+            <Link href="/protected/log">
+              <Plus className="w-5 h-5 mr-2 transition-transform group-hover:rotate-90" />
+              Log a Watch
+            </Link>
+          </Button>
+        </div>
+
+        <div className="ornamental-line"></div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 hover:border-primary/50 transition-all duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Film className="w-5 h-5 text-primary" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="text-center p-6 border-2 border-border">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 border-2 border-primary flex items-center justify-center">
+              <Film className="w-6 h-6 text-primary" />
             </div>
           </div>
-          <div className="text-3xl font-bold">{stats.watched}</div>
-          <p className="text-sm text-muted-foreground mt-1">Total Watched</p>
+          <div className="font-display text-4xl font-bold mb-2">{stats.watched}</div>
+          <p className="text-sm text-muted-foreground uppercase tracking-wider">Total Watched</p>
         </div>
 
-        <div className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 hover:border-accent/50 transition-all duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Star className="w-5 h-5 text-accent" />
+        <div className="text-center p-6 border-2 border-border">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 border-2 border-secondary flex items-center justify-center">
+              <Star className="w-6 h-6 text-secondary" />
             </div>
           </div>
-          <div className="text-3xl font-bold">{stats.reviews}</div>
-          <p className="text-sm text-muted-foreground mt-1">Reviews Written</p>
+          <div className="font-display text-4xl font-bold mb-2">{stats.reviews}</div>
+          <p className="text-sm text-muted-foreground uppercase tracking-wider">Reviews Written</p>
         </div>
 
-        <div className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 hover:border-secondary/50 transition-all duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <TrendingUp className="w-5 h-5 text-secondary" />
+        <div className="text-center p-6 border-2 border-border">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 border-2 border-accent flex items-center justify-center">
+              <Star className="w-6 h-6 text-accent" />
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Star className="w-5 h-5 text-accent fill-accent" />
-            <span className="text-3xl font-bold">{stats.avgRating}</span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">Avg Rating</p>
+          <div className="font-display text-4xl font-bold mb-2">{stats.avgRating}</div>
+          <p className="text-sm text-muted-foreground uppercase tracking-wider">Average Rating</p>
         </div>
 
-        <div className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 p-5 hover:border-primary/50 transition-all duration-300">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Clock className="w-5 h-5 text-primary" />
+        <div className="text-center p-6 border-2 border-border">
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 border-2 border-primary flex items-center justify-center">
+              <Clock className="w-6 h-6 text-primary" />
             </div>
           </div>
-          <div className="text-3xl font-bold">{stats.thisMonth}</div>
-          <p className="text-sm text-muted-foreground mt-1">This Month</p>
+          <div className="font-display text-4xl font-bold mb-2">{stats.thisMonth}</div>
+          <p className="text-sm text-muted-foreground uppercase tracking-wider">This Month</p>
         </div>
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-8">
         {/* Recent Watches */}
-        <div className="bg-card/50 backdrop-blur rounded-2xl border border-border/50 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold">Recent Watches</h2>
+        <div className="border-2 border-border p-8">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
+            <h2 className="font-display text-2xl font-bold">Recent Watches</h2>
             <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-primary">
               <Link href="/protected/library" className="flex items-center gap-1">
                 View All <ChevronRight className="w-4 h-4" />
@@ -126,38 +131,38 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           </div>
 
           {recentWatches.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 rounded-full bg-card flex items-center justify-center mx-auto mb-4">
+            <div className="text-center py-12">
+              <div className="w-16 h-16 border-2 border-muted flex items-center justify-center mx-auto mb-4">
                 <Film className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground mb-4">No watches yet</p>
-              <Button size="sm" className="bg-primary hover:bg-primary/90" asChild>
+              <p className="text-muted-foreground mb-4 italic">No watches yet</p>
+              <Button size="sm" asChild>
                 <Link href="/protected/log">Log Your First Watch</Link>
               </Button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {recentWatches.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-4 p-3 rounded-xl hover:bg-card/80 transition-colors cursor-pointer group"
+                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 p-2 -mx-2 transition-colors cursor-pointer"
                 >
-                  <div className="w-12 h-16 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-16 border border-primary/30 flex items-center justify-center flex-shrink-0 bg-primary/5">
                     {item.type === "Movie" ? (
-                      <Film className="w-5 h-5 text-white/50" />
+                      <Film className="w-5 h-5 text-primary" />
                     ) : (
-                      <Tv className="w-5 h-5 text-white/50" />
+                      <Tv className="w-5 h-5 text-primary" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium group-hover:text-primary transition-colors truncate">
+                    <h3 className="font-semibold mb-1 truncate">
                       {item.title}
                     </h3>
-                    <p className="text-sm text-muted-foreground">{item.type}</p>
+                    <p className="text-sm text-muted-foreground italic">{item.type}</p>
                   </div>
-                  <div className="flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-full">
-                    <Star className="w-3 h-3 text-accent fill-accent" />
-                    <span className="text-sm font-medium">{item.rating}</span>
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-accent" />
+                    <span className="font-semibold">{item.rating}</span>
                   </div>
                 </div>
               ))}
@@ -165,50 +170,50 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           )}
         </div>
 
-        {/* AI Recommendations */}
-        <div className="bg-gradient-to-br from-primary/5 via-accent/5 to-secondary/5 backdrop-blur rounded-2xl border border-border/50 p-6">
-          <div className="flex items-center justify-between mb-6">
+        {/* Recommendations */}
+        <div className="border-2 border-border p-8 bg-muted/10">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
             <div className="flex items-center gap-2">
               <Target className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-semibold">For You</h2>
+              <h2 className="font-display text-2xl font-bold">Recommended</h2>
             </div>
-            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">AI Powered</span>
+            <span className="text-xs border border-primary text-primary px-2 py-1 uppercase tracking-wider">Personalised</span>
           </div>
 
           {recommendations.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 rounded-full bg-card flex items-center justify-center mx-auto mb-4">
+            <div className="text-center py-12">
+              <div className="w-16 h-16 border-2 border-muted flex items-center justify-center mx-auto mb-4">
                 <Target className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground mb-4">
-                Watch more to get personalized recommendations
+              <p className="text-muted-foreground italic">
+                Watch more to get recommendations
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {recommendations.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-4 p-3 rounded-xl hover:bg-card/50 transition-colors cursor-pointer group"
+                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 p-2 -mx-2 transition-colors cursor-pointer"
                 >
-                  <div className="w-12 h-16 bg-gradient-to-br from-accent/30 via-secondary/20 to-primary/30 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-16 border border-accent/30 flex items-center justify-center flex-shrink-0 bg-accent/5">
                     {item.type === "Movie" ? (
-                      <Film className="w-5 h-5 text-white/50" />
+                      <Film className="w-5 h-5 text-accent" />
                     ) : (
-                      <Tv className="w-5 h-5 text-white/50" />
+                      <Tv className="w-5 h-5 text-accent" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium group-hover:text-primary transition-colors truncate">
+                    <h3 className="font-semibold mb-1 truncate">
                       {item.title}
                     </h3>
-                    <p className="text-sm text-muted-foreground">{item.type}</p>
+                    <p className="text-sm text-muted-foreground italic">{item.type}</p>
                   </div>
-                  <div className="text-sm font-medium text-primary">{item.match}% match</div>
+                  <div className="text-sm font-semibold text-primary">{item.match}%</div>
                 </div>
               ))}
-              <Button variant="outline" className="w-full mt-4 border-border/50" asChild>
-                <Link href="/protected/discover">View More Recommendations</Link>
+              <Button variant="outline" className="w-full mt-4" asChild>
+                <Link href="/protected/discover">View More</Link>
               </Button>
             </div>
           )}
@@ -216,37 +221,40 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
-          <Link href="/protected/library">
-            <Film className="w-5 h-5" />
-            <span>My Library</span>
-          </Link>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
-          <Link href="/protected/watchlist">
-            <Clock className="w-5 h-5" />
-            <span>Watchlist</span>
-          </Link>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
-          <Link href="/protected/log">
-            <Plus className="w-5 h-5" />
-            <span>Add Movie</span>
-          </Link>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
-          <Link href="/protected/log">
-            <Tv className="w-5 h-5" />
-            <span>Add TV Show</span>
-          </Link>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-2 border-border/50 hover:border-primary/50 hover:bg-primary/10 hover:text-primary" asChild>
-          <Link href="/protected/discover">
-            <Target className="w-5 h-5" />
-            <span>Discover</span>
-          </Link>
-        </Button>
+      <div className="border-t-2 border-border pt-8">
+        <h3 className="font-display text-xl font-bold text-center mb-6">Quick Navigation</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/library">
+              <Film className="w-6 h-6" />
+              <span className="font-semibold">Library</span>
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/watchlist">
+              <Clock className="w-6 h-6" />
+              <span className="font-semibold">Watchlist</span>
+            </Link>
+          </Button>
+          <Button variant="outline" className="group h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/log">
+              <Plus className="w-6 h-6 transition-transform group-hover:rotate-90" />
+              <span className="font-semibold">Add Movie</span>
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/log">
+              <Tv className="w-6 h-6" />
+              <span className="font-semibold">Add Series</span>
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/discover">
+              <Target className="w-6 h-6" />
+              <span className="font-semibold">Discover</span>
+            </Link>
+          </Button>
+        </div>
       </div>
     </div>
   );

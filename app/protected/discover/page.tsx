@@ -62,7 +62,7 @@ const recommendations = [
     year: 2022,
     rating: 8.7,
     matchScore: 87,
-    reason: "Mind-bending like your favorites",
+    reason: "Mind-bending like your favourites",
     genres: ["Drama", "Mystery", "Sci-Fi"],
   },
   {
@@ -88,18 +88,18 @@ export default function DiscoverPage() {
     <div className="flex flex-col gap-10">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary mb-6">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border-2 border-primary text-sm text-primary mb-6">
           <Sparkles className="w-4 h-4" />
           <span>AI-Powered Discovery</span>
         </div>
-        <h1 className="text-3xl md:text-4xl font-bold mb-4">
+        <h1 className="font-display text-3xl md:text-4xl font-bold mb-4">
           Discover Your Next{" "}
-          <span className="bg-gradient-to-r from-primary via-accent to-secondary bg-clip-text text-transparent">
-            Favorite
+          <span className="italic text-primary">
+            Favourite
           </span>
         </h1>
         <p className="text-muted-foreground text-lg">
-          Personalized recommendations based on your watch history and ratings
+          Personalised recommendations based on your watch history and ratings
         </p>
       </div>
 
@@ -109,31 +109,31 @@ export default function DiscoverPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
             placeholder="Search movies and TV shows..."
-            className="pl-12 py-6 text-lg bg-card/50 border-border/50 rounded-xl"
+            className="pl-12 py-6 text-lg bg-card border-2 border-border"
           />
         </div>
       </div>
 
       {/* Quick Filters */}
       <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           <Film className="w-4 h-4 mr-2" />
           Movies
         </Button>
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           <Tv className="w-4 h-4 mr-2" />
           TV Shows
         </Button>
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           Action
         </Button>
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           Drama
         </Button>
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           Sci-Fi
         </Button>
-        <Button variant="outline" size="sm" className="rounded-full border-border/50">
+        <Button variant="outline" size="sm" className="border-2">
           Comedy
         </Button>
       </div>
@@ -157,7 +157,7 @@ export default function DiscoverPage() {
             {recommendations.map((item) => (
               <div
                 key={item.id}
-                className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 overflow-hidden hover:border-primary/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 cursor-pointer"
+                className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer"
               >
                 {/* Poster Area */}
                 <div className="aspect-video bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative">
@@ -222,7 +222,7 @@ export default function DiscoverPage() {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Trending */}
-          <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-6">
+          <div className="border-2 border-border p-6">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="w-5 h-5 text-secondary" />
               <h2 className="font-semibold">Trending Now</h2>
@@ -249,7 +249,7 @@ export default function DiscoverPage() {
           </div>
 
           {/* Your Taste Profile */}
-          <div className="bg-gradient-to-br from-primary/10 via-accent/10 to-secondary/10 backdrop-blur rounded-xl border border-border/50 p-6">
+          <div className="border-2 border-border p-6 bg-muted/10">
             <h2 className="font-semibold mb-4">Your Taste Profile</h2>
             <div className="space-y-3">
               <div>

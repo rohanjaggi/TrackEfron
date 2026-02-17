@@ -112,22 +112,22 @@ export default function WatchlistPage() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl md:text-4xl font-bold mb-2">My Watchlist</h1>
+            <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">My Watchlist</h1>
             <p className="text-muted-foreground">
               Movies and shows you want to watch next
             </p>
           </div>
-          <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 shadow-lg shadow-primary/25">
-            <Plus className="w-4 h-4 mr-2" />
+          <Button className="group font-semibold border-2" size="lg">
+            <Plus className="w-4 h-4 mr-2 transition-transform group-hover:rotate-90" />
             Add to Watchlist
           </Button>
         </div>
 
         {/* Stats Bar */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-4">
+          <div className="border-2 border-border p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <div className="w-10 h-10 border-2 border-primary flex items-center justify-center">
                 <Clock className="w-5 h-5 text-primary" />
               </div>
               <div>
@@ -136,9 +136,9 @@ export default function WatchlistPage() {
               </div>
             </div>
           </div>
-          <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-4">
+          <div className="border-2 border-border p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+              <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
                 <Film className="w-5 h-5 text-accent" />
               </div>
               <div>
@@ -147,9 +147,9 @@ export default function WatchlistPage() {
               </div>
             </div>
           </div>
-          <div className="bg-card/50 backdrop-blur rounded-xl border border-border/50 p-4">
+          <div className="border-2 border-border p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center">
+              <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
                 <Tv className="w-5 h-5 text-secondary" />
               </div>
               <div>
@@ -165,10 +165,10 @@ export default function WatchlistPage() {
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div className="flex items-center gap-2">
           {/* Filter Tabs */}
-          <div className="flex items-center gap-1 bg-card/50 rounded-lg border border-border/50 p-1">
+          <div className="flex items-center gap-1 border-2 border-border p-1">
             <button
               onClick={() => setFilter("all")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
                 filter === "all"
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -254,8 +254,8 @@ export default function WatchlistPage() {
               : "Add movies and TV shows you want to watch to keep track of them."}
           </p>
           {!searchQuery && (
-            <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button className="group font-semibold border-2" size="lg">
+              <Plus className="w-4 h-4 mr-2 transition-transform group-hover:rotate-90" />
               Add to Watchlist
             </Button>
           )}
@@ -265,7 +265,7 @@ export default function WatchlistPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="group bg-card/50 backdrop-blur rounded-xl border border-border/50 overflow-hidden hover:border-primary/50 transition-all duration-300 hover:shadow-xl hover:shadow-primary/10 cursor-pointer relative"
+              className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer relative"
             >
               {/* Poster */}
               <div className="aspect-[2/3] bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden">
@@ -326,7 +326,7 @@ export default function WatchlistPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="group flex items-center gap-4 p-4 bg-card/50 backdrop-blur rounded-xl border border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg"
+              className="group flex items-center gap-4 p-4 border-2 border-border hover:border-primary transition-all duration-300"
             >
               {/* Drag Handle */}
               <div className="text-muted-foreground/50 hover:text-muted-foreground cursor-grab">
@@ -407,7 +407,7 @@ export default function WatchlistPage() {
 
       {/* Tips */}
       {filteredItems.length > 0 && (
-        <div className="bg-card/30 rounded-xl border border-border/50 p-4 text-center">
+        <div className="border-2 border-border p-4 text-center">
           <p className="text-sm text-muted-foreground">
             💡 Tip: Click <Check className="w-4 h-4 inline text-green-500" /> to mark as watched and move to your library, 
             or <Trash2 className="w-4 h-4 inline text-destructive" /> to remove from watchlist.
