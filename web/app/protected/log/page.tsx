@@ -1,35 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
-  Film, 
-  Tv, 
-  Search, 
+  Film,
+  Tv,
+  Search,
   Star,
   Calendar,
   FileText,
   ArrowLeft,
-  Check
+  Check,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type MediaType = "movie" | "tv";
 
+type TmdbResult = {
+  id: number;
+  title?: string;
+  name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  poster_path?: string;
+  poster_url?: string | null;
+  overview?: string;
+};
+
 export default function LogWatchPage() {
   const router = useRouter();
-  const [mediaType, setMediaType] = useState<MediaType>("movie");
+  const [mediaType, setMediaType] = useState<MediaType | null>(null);
   const [title, setTitle] = useState("");
-  const [year, setYear] = useState("");
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [review, setReview] = useState("");
   const [watchedDate, setWatchedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<TmdbResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedMovie, setSelectedMovie] = useState<TmdbResult | null>(null);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
+  const [watchedOn, setWatchedOn] = useState("");
+  const [watchDuration, setWatchDuration] = useState("");
+  const [mood, setMood] = useState("");
+  const [rewatchability, setRewatchability] = useState("");
+  const [watchedWith, setWatchedWith] = useState("");
+  const [timesWatched, setTimesWatched] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,10 +75,15 @@ export default function LogWatchPage() {
       console.log({
         title,
         mediaType,
-        year,
         rating,
         review,
         watchedDate,
+        watchedOn,
+        watchDuration,
+        mood,
+        rewatchability,
+        watchedWith,
+        timesWatched,
       });
 
       // Simulate API call
@@ -70,6 +97,28 @@ export default function LogWatchPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    const q = title.trim();
+    if (!q) {
+      setResults([]);
+      setSelectedMovie(null);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        setIsSearching(true);
+        const res = await fetch(`/api?q=${encodeURIComponent(q)}&type=${mediaType}`);
+        const data = await res.json();
+        setResults(Array.isArray(data) ? data : []);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(t);
+  }, [title, mediaType]);
 
   return (
     <div className="flex flex-col gap-8 max-w-3xl mx-auto w-full">
@@ -96,7 +145,7 @@ export default function LogWatchPage() {
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
-              onClick={() => setMediaType("movie")}
+              onClick={() => { setMediaType("movie"); setTitle(""); setSelectedMovie(null); setResults([]); }}
               className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "movie"
                   ? "border-primary bg-primary/10"
@@ -110,7 +159,7 @@ export default function LogWatchPage() {
             </button>
             <button
               type="button"
-              onClick={() => setMediaType("tv")}
+              onClick={() => { setMediaType("tv"); setTitle(""); setSelectedMovie(null); setResults([]); }}
               className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "tv"
                   ? "border-primary bg-primary/10"
@@ -125,6 +174,7 @@ export default function LogWatchPage() {
           </div>
         </div>
 
+        {mediaType && (<>
         {/* Title */}
         <div className="space-y-2">
           <Label htmlFor="title" className="text-base">
@@ -135,28 +185,76 @@ export default function LogWatchPage() {
             <Input
               id="title"
               type="text"
-              placeholder={`Enter ${mediaType === "movie" ? "movie" : "TV show"} title...`}
+              placeholder={`Search for a ${mediaType === "movie" ? "movie" : "TV show"}...`}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="pl-10 bg-card border-2 border-border"
               required
             />
+            {isSearching && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                Searching...
+              </div>
+            )}
           </div>
-        </div>
 
-        {/* Year */}
-        <div className="space-y-2">
-          <Label htmlFor="year" className="text-base">Year (Optional)</Label>
-          <Input
-            id="year"
-            type="number"
-            placeholder="2024"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            className="bg-card border-2 border-border"
-            min="1900"
-            max={new Date().getFullYear()}
-          />
+          {results.length > 0 && (
+            <div className="border-2 border-border bg-card mt-2 max-h-64 overflow-auto">
+              {results.slice(0, 8).map((r: any) => {
+                const label = r.title || r.name || "Untitled";
+                const yearLabel = (r.release_date || r.first_air_date || "").slice(0, 4);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      setTitle(label);
+                      setSelectedMovie(r);
+                      setResults([]);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-muted flex gap-3 items-center"
+                  >
+                    {r.poster_url && (
+                      <img
+                        src={r.poster_url}
+                        alt={label}
+                        className="w-8 h-12 object-cover rounded"
+                      />
+                    )}
+                    <div>
+                      <div className="font-medium">{label}</div>
+                      {yearLabel && (
+                        <div className="text-xs text-muted-foreground">{yearLabel}</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMovie && (
+            <div className="border-2 border-primary bg-primary/5 p-4 mt-4 rounded-lg space-y-3">
+              <div className="flex gap-4">
+                {selectedMovie.poster_url && (
+                  <img
+                    src={selectedMovie.poster_url}
+                    alt={selectedMovie.title || selectedMovie.name}
+                    className="w-16 h-24 object-cover rounded"
+                  />
+                )}
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg">{selectedMovie.title || selectedMovie.name}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {(selectedMovie.release_date || selectedMovie.first_air_date || "").slice(0, 4)}
+                  </p>
+                  {selectedMovie.overview && (
+                    <p className="text-sm mt-2 line-clamp-3">{selectedMovie.overview}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Rating */}
@@ -168,9 +266,9 @@ export default function LogWatchPage() {
             {[1, 2, 3, 4, 5].map((value) => {
               const isActive = (hoverRating || rating) >= value;
               const isHalfActive = (hoverRating || rating) >= value - 0.5 && (hoverRating || rating) < value;
-              
+
               return (
-                <div key={value} className="group relative flex">
+                <div key={value} className="relative flex">
                   {/* Left half (for .5 rating) */}
                   <button
                     type="button"
@@ -180,12 +278,10 @@ export default function LogWatchPage() {
                     className="relative w-5 h-10 flex items-center justify-start overflow-hidden"
                   >
                     <Star
-                      className={`absolute left-0 w-10 h-10 transition-all duration-300 ${
-                        isActive
-                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
-                          : isHalfActive
-                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
-                          : "text-muted-foreground/30 group-hover:text-accent/50 group-hover:scale-105"
+                      className={`absolute left-0 w-10 h-10 transition-colors duration-200 ${
+                        isActive || isHalfActive
+                          ? "text-accent fill-accent"
+                          : "text-muted-foreground/30"
                       }`}
                       style={isHalfActive ? { clipPath: 'inset(0 50% 0 0)' } : undefined}
                     />
@@ -196,7 +292,7 @@ export default function LogWatchPage() {
                       />
                     )}
                   </button>
-                  
+
                   {/* Right half (for full rating) */}
                   <button
                     type="button"
@@ -206,10 +302,10 @@ export default function LogWatchPage() {
                     className="relative w-5 h-10 flex items-center justify-end overflow-hidden"
                   >
                     <Star
-                      className={`absolute right-0 w-10 h-10 transition-all duration-300 ${
+                      className={`absolute right-0 w-10 h-10 transition-colors duration-200 ${
                         isActive
-                          ? "text-accent fill-accent scale-110 drop-shadow-lg"
-                          : "text-muted-foreground/30 group-hover:text-accent/50 group-hover:scale-105"
+                          ? "text-accent fill-accent"
+                          : "text-muted-foreground/30"
                       }`}
                       style={{ clipPath: 'inset(0 0 0 50%)' }}
                     />
@@ -220,17 +316,13 @@ export default function LogWatchPage() {
                       />
                     )}
                   </button>
-                  
-                  <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 text-xs font-semibold text-accent opacity-0 group-hover:opacity-100 transition-all duration-200 scale-90 group-hover:scale-100">
-                    {hoverRating >= value - 0.5 && hoverRating < value ? value - 0.5 : hoverRating >= value ? value : ''}
-                  </span>
                 </div>
               );
             })}
           </div>
           {rating > 0 && (
-            <p className="text-sm font-semibold text-accent animate-in fade-in duration-300">
-              ★ You rated this {rating}/5
+            <p className="text-sm font-semibold text-accent">
+              You rate {rating}/5
             </p>
           )}
         </div>
@@ -269,6 +361,125 @@ export default function LogWatchPage() {
           </p>
         </div>
 
+        {/* More Details (Optional) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMoreDetails(!showMoreDetails)}
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showMoreDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            More Details (Optional)
+          </button>
+
+          {showMoreDetails && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div className="space-y-2">
+                <Label className="text-sm">Where did you watch?</Label>
+                <select
+                  value={watchedOn}
+                  onChange={(e) => setWatchedOn(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="Netflix">Netflix</option>
+                  <option value="Disney+">Disney+</option>
+                  <option value="Prime Video">Prime Video</option>
+                  <option value="Hulu">Hulu</option>
+                  <option value="HBO Max">HBO Max</option>
+                  <option value="Apple TV+">Apple TV+</option>
+                  <option value="Paramount+">Paramount+</option>
+                  <option value="Peacock">Peacock</option>
+                  <option value="Streaming Site">Streaming Site</option>
+                  <option value="Cinema">Cinema</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">How long did it take to finish?</Label>
+                <select
+                  value={watchDuration}
+                  onChange={(e) => setWatchDuration(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="One sitting">One sitting</option>
+                  <option value="A few days">A few days</option>
+                  <option value="About a week">About a week</option>
+                  <option value="A few weeks">A few weeks</option>
+                  <option value="Over a month">Over a month</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">What was the vibe?</Label>
+                <select
+                  value={mood}
+                  onChange={(e) => setMood(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="Chill night in">Chill night in</option>
+                  <option value="Date night">Date night</option>
+                  <option value="Binge session">Binge session</option>
+                  <option value="Background watch">Background watch</option>
+                  <option value="Family time">Family time</option>
+                  <option value="Solo deep dive">Solo deep dive</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">Would you rewatch?</Label>
+                <select
+                  value={rewatchability}
+                  onChange={(e) => setRewatchability(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="Definitely">Definitely</option>
+                  <option value="Probably">Probably</option>
+                  <option value="Maybe">Maybe</option>
+                  <option value="Unlikely">Unlikely</option>
+                  <option value="No way">No way</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">Who did you watch with?</Label>
+                <select
+                  value={watchedWith}
+                  onChange={(e) => setWatchedWith(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="Solo">Solo</option>
+                  <option value="Partner">Partner</option>
+                  <option value="Friends">Friends</option>
+                  <option value="Family">Family</option>
+                  <option value="Group">Group</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">How many times have you watched this?</Label>
+                <select
+                  value={timesWatched}
+                  onChange={(e) => setTimesWatched(e.target.value)}
+                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select...</option>
+                  <option value="First time">First time</option>
+                  <option value="Second time">Second time</option>
+                  <option value="A few times">A few times</option>
+                  <option value="Many times">Many times</option>
+                  <option value="Lost count">Lost count</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Error Message */}
         {error && (
           <div className="p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
@@ -302,6 +513,7 @@ export default function LogWatchPage() {
             Cancel
           </Button>
         </div>
+        </>)}
       </form>
 
       {/* Tips */}
