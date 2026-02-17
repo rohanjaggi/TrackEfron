@@ -20,8 +20,12 @@ export default function ProtectedLayout({
           <div className="w-full max-w-6xl flex justify-between items-center px-6">
             {/* Logo */}
             <Link href="/protected" className="flex items-center gap-3 group">
-              <div className="w-9 h-9 border-2 border-primary flex items-center justify-center">
-                <Film className="w-4 h-4 text-primary" />
+              <div className="h-12 w-12 flex items-center justify-center">
+                <img 
+                  src="/images/logo.png" 
+                  alt="TrackEfron" 
+                  className="h-full w-full object-contain"
+                />
               </div>
               <span className="font-display text-2xl font-bold text-foreground hidden sm:block">
                 TrackEfron
@@ -77,12 +81,30 @@ export default function ProtectedLayout({
 
         {/* Footer */}
         <footer className="w-full border-t-2 border-border py-6 mt-auto">
-          <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-3">
-              <Film className="w-4 h-4 text-primary" />
-              <span className="font-display font-semibold">TrackEfron</span>
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm">
+              <div className="flex items-center gap-3">
+                <img 
+                  src="/images/logo.png" 
+                  alt="TrackEfron" 
+                  className="h-7 w-auto object-contain"
+                />
+              </div>
+              
+              <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
+                {/* TMDB Attribution */}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Data & images by</span>
+                  <img 
+                    src="/images/tmdb.svg" 
+                    alt="TMDB Logo" 
+                    className="h-3"
+                  />
+                </div>
+                
+                <p className="text-muted-foreground">© 2026 TrackEfron. All rights reserved.</p>
+              </div>
             </div>
-            <p>© 2026 TrackEfron. All rights reserved.</p>
           </div>
         </footer>
       </div>

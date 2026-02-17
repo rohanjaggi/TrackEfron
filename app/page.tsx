@@ -13,8 +13,12 @@ export default function Home() {
         <nav className="w-full flex justify-center border-b-2 border-border py-6">
           <div className="w-full max-w-6xl flex justify-between items-center px-6">
             <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 border-2 border-primary flex items-center justify-center">
-                <Film className="w-5 h-5 text-primary" />
+              <div className="h-14 w-14 flex items-center justify-center">
+                <img 
+                  src="/images/logo.png" 
+                  alt="TrackEfron Logo" 
+                  className="h-full w-full object-contain"
+                />
               </div>
               <span className="font-display text-3xl font-bold text-foreground tracking-tight">
                 TrackEfron
@@ -32,13 +36,19 @@ export default function Home() {
         </nav>
 
         {/* Hero Section */}
-        <section className="flex-1 flex flex-col items-center justify-center px-6 py-24 text-center">
+        <section className="flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
           <div className="max-w-4xl mx-auto space-y-10">
             {/* Ornamental top */}
-            <div className="flex items-center justify-center gap-4 text-muted-foreground">
-              <div className="w-12 h-[2px] bg-border"></div>
-              <Feather className="w-5 h-5" />
-              <div className="w-12 h-[2px] bg-border"></div>
+            <div className="flex items-center justify-center gap-6 text-muted-foreground">
+              <div className="w-24 h-[2px] bg-border"></div>
+              <div className="h-16 w-16 flex items-center justify-center">
+                <img 
+                  src="/images/logo.png" 
+                  alt="TrackEfron" 
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div className="w-24 h-[2px] bg-border"></div>
             </div>
 
             {/* Main Heading */}
@@ -147,12 +157,27 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="w-full border-t-2 border-border py-8 mt-12">
-          <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Film className="w-5 h-5 text-primary" />
-              <span className="font-display text-xl font-semibold">TrackEfron</span>
+          <div className="max-w-6xl mx-auto px-6">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="flex items-center gap-3">
+                <Film className="w-5 h-5 text-primary" />
+                <span className="font-display text-xl font-semibold">TrackEfron</span>
+              </div>
+              
+              <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8">
+                {/* TMDB Attribution */}
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-muted-foreground">Data & images provided by</span>
+                  <img 
+                    src="/images/tmdb.svg" 
+                    alt="TMDB Logo" 
+                    className="h-4"
+                  />
+                </div>
+                
+                <p className="text-sm text-muted-foreground">© 2026 TrackEfron. All rights reserved.</p>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">© 2026 TrackEfron. All rights reserved.</p>
           </div>
         </footer>
       </div>
