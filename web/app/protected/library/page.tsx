@@ -1,104 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  LayoutGrid, 
-  List, 
-  Search, 
-  Plus, 
-  Star, 
+import {
+  LayoutGrid,
+  List,
+  Search,
+  Plus,
+  Star,
   Calendar,
   Film,
-  Tv
+  Tv,
+  Loader2
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type ViewType = "grid" | "list";
 type FilterType = "all" | "movies" | "tv";
 
-// Mock data - will be replaced with Supabase data
-const mockWatchedItems = [
-  {
-    id: 1,
-    title: "Breaking Bad",
-    type: "TV Show",
-    year: 2008,
-    rating: 9.5,
-    userRating: 10,
-    review: "One of the greatest shows ever made. The character development is unparalleled.",
-    watchedDate: "2024-01-15",
-    posterUrl: null,
-  },
-  {
-    id: 2,
-    title: "Inception",
-    type: "Movie",
-    year: 2010,
-    rating: 8.8,
-    userRating: 9,
-    review: "Mind-bending thriller that keeps you thinking long after it ends.",
-    watchedDate: "2024-01-20",
-    posterUrl: null,
-  },
-  {
-    id: 3,
-    title: "The Office",
-    type: "TV Show",
-    year: 2005,
-    rating: 8.9,
-    userRating: 8.5,
-    review: "Hilarious mockumentary with heart. Michael Scott is iconic.",
-    watchedDate: "2024-02-01",
-    posterUrl: null,
-  },
-  {
-    id: 4,
-    title: "Interstellar",
-    type: "Movie",
-    year: 2014,
-    rating: 8.7,
-    userRating: 9.5,
-    review: "Visually stunning with an emotional core. Hans Zimmer's score is phenomenal.",
-    watchedDate: "2024-02-10",
-    posterUrl: null,
-  },
-  {
-    id: 5,
-    title: "Stranger Things",
-    type: "TV Show",
-    year: 2016,
-    rating: 8.7,
-    userRating: 8,
-    review: "Great 80s nostalgia with compelling mystery elements.",
-    watchedDate: "2024-02-15",
-    posterUrl: null,
-  },
-];
+type WatchLog = {
+  id: string;
+  title: string;
+  media_type: "movie" | "tv";
+  rating: number;
+  review: string | null;
+  watched_date: string | null;
+  poster_url: string | null;
+  tmdb_id: number | null;
+  created_at: string;
+};
+
+function upscalePoster(url: string | null, size = "w500"): string | null {
+  if (!url) return null;
+  return url.replace(/\/w\d+\//, `/${size}/`);
+}
 
 export default function LibraryPage() {
+  const router = useRouter();
   const [viewType, setViewType] = useState<ViewType>("grid");
   const [filter, setFilter] = useState<FilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [watchedItems, setWatchedItems] = useState<WatchLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredItems = mockWatchedItems.filter((item) => {
+  useEffect(() => {
+    async function fetchLibrary() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("watch_logs")
+          .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setWatchedItems(data || []);
+      } catch {
+        // silently fail, will show empty state
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchLibrary();
+  }, []);
+
+  const filteredItems = watchedItems.filter((item) => {
     const matchesFilter =
       filter === "all" ||
-      (filter === "movies" && item.type === "Movie") ||
-      (filter === "tv" && item.type === "TV Show");
-    
+      (filter === "movies" && item.media_type === "movie") ||
+      (filter === "tv" && item.media_type === "tv");
+
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     return matchesFilter && matchesSearch;
   });
 
   const stats = {
-    total: mockWatchedItems.length,
-    movies: mockWatchedItems.filter((i) => i.type === "Movie").length,
-    tvShows: mockWatchedItems.filter((i) => i.type === "TV Show").length,
-    avgRating: (
-      mockWatchedItems.reduce((acc, i) => acc + i.userRating, 0) / mockWatchedItems.length
-    ).toFixed(1),
+    total: watchedItems.length,
+    movies: watchedItems.filter((i) => i.media_type === "movie").length,
+    tvShows: watchedItems.filter((i) => i.media_type === "tv").length,
+    avgRating: watchedItems.length > 0
+      ? (watchedItems.reduce((acc, i) => acc + Number(i.rating), 0) / watchedItems.length).toFixed(1)
+      : "—",
   };
 
   return (
@@ -112,7 +96,11 @@ export default function LibraryPage() {
               Your watched movies and TV shows, all in one place
             </p>
           </div>
-          <Button className="group font-semibold border-2" size="lg">
+          <Button
+            className="group font-semibold border-2"
+            size="lg"
+            onClick={() => router.push("/protected/log")}
+          >
             <Plus className="w-4 h-4 mr-2 transition-transform group-hover:rotate-90" />
             Add to Library
           </Button>
@@ -223,7 +211,11 @@ export default function LibraryPage() {
       </div>
 
       {/* Content */}
-      {filteredItems.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
             <Film className="w-10 h-10 text-muted-foreground" />
@@ -235,7 +227,11 @@ export default function LibraryPage() {
               : "Start adding movies and TV shows to your library to see them here."}
           </p>
           {!searchQuery && (
-            <Button className="group font-semibold border-2" size="lg">
+            <Button
+              className="group font-semibold border-2"
+              size="lg"
+              onClick={() => router.push("/protected/log")}
+            >
               <Plus className="w-4 h-4 mr-2 transition-transform group-hover:rotate-90" />
               Add Your First Item
             </Button>
@@ -247,10 +243,17 @@ export default function LibraryPage() {
             <div
               key={item.id}
               className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer"
+              onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
             >
               {/* Poster */}
               <div className="aspect-[2/3] bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 flex items-center justify-center relative overflow-hidden">
-                {item.type === "Movie" ? (
+                {item.poster_url ? (
+                  <img
+                    src={upscalePoster(item.poster_url)!}
+                    alt={item.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : item.media_type === "movie" ? (
                   <Film className="w-12 h-12 text-white/50" />
                 ) : (
                   <Tv className="w-12 h-12 text-white/50" />
@@ -258,12 +261,14 @@ export default function LibraryPage() {
                 {/* Rating Badge */}
                 <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-full">
                   <Star className="w-3 h-3 text-accent fill-accent" />
-                  <span className="text-xs font-medium text-white">{item.userRating}</span>
+                  <span className="text-xs font-medium text-white">{Number(item.rating)}</span>
                 </div>
                 {/* Hover Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                  <p className="text-xs text-white/80 line-clamp-3">{item.review}</p>
-                </div>
+                {item.review && (
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                    <p className="text-xs text-white/80 line-clamp-3">{item.review}</p>
+                  </div>
+                )}
               </div>
               {/* Info */}
               <div className="p-4 space-y-2">
@@ -271,14 +276,14 @@ export default function LibraryPage() {
                   {item.title}
                 </h3>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{item.type}</span>
-                  <span>•</span>
-                  <span>{item.year}</span>
+                  <span>{item.media_type === "movie" ? "Movie" : "TV Show"}</span>
                 </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Calendar className="w-3 h-3" />
-                  <span>{new Date(item.watchedDate).toLocaleDateString()}</span>
-                </div>
+                {item.watched_date && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Calendar className="w-3 h-3" />
+                    <span>{new Date(item.watched_date).toLocaleDateString()}</span>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -289,16 +294,23 @@ export default function LibraryPage() {
             <div
               key={item.id}
               className="group flex items-start gap-4 p-4 border-2 border-border hover:border-primary transition-all duration-300 cursor-pointer"
+              onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
             >
               {/* Poster Thumbnail */}
-              <div className="w-20 h-28 flex-shrink-0 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 rounded-lg flex items-center justify-center">
-                {item.type === "Movie" ? (
+              <div className="w-20 h-28 flex-shrink-0 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 rounded-lg flex items-center justify-center overflow-hidden">
+                {item.poster_url ? (
+                  <img
+                    src={upscalePoster(item.poster_url)!}
+                    alt={item.title}
+                    className="w-full h-full object-cover rounded-lg"
+                  />
+                ) : item.media_type === "movie" ? (
                   <Film className="w-8 h-8 text-white/50" />
                 ) : (
                   <Tv className="w-8 h-8 text-white/50" />
                 )}
               </div>
-              
+
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-4">
@@ -308,32 +320,25 @@ export default function LibraryPage() {
                     </h3>
                     <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
                       <span className="flex items-center gap-1">
-                        {item.type === "Movie" ? <Film className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
-                        {item.type}
+                        {item.media_type === "movie" ? <Film className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
+                        {item.media_type === "movie" ? "Movie" : "TV Show"}
                       </span>
-                      <span>{item.year}</span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(item.watchedDate).toLocaleDateString()}
-                      </span>
+                      {item.watched_date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(item.watched_date).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 bg-primary/10 px-3 py-1.5 rounded-full">
                     <Star className="w-4 h-4 text-accent fill-accent" />
-                    <span className="font-semibold">{item.userRating}</span>
+                    <span className="font-semibold">{Number(item.rating)}</span>
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground mt-3 line-clamp-2">{item.review}</p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="outline" size="sm">
-                  Edit
-                </Button>
-                <Button variant="ghost" size="sm" className="text-muted-foreground">
-                  View
-                </Button>
+                {item.review && (
+                  <p className="text-sm text-muted-foreground mt-3 line-clamp-2">{item.review}</p>
+                )}
               </div>
             </div>
           ))}

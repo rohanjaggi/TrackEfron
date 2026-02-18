@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 type MediaType = "movie" | "tv";
 
@@ -48,10 +49,17 @@ export default function LogWatchPage() {
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [watchedOn, setWatchedOn] = useState("");
   const [watchDuration, setWatchDuration] = useState("");
-  const [mood, setMood] = useState("");
+  const [discoveredVia, setDiscoveredVia] = useState("");
   const [rewatchability, setRewatchability] = useState("");
   const [watchedWith, setWatchedWith] = useState("");
   const [timesWatched, setTimesWatched] = useState("");
+  const [plotRating, setPlotRating] = useState(0);
+  const [cinematographyRating, setCinematographyRating] = useState(0);
+  const [actingRating, setActingRating] = useState(0);
+  const [soundtrackRating, setSoundtrackRating] = useState(0);
+  const [pacingRating, setPacingRating] = useState(0);
+  const [castingRating, setCastingRating] = useState(0);
+  const [hoverCategory, setHoverCategory] = useState<{ [key: string]: number }>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,25 +79,65 @@ export default function LogWatchPage() {
     }
 
     try {
-      // TODO: Save to Supabase database
-      console.log({
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setError("You must be logged in to save.");
+        setIsLoading(false);
+        return;
+      }
+
+      const { error: insertError } = await supabase.from("watch_logs").insert({
+        user_id: user.id,
+        tmdb_id: selectedMovie?.id || null,
         title,
-        mediaType,
+        media_type: mediaType,
+        poster_url: selectedMovie?.poster_url || null,
         rating,
-        review,
-        watchedDate,
-        watchedOn,
-        watchDuration,
-        mood,
-        rewatchability,
-        watchedWith,
-        timesWatched,
+        review: review || null,
+        watched_date: watchedDate || null,
+        watched_on: watchedOn || null,
+        watch_duration: watchDuration || null,
+        discovered_via: discoveredVia || null,
+        rewatchability: rewatchability || null,
+        watched_with: watchedWith || null,
+        times_watched: timesWatched || null,
+        plot_rating: plotRating || null,
+        cinematography_rating: cinematographyRating || null,
+        acting_rating: actingRating || null,
+        soundtrack_rating: soundtrackRating || null,
+        pacing_rating: pacingRating || null,
+        casting_rating: castingRating || null,
       });
 
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Redirect to library
+      if (insertError) {
+        throw insertError;
+      }
+
+      // Reset form
+      setMediaType(null);
+      setTitle("");
+      setRating(0);
+      setHoverRating(0);
+      setReview("");
+      setWatchedDate(new Date().toISOString().split('T')[0]);
+      setSelectedMovie(null);
+      setResults([]);
+      setShowMoreDetails(false);
+      setWatchedOn("");
+      setWatchDuration("");
+      setDiscoveredVia("");
+      setRewatchability("");
+      setWatchedWith("");
+      setTimesWatched("");
+      setPlotRating(0);
+      setCinematographyRating(0);
+      setActingRating(0);
+      setSoundtrackRating(0);
+      setPacingRating(0);
+      setCastingRating(0);
+
       router.push("/protected/library");
     } catch (err) {
       setError("Failed to save. Please try again.");
@@ -361,6 +409,52 @@ export default function LogWatchPage() {
           </p>
         </div>
 
+        {/* Category Ratings */}
+        <div className="space-y-4">
+          <Label className="text-base block">Rate by Category (Optional)</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+            {([
+              { key: "plot", label: "Plot", value: plotRating, setter: setPlotRating },
+              { key: "cinematography", label: "Cinematography", value: cinematographyRating, setter: setCinematographyRating },
+              { key: "acting", label: "Acting", value: actingRating, setter: setActingRating },
+              { key: "soundtrack", label: "Soundtrack", value: soundtrackRating, setter: setSoundtrackRating },
+              { key: "pacing", label: "Pacing", value: pacingRating, setter: setPacingRating },
+              { key: "casting", label: "Casting", value: castingRating, setter: setCastingRating },
+            ] as const).map(({ key, label, value, setter }) => (
+              <div key={key} className="flex items-center justify-between gap-3">
+                <Label className="text-sm text-muted-foreground w-28 shrink-0">{label}</Label>
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const hoverVal = hoverCategory[key] || 0;
+                    const isActive = (hoverVal || value) >= star;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setter(value === star ? 0 : star)}
+                        onMouseEnter={() => setHoverCategory((prev) => ({ ...prev, [key]: star }))}
+                        onMouseLeave={() => setHoverCategory((prev) => ({ ...prev, [key]: 0 }))}
+                        className="p-0.5"
+                      >
+                        <Star
+                          className={`w-5 h-5 transition-colors duration-150 ${
+                            isActive
+                              ? "text-accent fill-accent"
+                              : "text-muted-foreground/30"
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                  {value > 0 && (
+                    <span className="text-xs text-muted-foreground ml-2 w-3">{value}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* More Details (Optional) */}
         <div>
           <button
@@ -413,19 +507,20 @@ export default function LogWatchPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm">What was the vibe?</Label>
+                <Label className="text-sm">How did you discover this?</Label>
                 <select
-                  value={mood}
-                  onChange={(e) => setMood(e.target.value)}
+                  value={discoveredVia}
+                  onChange={(e) => setDiscoveredVia(e.target.value)}
                   className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="">Select...</option>
-                  <option value="Chill night in">Chill night in</option>
-                  <option value="Date night">Date night</option>
-                  <option value="Binge session">Binge session</option>
-                  <option value="Background watch">Background watch</option>
-                  <option value="Family time">Family time</option>
-                  <option value="Solo deep dive">Solo deep dive</option>
+                  <option value="Friend/Family">Friend/Family</option>
+                  <option value="Social Media">Social Media</option>
+                  <option value="Streaming Recommendation">Streaming Recommendation</option>
+                  <option value="Trailer">Trailer</option>
+                  <option value="Review/Article">Review/Article</option>
+                  <option value="Just Browsing">TrackEfron</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
 
@@ -469,11 +564,12 @@ export default function LogWatchPage() {
                   className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="">Select...</option>
-                  <option value="First time">First time</option>
-                  <option value="Second time">Second time</option>
-                  <option value="A few times">A few times</option>
-                  <option value="Many times">Many times</option>
-                  <option value="Lost count">Lost count</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6+">6+</option>
                 </select>
               </div>
             </div>
