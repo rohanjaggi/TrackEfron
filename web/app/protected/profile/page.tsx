@@ -15,6 +15,8 @@ async function getUserProfile() {
     email: user.email || "",
     fullName: user.user_metadata?.full_name || "",
     username: user.user_metadata?.username || "",
+    avatarUrl: user.user_metadata?.avatar_url || "",
+    profileColor: user.user_metadata?.profile_color || "",
     createdAt: user.created_at,
   };
 }

@@ -2,7 +2,7 @@ import { AuthButton } from "@/components/auth-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Film, Home, Library, BookOpen, Clock } from "lucide-react";
+import { Home, Library, BookOpen, Clock, BarChart3 } from "lucide-react";
 
 export default function ProtectedLayout({
   children,
@@ -55,17 +55,24 @@ export default function ProtectedLayout({
                 <Clock className="w-4 h-4" />
                 <span className="hidden md:inline">Watchlist</span>
               </Link>
-              <Link 
-                href="/protected/discover" 
+              <Link
+                href="/protected/discover"
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
               >
                 <BookOpen className="w-4 h-4" />
                 <span className="hidden md:inline">Discover</span>
               </Link>
+              <Link
+                href="/protected/analytics"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span className="hidden md:inline">Analytics</span>
+              </Link>
             </div>
 
             {/* Right Side */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
               <ThemeToggle />
               <Suspense>
                 <AuthButton />
