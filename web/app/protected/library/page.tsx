@@ -13,8 +13,17 @@ import {
   Calendar,
   Film,
   Tv,
-  Loader2
+  Loader2,
+  Pencil,
+  Trash2,
+  MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 
 type ViewType = "grid" | "list";
@@ -44,26 +53,39 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [watchedItems, setWatchedItems] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function fetchLibrary() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("watch_logs")
+        .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setWatchedItems(data || []);
+    } catch {
+      // silently fail, will show empty state
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchLibrary() {
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from("watch_logs")
-          .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setWatchedItems(data || []);
-      } catch {
-        // silently fail, will show empty state
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchLibrary();
   }, []);
+
+  async function handleDelete(id: string) {
+    setWatchedItems((prev) => prev.filter((item) => item.id !== id));
+    setDeletingId(null);
+    try {
+      const supabase = createClient();
+      await supabase.from("watch_logs").delete().eq("id", id);
+    } catch {
+      fetchLibrary();
+    }
+  }
 
   const filteredItems = watchedItems.filter((item) => {
     const matchesFilter =
@@ -263,9 +285,35 @@ export default function LibraryPage() {
                   <Star className="w-3 h-3 text-accent fill-accent" />
                   <span className="text-xs font-medium text-white">{Number(item.rating)}</span>
                 </div>
+                {/* Edit/Delete Overlay */}
+                <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); router.push(`/protected/log?edit=${item.id}`); }}
+                    className="p-1.5 bg-black/60 backdrop-blur-sm rounded-full hover:bg-black/80 transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-white" />
+                  </button>
+                  {deletingId === item.id ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                      className="px-2 py-1 bg-destructive backdrop-blur-sm rounded-full text-xs font-medium text-white"
+                    >
+                      Confirm?
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeletingId(item.id); }}
+                      className="p-1.5 bg-black/60 backdrop-blur-sm rounded-full hover:bg-destructive transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  )}
+                </div>
                 {/* Hover Overlay */}
                 {item.review && (
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4 pointer-events-none">
                     <p className="text-xs text-white/80 line-clamp-3">{item.review}</p>
                   </div>
                 )}
@@ -331,9 +379,32 @@ export default function LibraryPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 bg-primary/10 px-3 py-1.5 rounded-full">
-                    <Star className="w-4 h-4 text-accent fill-accent" />
-                    <span className="font-semibold">{Number(item.rating)}</span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 bg-primary/10 px-3 py-1.5 rounded-full">
+                      <Star className="w-4 h-4 text-accent fill-accent" />
+                      <span className="font-semibold">{Number(item.rating)}</span>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => router.push(`/protected/log?edit=${item.id}`)}>
+                          <Pencil className="w-4 h-4 mr-2" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDelete(item.id)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
                 {item.review && (

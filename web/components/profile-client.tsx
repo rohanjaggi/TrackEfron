@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,8 @@ interface ProfileProps {
     email: string;
     fullName: string;
     username: string;
+    avatarUrl: string;
+    profileColor: string;
     createdAt: string;
   };
 }
@@ -38,10 +40,49 @@ type WatchLog = {
   created_at: string;
 };
 
+function extractDominantColor(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 50 / Math.max(img.width, img.height));
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let i = 0; i < imageData.length; i += 4) {
+        const pr = imageData[i], pg = imageData[i + 1], pb = imageData[i + 2];
+        const brightness = (pr + pg + pb) / 3;
+        if (brightness > 30 && brightness < 230) {
+          r += pr; g += pg; b += pb; count++;
+        }
+      }
+
+      if (count === 0) {
+        resolve("#6366f1");
+      } else {
+        r = Math.round(r / count);
+        g = Math.round(g / count);
+        b = Math.round(b / count);
+        resolve(`#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`);
+      }
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export function ProfileClient({ profile }: ProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState(profile.fullName);
   const [username, setUsername] = useState(profile.username);
+  const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl);
+  const [profileColor, setProfileColor] = useState(profile.profileColor);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -130,6 +171,59 @@ export function ProfileClient({ profile }: ProfileProps) {
     setError(null);
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const MAX_SIZE = 2 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setError("Image must be under 2MB");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setError("Only PNG, JPEG, and WebP images are allowed");
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+      const ext = file.name.split(".").pop();
+      const filePath = `${profile.id}/avatar.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      const dominantColor = await extractDominantColor(file);
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          avatar_url: publicUrl,
+          profile_color: dominantColor,
+        },
+      });
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
+      setProfileColor(dominantColor);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to upload avatar");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const memberSince = new Date(profile.createdAt).toLocaleDateString("en-US", {
     month: "long",
     year: "numeric",
@@ -137,19 +231,50 @@ export function ProfileClient({ profile }: ProfileProps) {
 
   return (
     <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
+      {/* Backdrop Banner — full viewport width, pull up into layout padding */}
+      <div className="relative -mb-20 -mt-10 h-44 w-screen left-1/2 -translate-x-1/2">
+        <div
+          className="absolute inset-0"
+          style={{
+            background: profileColor
+              ? `radial-gradient(ellipse 80% 100% at 50% 0%, ${profileColor}40 0%, ${profileColor}18 50%, transparent 100%)`
+              : "radial-gradient(ellipse 80% 100% at 50% 0%, hsl(var(--primary) / 0.15) 0%, hsl(var(--primary) / 0.05) 50%, transparent 100%)",
+          }}
+        />
+      </div>
+
       {/* Header */}
       <div className="flex flex-col items-center text-center gap-6 pb-8 border-b-2 border-border">
         {/* Avatar */}
         <div className="relative group">
-          <div className="w-28 h-28 border-4 border-primary p-1">
-            <div className="w-full h-full bg-card flex items-center justify-center">
-              <span className="font-display text-4xl font-bold text-primary">
-                {fullName.charAt(0).toUpperCase() || profile.email.charAt(0).toUpperCase()}
-              </span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={handleAvatarUpload}
+          />
+          <div className="w-28 h-28 border-4 border-primary p-1 bg-card">
+            <div className="w-full h-full bg-card flex items-center justify-center overflow-hidden">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="font-display text-4xl font-bold text-primary">
+                  {fullName.charAt(0).toUpperCase() || profile.email.charAt(0).toUpperCase()}
+                </span>
+              )}
             </div>
           </div>
-          <button className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <Camera className="w-4 h-4" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
           </button>
         </div>
 

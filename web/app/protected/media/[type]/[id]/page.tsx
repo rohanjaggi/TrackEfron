@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,7 +14,13 @@ import {
   Film,
   Loader2,
   Users,
+  BookmarkPlus,
+  Play,
+  Pencil,
+  Check,
+  Trash2,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type Genre = { id: number; name: string };
 
@@ -51,8 +57,22 @@ type MediaDetail = {
   networks?: { id: number; name: string; logo_path: string | null }[];
 };
 
+type UserWatchLog = {
+  id: string;
+  rating: number;
+  review: string | null;
+  watched_date: string | null;
+  plot_rating: number | null;
+  cinematography_rating: number | null;
+  acting_rating: number | null;
+  soundtrack_rating: number | null;
+  pacing_rating: number | null;
+  casting_rating: number | null;
+};
+
 export default function MediaDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const type = params.type as string;
   const id = params.id as string;
 
@@ -60,6 +80,15 @@ export default function MediaDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // User-specific state
+  const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
+  const [isOnWatchlist, setIsOnWatchlist] = useState(false);
+  const [watchlistItemId, setWatchlistItemId] = useState<string | null>(null);
+  const [userDataLoading, setUserDataLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+
+  // Fetch TMDB detail
   useEffect(() => {
     if (type !== "movie" && type !== "tv") {
       setError("Invalid media type");
@@ -81,6 +110,104 @@ export default function MediaDetailPage() {
     }
     fetchDetail();
   }, [type, id]);
+
+  // Fetch user's watch log and watchlist status
+  useEffect(() => {
+    async function fetchUserData() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setUserDataLoading(false); return; }
+
+        const tmdbId = Number(id);
+
+        const [logRes, wlRes] = await Promise.all([
+          supabase
+            .from("watch_logs")
+            .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
+            .eq("tmdb_id", tmdbId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("watchlist")
+            .select("id")
+            .eq("tmdb_id", tmdbId)
+            .maybeSingle(),
+        ]);
+
+        if (logRes.data) setWatchLog(logRes.data);
+        if (wlRes.data) {
+          setIsOnWatchlist(true);
+          setWatchlistItemId(wlRes.data.id);
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setUserDataLoading(false);
+      }
+    }
+    fetchUserData();
+  }, [id]);
+
+  async function handleAddToWatchlist() {
+    if (!detail) return;
+    setWatchlistLoading(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const displayTitle = detail.title || detail.name || "Unknown";
+      const { data, error } = await supabase
+        .from("watchlist")
+        .insert({
+          user_id: user.id,
+          tmdb_id: Number(id),
+          title: displayTitle,
+          media_type: type,
+          poster_url: detail.poster_url,
+        })
+        .select("id")
+        .single();
+      if (error?.code === "23505") {
+        setIsOnWatchlist(true);
+      } else if (data) {
+        setIsOnWatchlist(true);
+        setWatchlistItemId(data.id);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }
+
+  async function handleRemoveFromWatchlist() {
+    if (!watchlistItemId) return;
+    setWatchlistLoading(true);
+    try {
+      const supabase = createClient();
+      await supabase.from("watchlist").delete().eq("id", watchlistItemId);
+      setIsOnWatchlist(false);
+      setWatchlistItemId(null);
+    } catch {
+      // silently fail
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }
+
+  async function handleDeleteLog() {
+    if (!watchLog) return;
+    try {
+      const supabase = createClient();
+      await supabase.from("watch_logs").delete().eq("id", watchLog.id);
+      setWatchLog(null);
+      setConfirmDelete(false);
+    } catch {
+      // silently fail
+    }
+  }
 
   if (loading) {
     return (
@@ -119,6 +246,15 @@ export default function MediaDetailPage() {
       : null;
   const topCast = detail.credits?.cast?.slice(0, 6) ?? [];
 
+  const categoryRatings = [
+    { label: "Plot", value: watchLog?.plot_rating },
+    { label: "Cinematography", value: watchLog?.cinematography_rating },
+    { label: "Acting", value: watchLog?.acting_rating },
+    { label: "Soundtrack", value: watchLog?.soundtrack_rating },
+    { label: "Pacing", value: watchLog?.pacing_rating },
+    { label: "Casting", value: watchLog?.casting_rating },
+  ].filter((c) => c.value && c.value > 0);
+
   return (
     <div className="flex flex-col gap-0 max-w-5xl mx-auto w-full">
       {/* Back button */}
@@ -147,8 +283,8 @@ export default function MediaDetailPage() {
       {/* Main content grid */}
       <div className="grid md:grid-cols-[auto,1fr] gap-8">
         {/* Poster column */}
-        <div className="flex flex-col gap-4">
-          <div className="w-40 md:w-48 border-2 border-border overflow-hidden shrink-0">
+        <div className="flex flex-col gap-4 w-44 md:w-56">
+          <div className="border-2 border-border overflow-hidden shrink-0">
             {detail.poster_url ? (
               <img
                 src={detail.poster_url}
@@ -163,6 +299,37 @@ export default function MediaDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Action Buttons (not watched) */}
+          {!userDataLoading && !watchLog && (
+            <div className="flex flex-col gap-2">
+              <Button
+                className="w-full border-2"
+                onClick={() => router.push("/protected/log")}
+              >
+                <Play className="w-4 h-4 mr-2" /> Log Watch
+              </Button>
+              {isOnWatchlist ? (
+                <Button
+                  variant="outline"
+                  className="w-full border-2 text-muted-foreground"
+                  onClick={handleRemoveFromWatchlist}
+                  disabled={watchlistLoading}
+                >
+                  <Check className="w-4 h-4 mr-2" /> On Watchlist
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full border-2"
+                  onClick={handleAddToWatchlist}
+                  disabled={watchlistLoading}
+                >
+                  <BookmarkPlus className="w-4 h-4 mr-2" /> Add to Watchlist
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Info column */}
@@ -267,30 +434,124 @@ export default function MediaDetailPage() {
             </div>
           )}
 
-          {/* Cast */}
-          {topCast.length > 0 && (
-            <div>
-              <h2 className="font-semibold mb-3 flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Top Cast
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {topCast.map((member) => (
-                  <div
-                    key={member.id}
-                    className="border-2 border-border p-3 text-sm"
+        </div>
+      </div>
+
+      {/* Cast — full width */}
+      {topCast.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-semibold mb-3 flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Top Cast
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {topCast.map((member) => (
+              <div
+                key={member.id}
+                className="border-2 border-border p-3 text-sm"
+              >
+                <div className="font-medium truncate">{member.name}</div>
+                <div className="text-muted-foreground text-xs truncate">
+                  {member.character}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Your Review — full width */}
+      {!userDataLoading && watchLog && (
+        <div className="border-2 border-primary/30 bg-primary/5 p-6 md:p-8 mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-sm uppercase tracking-wider text-primary">Your Review</h3>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-2"
+                onClick={() => router.push(`/protected/log?edit=${watchLog.id}`)}
+              >
+                <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
+              </Button>
+              {confirmDelete ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleDeleteLog}
                   >
-                    <div className="font-medium truncate">{member.name}</div>
-                    <div className="text-muted-foreground text-xs truncate">
-                      {member.character}
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-2"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-[1fr,auto] gap-6 md:gap-10">
+            {/* Left: rating, date, review text */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Star className="w-5 h-5 text-accent fill-accent" />
+                  <span className="font-bold text-xl">{watchLog.rating}</span>
+                  <span className="text-muted-foreground text-sm">/5</span>
+                </div>
+                {watchLog.watched_date && (
+                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Watched {new Date(watchLog.watched_date).toLocaleDateString()}
+                  </div>
+                )}
+              </div>
+              {watchLog.review && (
+                <p className="text-muted-foreground leading-relaxed">{watchLog.review}</p>
+              )}
+            </div>
+
+            {/* Right: category ratings */}
+            {categoryRatings.length > 0 && (
+              <div className="space-y-2 md:border-l md:border-border md:pl-8 min-w-[200px]">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Category Ratings</h4>
+                {categoryRatings.map((c) => (
+                  <div key={c.label} className="flex items-center justify-between gap-4 text-sm">
+                    <span className="text-muted-foreground">{c.label}</span>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Star
+                          key={s}
+                          className={`w-3.5 h-3.5 ${
+                            s <= c.value!
+                              ? "text-accent fill-accent"
+                              : "text-muted-foreground/20"
+                          }`}
+                        />
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

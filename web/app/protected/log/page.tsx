@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
+import {
   Film,
   Tv,
   Search,
@@ -17,7 +17,7 @@ import {
   ChevronUp
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type MediaType = "movie" | "tv";
@@ -34,7 +34,19 @@ type TmdbResult = {
 };
 
 export default function LogWatchPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 animate-spin border-2 border-primary border-t-transparent rounded-full" /></div>}>
+      <LogWatchForm />
+    </Suspense>
+  );
+}
+
+function LogWatchForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("edit");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editLoading, setEditLoading] = useState(!!editId);
   const [mediaType, setMediaType] = useState<MediaType | null>(null);
   const [title, setTitle] = useState("");
   const [rating, setRating] = useState(0);
@@ -88,8 +100,7 @@ export default function LogWatchPage() {
         return;
       }
 
-      const { error: insertError } = await supabase.from("watch_logs").insert({
-        user_id: user.id,
+      const logData = {
         tmdb_id: selectedMovie?.id || null,
         title,
         media_type: mediaType,
@@ -109,10 +120,19 @@ export default function LogWatchPage() {
         soundtrack_rating: soundtrackRating || null,
         pacing_rating: pacingRating || null,
         casting_rating: castingRating || null,
-      });
+      };
 
-      if (insertError) {
-        throw insertError;
+      if (isEditMode && editId) {
+        const { error: updateError } = await supabase
+          .from("watch_logs")
+          .update(logData)
+          .eq("id", editId);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("watch_logs")
+          .insert({ user_id: user.id, ...logData });
+        if (insertError) throw insertError;
       }
 
       // Reset form
@@ -168,20 +188,81 @@ export default function LogWatchPage() {
     return () => clearTimeout(t);
   }, [title, mediaType]);
 
+  // Load existing watch log for edit mode
+  useEffect(() => {
+    if (!editId) return;
+    async function loadExisting() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("watch_logs")
+          .select("*")
+          .eq("id", editId)
+          .single();
+        if (data) {
+          setIsEditMode(true);
+          setMediaType(data.media_type);
+          setTitle(data.title);
+          setRating(data.rating);
+          setReview(data.review || "");
+          setWatchedDate(data.watched_date || new Date().toISOString().split('T')[0]);
+          setWatchedOn(data.watched_on || "");
+          setWatchDuration(data.watch_duration || "");
+          setDiscoveredVia(data.discovered_via || "");
+          setRewatchability(data.rewatchability || "");
+          setWatchedWith(data.watched_with || "");
+          setTimesWatched(data.times_watched || "");
+          setPlotRating(data.plot_rating || 0);
+          setCinematographyRating(data.cinematography_rating || 0);
+          setActingRating(data.acting_rating || 0);
+          setSoundtrackRating(data.soundtrack_rating || 0);
+          setPacingRating(data.pacing_rating || 0);
+          setCastingRating(data.casting_rating || 0);
+          if (data.tmdb_id) {
+            setSelectedMovie({
+              id: data.tmdb_id,
+              title: data.title,
+              poster_url: data.poster_url,
+            } as TmdbResult);
+          }
+          if (data.watched_on || data.watch_duration || data.discovered_via ||
+              data.rewatchability || data.watched_with || data.times_watched) {
+            setShowMoreDetails(true);
+          }
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setEditLoading(false);
+      }
+    }
+    loadExisting();
+  }, [editId]);
+
+  if (editLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 animate-spin border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8 max-w-3xl mx-auto w-full">
       {/* Header */}
       <div>
-        <Link 
-          href="/protected"
+        <Link
+          href={isEditMode ? "/protected/library" : "/protected"}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Dashboard
+          {isEditMode ? "Back to Library" : "Back to Dashboard"}
         </Link>
-        <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Log a Watch</h1>
+        <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
+          {isEditMode ? "Edit Watch Log" : "Log a Watch"}
+        </h1>
         <p className="text-muted-foreground">
-          Add a movie or TV show you've watched to your library
+          {isEditMode ? "Update your rating, review, and details" : "Add a movie or TV show you've watched to your library"}
         </p>
       </div>
 
@@ -193,12 +274,12 @@ export default function LogWatchPage() {
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
-              onClick={() => { setMediaType("movie"); setTitle(""); setSelectedMovie(null); setResults([]); }}
+              onClick={() => { if (!isEditMode) { setMediaType("movie"); setTitle(""); setSelectedMovie(null); setResults([]); } }}
               className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "movie"
                   ? "border-primary bg-primary/10"
                   : "border-border hover:border-primary/50 bg-card"
-              }`}
+              } ${isEditMode ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <Film className={`w-8 h-8 mx-auto mb-2 ${mediaType === "movie" ? "text-primary" : "text-muted-foreground"}`} />
               <span className={`font-medium ${mediaType === "movie" ? "text-primary" : "text-foreground"}`}>
@@ -207,12 +288,12 @@ export default function LogWatchPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setMediaType("tv"); setTitle(""); setSelectedMovie(null); setResults([]); }}
+              onClick={() => { if (!isEditMode) { setMediaType("tv"); setTitle(""); setSelectedMovie(null); setResults([]); } }}
               className={`p-6 border-2 transition-all duration-200 ${
                 mediaType === "tv"
                   ? "border-primary bg-primary/10"
                   : "border-border hover:border-primary/50 bg-card"
-              }`}
+              } ${isEditMode ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               <Tv className={`w-8 h-8 mx-auto mb-2 ${mediaType === "tv" ? "text-primary" : "text-muted-foreground"}`} />
               <span className={`font-medium ${mediaType === "tv" ? "text-primary" : "text-foreground"}`}>
@@ -235,8 +316,9 @@ export default function LogWatchPage() {
               type="text"
               placeholder={`Search for a ${mediaType === "movie" ? "movie" : "TV show"}...`}
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="pl-10 bg-card border-2 border-border"
+              onChange={(e) => { if (!isEditMode) setTitle(e.target.value); }}
+              className={`pl-10 bg-card border-2 border-border ${isEditMode ? "opacity-60 cursor-not-allowed" : ""}`}
+              readOnly={isEditMode}
               required
             />
             {isSearching && (
@@ -595,7 +677,7 @@ export default function LogWatchPage() {
             ) : (
               <>
                 <Check className="w-4 h-4 mr-2 transition-transform group-hover:scale-110" />
-                Save to Library
+                {isEditMode ? "Save Changes" : "Save to Library"}
               </>
             )}
           </Button>
