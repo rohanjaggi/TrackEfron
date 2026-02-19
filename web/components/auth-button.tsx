@@ -14,17 +14,18 @@ export async function AuthButton() {
   const displayName = fullName || user?.email?.split("@")[0] || "User";
 
   return user ? (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-muted-foreground hidden sm:inline">
-        Hey, <span className="text-foreground font-medium">{displayName}</span>!
-      </span>
-      <Link 
+    <div className="flex items-center gap-2">
+      <Link
         href="/protected/profile"
-        className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center hover:from-primary/30 hover:to-accent/30 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-muted transition-colors"
         title="View Profile"
       >
-        <User className="w-4 h-4" />
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+          <User className="w-3.5 h-3.5" />
+        </div>
+        <span className="text-sm font-medium hidden sm:inline">{displayName}</span>
       </Link>
+      <div className="w-px h-5 bg-border" />
       <LogoutButton />
     </div>
   ) : (

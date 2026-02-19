@@ -142,7 +142,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               </div>
             </div>
             <div className="font-display text-4xl font-bold mb-2">{stats.reviews}</div>
-            <p className="text-sm text-muted-foreground uppercase tracking-wider">Reviews Written</p>
+            <p className="text-sm text-muted-foreground uppercase tracking-wider">{stats.reviews === 1 ? "Review Written" : "Reviews Written"}</p>
           </div>
 
           <div className="text-center p-6 border-2 border-border">

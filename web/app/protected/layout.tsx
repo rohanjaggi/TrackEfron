@@ -65,7 +65,7 @@ export default function ProtectedLayout({
             </div>
 
             {/* Right Side */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
               <ThemeToggle />
               <Suspense>
                 <AuthButton />

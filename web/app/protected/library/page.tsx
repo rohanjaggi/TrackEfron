@@ -114,11 +114,11 @@ export default function LibraryPage() {
           </div>
           <div className="border-2 border-border p-4">
             <div className="text-2xl font-bold text-accent">{stats.movies}</div>
-            <p className="text-sm text-muted-foreground">Movies</p>
+            <p className="text-sm text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
           </div>
           <div className="border-2 border-border p-4">
             <div className="text-2xl font-bold text-secondary">{stats.tvShows}</div>
-            <p className="text-sm text-muted-foreground">TV Shows</p>
+            <p className="text-sm text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
           </div>
           <div className="border-2 border-border p-4">
             <div className="flex items-center gap-1">

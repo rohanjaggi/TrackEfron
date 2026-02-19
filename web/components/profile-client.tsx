@@ -1,21 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
-import { 
-  User, 
-  AtSign, 
-  Mail, 
-  Calendar, 
-  Film, 
-  Star, 
+import {
+  User,
+  AtSign,
+  Mail,
+  Calendar,
+  Film,
+  Star,
   Edit3,
   Check,
   X,
-  Camera
+  Camera,
+  BookOpen,
+  Clock,
+  Loader2
 } from "lucide-react";
 
 interface ProfileProps {
@@ -28,12 +31,11 @@ interface ProfileProps {
   };
 }
 
-// Mock stats - will be replaced with real data
-const mockStats = {
-  watched: 5,
-  reviews: 4,
-  avgRating: 9.0,
-  favouriteGenre: "Drama",
+type WatchLog = {
+  rating: number;
+  review: string | null;
+  media_type: "movie" | "tv";
+  created_at: string;
 };
 
 export function ProfileClient({ profile }: ProfileProps) {
@@ -43,6 +45,39 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
+  const [watchlistCount, setWatchlistCount] = useState(0);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const supabase = createClient();
+        const [logsRes, watchlistRes] = await Promise.all([
+          supabase.from("watch_logs").select("rating, review, media_type, created_at"),
+          supabase.from("watchlist").select("id", { count: "exact", head: true }),
+        ]);
+        setWatchLogs(logsRes.data || []);
+        setWatchlistCount(watchlistRes.count || 0);
+      } catch {
+        // silently fail
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    fetchStats();
+  }, []);
+
+  const stats = {
+    watched: watchLogs.length,
+    movies: watchLogs.filter((i) => i.media_type === "movie").length,
+    tvShows: watchLogs.filter((i) => i.media_type === "tv").length,
+    reviews: watchLogs.filter((i) => i.review && i.review.trim().length > 0).length,
+    avgRating: watchLogs.length > 0
+      ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
+      : "—",
+    watchlist: watchlistCount,
+  };
 
   const handleSave = async () => {
     const supabase = createClient();
@@ -134,28 +169,44 @@ export function ProfileClient({ profile }: ProfileProps) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="border-2 border-border p-5 text-center">
-          <Film className="w-6 h-6 text-primary mx-auto mb-2" />
-          <div className="text-2xl font-bold">{mockStats.watched}</div>
-          <p className="text-sm text-muted-foreground">Watched</p>
+      {statsLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
-        <div className="border-2 border-border p-5 text-center">
-          <Edit3 className="w-6 h-6 text-accent mx-auto mb-2" />
-          <div className="text-2xl font-bold">{mockStats.reviews}</div>
-          <p className="text-sm text-muted-foreground">Reviews</p>
+      ) : (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+          <div className="border-2 border-border p-5 text-center">
+            <Film className="w-5 h-5 text-primary mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.watched}</div>
+            <p className="text-xs text-muted-foreground">Watched</p>
+          </div>
+          <div className="border-2 border-border p-5 text-center">
+            <Film className="w-5 h-5 text-accent mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.movies}</div>
+            <p className="text-xs text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
+          </div>
+          <div className="border-2 border-border p-5 text-center">
+            <Film className="w-5 h-5 text-secondary mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.tvShows}</div>
+            <p className="text-xs text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
+          </div>
+          <div className="border-2 border-border p-5 text-center">
+            <BookOpen className="w-5 h-5 text-accent mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.reviews}</div>
+            <p className="text-xs text-muted-foreground">{stats.reviews === 1 ? "Review" : "Reviews"}</p>
+          </div>
+          <div className="border-2 border-border p-5 text-center">
+            <Star className="w-5 h-5 text-accent fill-accent mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.avgRating}</div>
+            <p className="text-xs text-muted-foreground">Avg Rating</p>
+          </div>
+          <div className="border-2 border-border p-5 text-center">
+            <Clock className="w-5 h-5 text-primary mx-auto mb-2" />
+            <div className="text-2xl font-bold">{stats.watchlist}</div>
+            <p className="text-xs text-muted-foreground">Watchlist</p>
+          </div>
         </div>
-        <div className="border-2 border-border p-5 text-center">
-          <Star className="w-6 h-6 text-accent fill-accent mx-auto mb-2" />
-          <div className="text-2xl font-bold">{mockStats.avgRating}</div>
-          <p className="text-sm text-muted-foreground">Avg Rating</p>
-        </div>
-        <div className="border-2 border-border p-5 text-center">
-          <div className="text-2xl mb-2">🎭</div>
-          <div className="text-lg font-bold">{mockStats.favouriteGenre}</div>
-          <p className="text-sm text-muted-foreground">Top Genre</p>
-        </div>
-      </div>
+      )}
 
       {/* Profile Details */}
       <div className="border-2 border-border p-6">
