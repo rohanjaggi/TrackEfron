@@ -2,7 +2,7 @@ import { AuthButton } from "@/components/auth-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Film, Home, Library, BookOpen, Clock, BarChart3 } from "lucide-react";
+import { Home, Library, BookOpen, Clock, BarChart3 } from "lucide-react";
 
 export default function ProtectedLayout({
   children,
