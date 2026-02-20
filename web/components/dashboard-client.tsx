@@ -5,15 +5,16 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
   Film,
+  Tv,
   Star,
   Plus,
   ChevronRight,
-  Tv,
   Clock,
   Target,
   Feather,
   Loader2,
-  BookOpen
+  BookOpen,
+  BarChart3
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -302,19 +303,19 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           <Button variant="outline" className="group h-auto py-6 flex-col gap-3 border-2" asChild>
             <Link href="/protected/log">
               <Plus className="w-6 h-6 transition-transform group-hover:rotate-90" />
-              <span className="font-semibold">Add Movie</span>
-            </Link>
-          </Button>
-          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
-            <Link href="/protected/log">
-              <Tv className="w-6 h-6" />
-              <span className="font-semibold">Add Series</span>
+              <span className="font-semibold">Log Watch</span>
             </Link>
           </Button>
           <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
             <Link href="/protected/discover">
               <Target className="w-6 h-6" />
               <span className="font-semibold">Discover</span>
+            </Link>
+          </Button>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+            <Link href="/protected/analytics">
+              <BarChart3 className="w-6 h-6" />
+              <span className="font-semibold">Analytics</span>
             </Link>
           </Button>
         </div>

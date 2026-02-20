@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   Pencil,
   Check,
   Trash2,
+  ListPlus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -70,6 +71,13 @@ type UserWatchLog = {
   casting_rating: number | null;
 };
 
+type UserListInfo = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  hasItem: boolean;
+};
+
 export default function MediaDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -87,6 +95,12 @@ export default function MediaDetailPage() {
   const [userDataLoading, setUserDataLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
+
+  // Lists state
+  const [userLists, setUserLists] = useState<UserListInfo[]>([]);
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const [togglingListId, setTogglingListId] = useState<string | null>(null);
+  const listDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch TMDB detail
   useEffect(() => {
@@ -121,7 +135,7 @@ export default function MediaDetailPage() {
 
         const tmdbId = Number(id);
 
-        const [logRes, wlRes] = await Promise.all([
+        const [logRes, wlRes, listsRes] = await Promise.all([
           supabase
             .from("watch_logs")
             .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
@@ -134,12 +148,42 @@ export default function MediaDetailPage() {
             .select("id")
             .eq("tmdb_id", tmdbId)
             .maybeSingle(),
+          supabase
+            .from("lists")
+            .select("id, name, emoji, list_items!inner(tmdb_id)")
+            .order("updated_at", { ascending: false }),
         ]);
 
         if (logRes.data) setWatchLog(logRes.data);
         if (wlRes.data) {
           setIsOnWatchlist(true);
           setWatchlistItemId(wlRes.data.id);
+        }
+
+        // Also fetch all lists (without inner join) to get lists that may be empty
+        const { data: allLists } = await supabase
+          .from("lists")
+          .select("id, name, emoji")
+          .order("updated_at", { ascending: false });
+
+        if (allLists) {
+          const itemsInLists = new Set<string>();
+          if (listsRes.data) {
+            for (const l of listsRes.data as any[]) {
+              const items = l.list_items || [];
+              if (items.some((i: any) => i.tmdb_id === tmdbId)) {
+                itemsInLists.add(l.id);
+              }
+            }
+          }
+          setUserLists(
+            allLists.map((l) => ({
+              id: l.id,
+              name: l.name,
+              emoji: l.emoji,
+              hasItem: itemsInLists.has(l.id),
+            }))
+          );
         }
       } catch {
         // silently fail
@@ -206,6 +250,51 @@ export default function MediaDetailPage() {
       setConfirmDelete(false);
     } catch {
       // silently fail
+    }
+  }
+
+  // Close list dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target as Node)) {
+        setShowListDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function handleToggleList(listId: string, currentlyHasItem: boolean) {
+    setTogglingListId(listId);
+    try {
+      const supabase = createClient();
+      if (currentlyHasItem) {
+        await supabase
+          .from("list_items")
+          .delete()
+          .eq("list_id", listId)
+          .eq("tmdb_id", Number(id));
+      } else {
+        const displayTitle = detail?.title || detail?.name || "Unknown";
+        const { error } = await supabase.from("list_items").insert({
+          list_id: listId,
+          tmdb_id: Number(id),
+          title: displayTitle,
+          media_type: type,
+          poster_url: detail?.poster_url || null,
+        });
+        if (error && error.code !== "23505") throw error;
+      }
+      // Update local state
+      setUserLists((prev) =>
+        prev.map((l) =>
+          l.id === listId ? { ...l, hasItem: !currentlyHasItem } : l
+        )
+      );
+    } catch {
+      // silently fail
+    } finally {
+      setTogglingListId(null);
     }
   }
 
@@ -327,6 +416,40 @@ export default function MediaDetailPage() {
                 >
                   <BookmarkPlus className="w-4 h-4 mr-2" /> Add to Watchlist
                 </Button>
+              )}
+            </div>
+          )}
+
+          {/* Add to List (always available) */}
+          {!userDataLoading && userLists.length > 0 && (
+            <div className="relative" ref={listDropdownRef}>
+              <Button
+                variant="outline"
+                className="w-full border-2"
+                onClick={() => setShowListDropdown(!showListDropdown)}
+              >
+                <ListPlus className="w-4 h-4 mr-2" /> Add to List
+              </Button>
+              {showListDropdown && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 border-2 border-border bg-card shadow-lg max-h-60 overflow-auto">
+                  {userLists.map((list) => (
+                    <button
+                      key={list.id}
+                      type="button"
+                      onClick={() => handleToggleList(list.id, list.hasItem)}
+                      disabled={togglingListId === list.id}
+                      className="w-full text-left px-4 py-3 hover:bg-muted flex items-center gap-3 transition-colors text-sm"
+                    >
+                      <span className="text-lg">{list.emoji || "🎬"}</span>
+                      <span className="flex-1 truncate">{list.name}</span>
+                      {togglingListId === list.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
+                      ) : list.hasItem ? (
+                        <Check className="w-4 h-4 text-primary shrink-0" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           )}

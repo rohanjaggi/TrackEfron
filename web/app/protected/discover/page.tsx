@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,7 +14,9 @@ import {
   TrendingUp,
   Zap,
   RefreshCw,
-  Loader2
+  Loader2,
+  BarChart3,
+  ChevronRight
 } from "lucide-react";
 
 // Mock recommendations - will be replaced with ML model data
@@ -433,49 +436,37 @@ export default function DiscoverPage() {
           </div>
 
           {/* Your Taste Profile */}
-          <div className="border-2 border-border p-6 bg-muted/10">
-            <h2 className="font-semibold mb-4">Your Taste Profile</h2>
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Drama</span>
-                  <span className="text-muted-foreground">85%</span>
-                </div>
-                <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full" style={{ width: "85%" }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Thriller</span>
-                  <span className="text-muted-foreground">72%</span>
-                </div>
-                <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
-                  <div className="h-full bg-accent rounded-full" style={{ width: "72%" }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Sci-Fi</span>
-                  <span className="text-muted-foreground">65%</span>
-                </div>
-                <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
-                  <div className="h-full bg-secondary rounded-full" style={{ width: "65%" }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Comedy</span>
-                  <span className="text-muted-foreground">45%</span>
-                </div>
-                <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary/60 rounded-full" style={{ width: "45%" }} />
-                </div>
-              </div>
+          <div className="border-2 border-dashed border-border p-6 bg-muted/10">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="w-4 h-4 text-primary" />
+              <h2 className="font-semibold">Your Taste Profile</h2>
             </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              Based on your ratings and watch history
+            <div className="space-y-3">
+              {[
+                { genre: "Drama", w: "75%" },
+                { genre: "Thriller", w: "60%" },
+                { genre: "Sci-Fi", w: "50%" },
+                { genre: "Comedy", w: "45%" },
+              ].map(({ genre, w }) => (
+                <div key={genre}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-muted-foreground">{genre}</span>
+                  </div>
+                  <div className="h-2 bg-muted/30 rounded-full overflow-hidden">
+                    <div className="h-full bg-muted/50 animate-pulse rounded-full" style={{ width: w }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-4 mb-3">
+              Genre breakdowns, category insights, and more
             </p>
+            <Link
+              href="/protected/analytics"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+            >
+              View Analytics <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
       </div>
