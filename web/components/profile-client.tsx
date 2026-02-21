@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { syncProfile } from "@/lib/sync-profile";
+import Link from "next/link";
 import {
   User,
   AtSign,
@@ -18,6 +20,7 @@ import {
   Camera,
   BookOpen,
   Clock,
+  Users,
   Loader2
 } from "lucide-react";
 
@@ -88,6 +91,7 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [success, setSuccess] = useState(false);
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [watchlistCount, setWatchlistCount] = useState(0);
+  const [friendsCount, setFriendsCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
@@ -100,6 +104,16 @@ export function ProfileClient({ profile }: ProfileProps) {
         ]);
         setWatchLogs(logsRes.data || []);
         setWatchlistCount(watchlistRes.count || 0);
+
+        // Count friends
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const [asReq, asAddr] = await Promise.all([
+            supabase.from("friendships").select("id", { count: "exact", head: true }).eq("requester_id", user.id).eq("status", "accepted"),
+            supabase.from("friendships").select("id", { count: "exact", head: true }).eq("addressee_id", user.id).eq("status", "accepted"),
+          ]);
+          setFriendsCount((asReq.count || 0) + (asAddr.count || 0));
+        }
       } catch {
         // silently fail
       } finally {
@@ -118,6 +132,7 @@ export function ProfileClient({ profile }: ProfileProps) {
       ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
       : "—",
     watchlist: watchlistCount,
+    friends: friendsCount,
   };
 
   const handleSave = async () => {
@@ -153,7 +168,10 @@ export function ProfileClient({ profile }: ProfileProps) {
       });
 
       if (error) throw error;
-      
+
+      // Keep profiles table in sync
+      await syncProfile(supabase);
+
       setSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSuccess(false), 3000);
@@ -213,6 +231,9 @@ export function ProfileClient({ profile }: ProfileProps) {
       });
 
       if (updateError) throw updateError;
+
+      // Keep profiles table in sync
+      await syncProfile(supabase);
 
       setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
       setProfileColor(dominantColor);
@@ -299,37 +320,46 @@ export function ProfileClient({ profile }: ProfileProps) {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
-          <div className="border-2 border-border p-5 text-center">
-            <Film className="w-5 h-5 text-primary mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.watched}</div>
-            <p className="text-xs text-muted-foreground">Watched</p>
+        <div className="space-y-4">
+          {/* Row 1: Core stats */}
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+            <div className="border-2 border-border p-5 text-center">
+              <Film className="w-5 h-5 text-primary mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.watched}</div>
+              <p className="text-xs text-muted-foreground">Watched</p>
+            </div>
+            <div className="border-2 border-border p-5 text-center">
+              <Film className="w-5 h-5 text-accent mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.movies}</div>
+              <p className="text-xs text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
+            </div>
+            <div className="border-2 border-border p-5 text-center">
+              <Film className="w-5 h-5 text-secondary mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.tvShows}</div>
+              <p className="text-xs text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
+            </div>
+            <div className="border-2 border-border p-5 text-center">
+              <BookOpen className="w-5 h-5 text-accent mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.reviews}</div>
+              <p className="text-xs text-muted-foreground">{stats.reviews === 1 ? "Review" : "Reviews"}</p>
+            </div>
+            <div className="border-2 border-border p-5 text-center">
+              <Star className="w-5 h-5 text-accent fill-accent mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.avgRating}</div>
+              <p className="text-xs text-muted-foreground">Avg Rating</p>
+            </div>
+            <div className="border-2 border-border p-5 text-center">
+              <Clock className="w-5 h-5 text-primary mx-auto mb-2" />
+              <div className="text-2xl font-bold">{stats.watchlist}</div>
+              <p className="text-xs text-muted-foreground">Watchlist</p>
+            </div>
           </div>
-          <div className="border-2 border-border p-5 text-center">
-            <Film className="w-5 h-5 text-accent mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.movies}</div>
-            <p className="text-xs text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
-          </div>
-          <div className="border-2 border-border p-5 text-center">
-            <Film className="w-5 h-5 text-secondary mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.tvShows}</div>
-            <p className="text-xs text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
-          </div>
-          <div className="border-2 border-border p-5 text-center">
-            <BookOpen className="w-5 h-5 text-accent mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.reviews}</div>
-            <p className="text-xs text-muted-foreground">{stats.reviews === 1 ? "Review" : "Reviews"}</p>
-          </div>
-          <div className="border-2 border-border p-5 text-center">
-            <Star className="w-5 h-5 text-accent fill-accent mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.avgRating}</div>
-            <p className="text-xs text-muted-foreground">Avg Rating</p>
-          </div>
-          <div className="border-2 border-border p-5 text-center">
-            <Clock className="w-5 h-5 text-primary mx-auto mb-2" />
-            <div className="text-2xl font-bold">{stats.watchlist}</div>
-            <p className="text-xs text-muted-foreground">Watchlist</p>
-          </div>
+          {/* Row 2: Friends */}
+          <Link href="/protected/friends" className="border-2 border-border p-5 flex items-center justify-center gap-4 hover:border-primary transition-colors">
+            <Users className="w-5 h-5 text-primary" />
+            <div className="text-2xl font-bold">{stats.friends}</div>
+            <p className="text-sm text-muted-foreground">{stats.friends === 1 ? "Friend" : "Friends"}</p>
+          </Link>
         </div>
       )}
 

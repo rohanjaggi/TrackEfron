@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,14 @@ function upscalePoster(url: string | null, size = "w500"): string | null {
 }
 
 export default function ListDetailPage() {
+  return (
+    <Suspense>
+      <ListDetailContent />
+    </Suspense>
+  );
+}
+
+function ListDetailContent() {
   const router = useRouter();
   const params = useParams();
   const listId = params.id as string;

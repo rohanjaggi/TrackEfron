@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,14 @@ type UserListInfo = {
 };
 
 export default function MediaDetailPage() {
+  return (
+    <Suspense>
+      <MediaDetailContent />
+    </Suspense>
+  );
+}
+
+function MediaDetailContent() {
   const params = useParams();
   const router = useRouter();
   const type = params.type as string;

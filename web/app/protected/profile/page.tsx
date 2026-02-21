@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { syncProfile } from "@/lib/sync-profile";
 import { ProfileClient } from "@/components/profile-client";
+import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
-async function getUserProfile() {
+async function ProfileLoader() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
@@ -10,7 +13,10 @@ async function getUserProfile() {
     redirect("/auth/login");
   }
 
-  return {
+  // Keep profiles table in sync with auth metadata
+  await syncProfile(supabase);
+
+  const profile = {
     id: user.id,
     email: user.email || "",
     fullName: user.user_metadata?.full_name || "",
@@ -19,10 +25,20 @@ async function getUserProfile() {
     profileColor: user.user_metadata?.profile_color || "",
     createdAt: user.created_at,
   };
-}
-
-export default async function ProfilePage() {
-  const profile = await getUserProfile();
 
   return <ProfileClient profile={profile} />;
+}
+
+export default function ProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <ProfileLoader />
+    </Suspense>
+  );
 }

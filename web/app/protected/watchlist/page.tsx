@@ -561,7 +561,7 @@ function WatchlistPageContent() {
               {filteredItems.map((item) => (
                 <div
                   key={item.id}
-                  className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer relative"
+                  className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer relative"
                   onClick={() => router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
                 >
                   <div className="aspect-[2/3] bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden">
@@ -615,7 +615,7 @@ function WatchlistPageContent() {
               {filteredItems.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex items-center gap-4 p-4 border-2 border-border hover:border-primary transition-all duration-300 cursor-pointer"
+                  className="group flex items-center gap-4 p-4 border-2 border-border hover:border-primary hover:translate-x-1 transition-all duration-300 cursor-pointer"
                   onClick={() => router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
                 >
                   <div className="w-16 h-24 flex-shrink-0 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 rounded-lg flex items-center justify-center overflow-hidden">
@@ -810,7 +810,7 @@ function WatchlistPageContent() {
                 return (
                   <div
                     key={list.id}
-                    className="group border-2 border-border p-5 hover:border-primary transition-all duration-300 cursor-pointer relative"
+                    className="group border-2 border-border p-5 hover:border-primary hover:-translate-y-1 hover:shadow-lg transition-all duration-300 cursor-pointer relative"
                     onClick={() => router.push(`/protected/lists/${list.id}`)}
                   >
                     <div className="flex items-start gap-3">

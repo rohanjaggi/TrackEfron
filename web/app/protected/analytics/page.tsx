@@ -47,12 +47,18 @@ export default function AnalyticsPage() {
             <h2 className="font-display text-xl font-bold">Rating Distribution</h2>
           </div>
           <div className="space-y-3">
-            {[5, 4, 3, 2, 1].map((rating) => (
+            {[
+              { rating: 5, w: "70%" },
+              { rating: 4, w: "55%" },
+              { rating: 3, w: "40%" },
+              { rating: 2, w: "30%" },
+              { rating: 1, w: "20%" },
+            ].map(({ rating, w }) => (
               <div key={rating} className="flex items-center gap-3">
                 <span className="text-sm font-medium w-4">{rating}</span>
                 <Star className="w-3.5 h-3.5 text-accent fill-accent" />
                 <div className="flex-1 h-6 bg-muted/30 rounded overflow-hidden">
-                  <div className="h-full bg-muted/50 animate-pulse rounded" style={{ width: `${Math.random() * 60 + 20}%` }} />
+                  <div className="h-full bg-muted/50 animate-pulse rounded" style={{ width: w }} />
                 </div>
               </div>
             ))}
@@ -95,15 +101,18 @@ export default function AnalyticsPage() {
             <h2 className="font-display text-xl font-bold">Monthly Activity</h2>
           </div>
           <div className="flex items-end gap-2 h-40 pt-4">
-            {Array.from({ length: 12 }).map((_, i) => (
+            {[
+              { m: "J", h: "45%" }, { m: "F", h: "60%" }, { m: "M", h: "35%" },
+              { m: "A", h: "80%" }, { m: "M", h: "50%" }, { m: "J", h: "70%" },
+              { m: "J", h: "90%" }, { m: "A", h: "40%" }, { m: "S", h: "55%" },
+              { m: "O", h: "65%" }, { m: "N", h: "75%" }, { m: "D", h: "30%" },
+            ].map(({ m, h }, i) => (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
                 <div
                   className="w-full bg-muted/50 animate-pulse rounded-t"
-                  style={{ height: `${Math.random() * 80 + 20}%` }}
+                  style={{ height: h }}
                 />
-                <span className="text-[10px] text-muted-foreground">
-                  {["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][i]}
-                </span>
+                <span className="text-[10px] text-muted-foreground">{m}</span>
               </div>
             ))}
           </div>

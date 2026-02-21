@@ -79,7 +79,10 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     avgRating: watchLogs.length > 0
       ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
       : "—",
-    thisMonth: watchLogs.filter((i) => i.created_at >= thisMonthStart).length,
+    thisMonth: watchLogs.filter((i) => {
+      const date = i.watched_date || i.created_at;
+      return date >= thisMonthStart;
+    }).length,
   };
 
   const recentWatches = watchLogs.slice(0, 5);
@@ -126,7 +129,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          <div className="text-center p-6 border-2 border-border">
+          <div className="text-center p-6 border-2 border-border hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="flex justify-center mb-4">
               <div className="w-12 h-12 border-2 border-primary flex items-center justify-center">
                 <Film className="w-6 h-6 text-primary" />
@@ -136,7 +139,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             <p className="text-sm text-muted-foreground uppercase tracking-wider">Total Watched</p>
           </div>
 
-          <div className="text-center p-6 border-2 border-border">
+          <div className="text-center p-6 border-2 border-border hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="flex justify-center mb-4">
               <div className="w-12 h-12 border-2 border-secondary flex items-center justify-center">
                 <BookOpen className="w-6 h-6 text-secondary" />
@@ -146,7 +149,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             <p className="text-sm text-muted-foreground uppercase tracking-wider">{stats.reviews === 1 ? "Review Written" : "Reviews Written"}</p>
           </div>
 
-          <div className="text-center p-6 border-2 border-border">
+          <div className="text-center p-6 border-2 border-border hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="flex justify-center mb-4">
               <div className="w-12 h-12 border-2 border-accent flex items-center justify-center">
                 <Star className="w-6 h-6 text-accent" />
@@ -156,7 +159,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             <p className="text-sm text-muted-foreground uppercase tracking-wider">Average Rating</p>
           </div>
 
-          <div className="text-center p-6 border-2 border-border">
+          <div className="text-center p-6 border-2 border-border hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="flex justify-center mb-4">
               <div className="w-12 h-12 border-2 border-primary flex items-center justify-center">
                 <Clock className="w-6 h-6 text-primary" />
@@ -201,7 +204,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                 <Link
                   key={item.id}
                   href={item.tmdb_id ? `/protected/media/${item.media_type}/${item.tmdb_id}` : "#"}
-                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 p-2 -mx-2 transition-colors cursor-pointer"
+                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 hover:translate-x-1 p-2 -mx-2 transition-all duration-200 cursor-pointer"
                 >
                   <div className="w-12 h-16 border border-primary/30 flex items-center justify-center flex-shrink-0 bg-primary/5 overflow-hidden">
                     {item.poster_url ? (
@@ -258,7 +261,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               {recommendations.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 p-2 -mx-2 transition-colors cursor-pointer"
+                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 hover:translate-x-1 p-2 -mx-2 transition-all duration-200 cursor-pointer"
                 >
                   <div className="w-12 h-16 border border-accent/30 flex items-center justify-center flex-shrink-0 bg-accent/5">
                     {item.type === "Movie" ? (
@@ -288,31 +291,31 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       <div className="border-t-2 border-border pt-8">
         <h3 className="font-display text-xl font-bold text-center mb-6">Quick Navigation</h3>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2 hover:-translate-y-1 hover:shadow-md transition-all duration-200" asChild>
             <Link href="/protected/library">
               <Film className="w-6 h-6" />
               <span className="font-semibold">Library</span>
             </Link>
           </Button>
-          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2 hover:-translate-y-1 hover:shadow-md transition-all duration-200" asChild>
             <Link href="/protected/watchlist">
               <Clock className="w-6 h-6" />
               <span className="font-semibold">Watchlist</span>
             </Link>
           </Button>
-          <Button variant="outline" className="group h-auto py-6 flex-col gap-3 border-2" asChild>
+          <Button variant="outline" className="group h-auto py-6 flex-col gap-3 border-2 hover:-translate-y-1 hover:shadow-md transition-all duration-200" asChild>
             <Link href="/protected/log">
               <Plus className="w-6 h-6 transition-transform group-hover:rotate-90" />
               <span className="font-semibold">Log Watch</span>
             </Link>
           </Button>
-          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2 hover:-translate-y-1 hover:shadow-md transition-all duration-200" asChild>
             <Link href="/protected/discover">
               <Target className="w-6 h-6" />
               <span className="font-semibold">Discover</span>
             </Link>
           </Button>
-          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2" asChild>
+          <Button variant="outline" className="h-auto py-6 flex-col gap-3 border-2 hover:-translate-y-1 hover:shadow-md transition-all duration-200" asChild>
             <Link href="/protected/analytics">
               <BarChart3 className="w-6 h-6" />
               <span className="font-semibold">Analytics</span>
