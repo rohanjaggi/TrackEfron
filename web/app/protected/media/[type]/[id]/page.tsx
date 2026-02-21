@@ -78,6 +78,19 @@ type UserListInfo = {
   hasItem: boolean;
 };
 
+type WatchProvider = {
+  logo_path: string;
+  provider_id: number;
+  provider_name: string;
+};
+
+type WatchProviders = {
+  flatrate?: WatchProvider[];
+  rent?: WatchProvider[];
+  buy?: WatchProvider[];
+  link?: string;
+};
+
 export default function MediaDetailPage() {
   return (
     <Suspense>
@@ -110,6 +123,9 @@ function MediaDetailContent() {
   const [togglingListId, setTogglingListId] = useState<string | null>(null);
   const listDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Watch providers
+  const [providers, setProviders] = useState<WatchProviders | null>(null);
+
   // Fetch TMDB detail
   useEffect(() => {
     if (type !== "movie" && type !== "tv") {
@@ -120,10 +136,20 @@ function MediaDetailContent() {
     async function fetchDetail() {
       try {
         setLoading(true);
-        const res = await fetch(`/api?action=detail&type=${type}&id=${id}`);
-        if (!res.ok) throw new Error("Failed to fetch details");
-        const data = await res.json();
+        const [detailRes, providersRes] = await Promise.all([
+          fetch(`/api?action=detail&type=${type}&id=${id}`),
+          fetch(`/api?action=providers&type=${type}&id=${id}`),
+        ]);
+        if (!detailRes.ok) throw new Error("Failed to fetch details");
+        const data = await detailRes.json();
         setDetail(data);
+
+        if (providersRes.ok) {
+          const provData = await providersRes.json();
+          // Use US providers by default, fallback to GB, AU
+          const regionData = provData.US || provData.GB || provData.AU || null;
+          setProviders(regionData);
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -461,6 +487,53 @@ function MediaDetailContent() {
               )}
             </div>
           )}
+
+          {/* Where to Watch */}
+          {providers && (providers.flatrate || providers.rent || providers.buy) && (() => {
+            // Deduplicate providers across categories, prioritising stream > rent > buy
+            const seen = new Set<number>();
+            const allProviders: (WatchProvider & { category: string })[] = [];
+            for (const [cat, list] of [
+              ["Stream", providers.flatrate],
+              ["Rent", providers.rent],
+              ["Buy", providers.buy],
+            ] as [string, WatchProvider[] | undefined][]) {
+              if (!list) continue;
+              for (const p of list) {
+                if (!seen.has(p.provider_id)) {
+                  seen.add(p.provider_id);
+                  allProviders.push({ ...p, category: cat });
+                }
+              }
+            }
+            if (allProviders.length === 0) return null;
+            return (
+              <div className="border-2 border-border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Where to Watch</h3>
+                  <a
+                    href={`https://www.justwatch.com/us/${isMovie ? "movie" : "tv-show"}/${displayTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <span className="font-semibold text-[#EEC12F]">JustWatch</span>
+                  </a>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allProviders.map((p) => (
+                    <img
+                      key={p.provider_id}
+                      src={`https://image.tmdb.org/t/p/w154${p.logo_path}`}
+                      alt={p.provider_name}
+                      title={`${p.provider_name} (${p.category})`}
+                      className="w-8 h-8 rounded border border-border object-cover"
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Info column */}

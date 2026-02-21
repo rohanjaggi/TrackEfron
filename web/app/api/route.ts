@@ -1,4 +1,4 @@
-import { searchMovieByName, searchSeriesByName, getTrending, getPoster, searchMulti, getMovieDetails, getTvDetails } from "@/lib/tmdb/tmdb";
+import { searchMovieByName, searchSeriesByName, getTrending, getPoster, searchMulti, getMovieDetails, getTvDetails, getMovieProviders, getTvProviders } from "@/lib/tmdb/tmdb";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -49,6 +49,20 @@ export async function GET(request: Request) {
         backdrop_url: detail.backdrop_path ? getPoster(detail.backdrop_path, "w1280") : null,
       };
       return NextResponse.json(enriched);
+    } catch (error: any) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
+  if (action === "providers") {
+    const id = Number(searchParams.get("id"));
+    const type = searchParams.get("type");
+    if (!id || (type !== "movie" && type !== "tv")) {
+      return NextResponse.json({ error: "Invalid id or type" }, { status: 400 });
+    }
+    try {
+      const results = type === "movie" ? await getMovieProviders(id) : await getTvProviders(id);
+      return NextResponse.json(results || {});
     } catch (error: any) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

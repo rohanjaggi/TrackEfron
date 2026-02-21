@@ -97,7 +97,7 @@ export function SignUpForm({
       </Link>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Sign up</CardTitle>
+          <CardTitle className="font-display text-2xl font-bold">Sign up</CardTitle>
           <CardDescription>Create your TrackEfron account</CardDescription>
         </CardHeader>
         <CardContent>

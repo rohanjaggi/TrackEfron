@@ -102,3 +102,33 @@ export async function getTrending() {
     const data = await response.json();
     return data.results;
 }
+
+export async function getMovieProviders(id: number) {
+    const url = `${baseUrl}/movie/${id}/watch/providers?api_key=${TMDB_API_KEY}`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function getTvProviders(id: number) {
+    const url = `${baseUrl}/tv/${id}/watch/providers?api_key=${TMDB_API_KEY}`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}

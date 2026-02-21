@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { User, Users, LogOut } from "lucide-react";
+import { User, Users, LogOut, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +28,7 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-muted transition-colors outline-none">
+        <button className="flex items-center gap-2 px-3 py-1.5 border border-transparent hover:border-border hover:bg-muted/50 transition-all duration-200 outline-none">
           <div className="w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
@@ -37,6 +37,7 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
             )}
           </div>
           <span className="text-sm font-medium hidden sm:inline">{displayName}</span>
+          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

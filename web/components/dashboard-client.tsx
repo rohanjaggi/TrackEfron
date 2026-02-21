@@ -57,6 +57,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         const { data, error } = await supabase
           .from("watch_logs")
           .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+          .order("watched_date", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false });
 
         if (error) throw error;
