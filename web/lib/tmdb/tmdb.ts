@@ -132,3 +132,92 @@ export async function getTvProviders(id: number) {
     const data = await response.json();
     return data.results;
 }
+
+export async function getNowPlaying() {
+    const url = `${baseUrl}/movie/now_playing?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function getUpcoming() {
+    const url = `${baseUrl}/movie/upcoming?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function getTopRated(type: "movie" | "tv") {
+    const url = `${baseUrl}/${type}/top_rated?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function discoverByGenre(type: "movie" | "tv", genreIds: string) {
+    const url = `${baseUrl}/discover/${type}?api_key=${TMDB_API_KEY}&with_genres=${genreIds}&sort_by=vote_average.desc&vote_count.gte=50&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function getSimilar(type: "movie" | "tv", id: number) {
+    const url = `${baseUrl}/${type}/${id}/similar?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function getPersonCredits(personId: number) {
+    const url = `${baseUrl}/person/${personId}/combined_credits?api_key=${TMDB_API_KEY}&language=en-US`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    return response.json();
+}
