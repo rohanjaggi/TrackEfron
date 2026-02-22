@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardClient } from "@/components/dashboard-client";
 import { Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
-async function getUserName() {
+async function DashboardLoader() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
@@ -11,15 +12,22 @@ async function getUserName() {
     redirect("/auth/login");
   }
 
-  // Get name from user metadata, fallback to email prefix
   const fullName = user.user_metadata?.full_name;
-  return fullName || user.email?.split("@")[0] || "User";
+  const userName = fullName || user.email?.split("@")[0] || "User";
+
+  return <DashboardClient userName={userName} />;
 }
 
-export default async function ProtectedPage() {
-  const userName = await getUserName();
-
+export default function ProtectedPage() {
   return (
-      <DashboardClient userName={userName} />
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <DashboardLoader />
+    </Suspense>
   );
 }

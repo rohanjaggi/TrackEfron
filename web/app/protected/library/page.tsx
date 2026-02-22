@@ -16,18 +16,32 @@ import {
   Loader2,
   Pencil,
   Trash2,
-  MoreVertical
+  MoreVertical,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 
 type ViewType = "grid" | "list";
 type FilterType = "all" | "movies" | "tv";
+type SortType = "date_watched_desc" | "date_watched_asc" | "rating_desc" | "rating_asc" | "title_asc" | "title_desc" | "date_added_desc" | "date_added_asc";
+
+const SORT_OPTIONS: { value: SortType; label: string }[] = [
+  { value: "date_watched_desc", label: "Date Watched (Newest)" },
+  { value: "date_watched_asc", label: "Date Watched (Oldest)" },
+  { value: "rating_desc", label: "Rating (Highest)" },
+  { value: "rating_asc", label: "Rating (Lowest)" },
+  { value: "title_asc", label: "Title (A–Z)" },
+  { value: "title_desc", label: "Title (Z–A)" },
+  { value: "date_added_desc", label: "Date Added (Newest)" },
+  { value: "date_added_asc", label: "Date Added (Oldest)" },
+];
 
 type WatchLog = {
   id: string;
@@ -50,6 +64,7 @@ export default function LibraryPage() {
   const router = useRouter();
   const [viewType, setViewType] = useState<ViewType>("grid");
   const [filter, setFilter] = useState<FilterType>("all");
+  const [sortBy, setSortBy] = useState<SortType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [watchedItems, setWatchedItems] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,16 +102,40 @@ export default function LibraryPage() {
     }
   }
 
-  const filteredItems = watchedItems.filter((item) => {
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "movies" && item.media_type === "movie") ||
-      (filter === "tv" && item.media_type === "tv");
+  const filteredItems = watchedItems
+    .filter((item) => {
+      const matchesFilter =
+        filter === "all" ||
+        (filter === "movies" && item.media_type === "movie") ||
+        (filter === "tv" && item.media_type === "tv");
 
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesFilter && matchesSearch;
-  });
+      return matchesFilter && matchesSearch;
+    })
+    .sort((a, b) => {
+      if (!sortBy) return 0;
+      switch (sortBy) {
+        case "date_watched_desc":
+          return (b.watched_date || b.created_at).localeCompare(a.watched_date || a.created_at);
+        case "date_watched_asc":
+          return (a.watched_date || a.created_at).localeCompare(b.watched_date || b.created_at);
+        case "rating_desc":
+          return Number(b.rating) - Number(a.rating);
+        case "rating_asc":
+          return Number(a.rating) - Number(b.rating);
+        case "title_asc":
+          return a.title.localeCompare(b.title);
+        case "title_desc":
+          return b.title.localeCompare(a.title);
+        case "date_added_desc":
+          return b.created_at.localeCompare(a.created_at);
+        case "date_added_asc":
+          return a.created_at.localeCompare(b.created_at);
+        default:
+          return 0;
+      }
+    });
 
   const stats = {
     total: watchedItems.length,
@@ -130,19 +169,19 @@ export default function LibraryPage() {
 
         {/* Stats Bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="border-2 border-border p-4">
+          <div className="border-2 border-border p-4 hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="text-2xl font-bold text-primary">{stats.total}</div>
             <p className="text-sm text-muted-foreground">Total Watched</p>
           </div>
-          <div className="border-2 border-border p-4">
+          <div className="border-2 border-border p-4 hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="text-2xl font-bold text-accent">{stats.movies}</div>
             <p className="text-sm text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
           </div>
-          <div className="border-2 border-border p-4">
+          <div className="border-2 border-border p-4 hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="text-2xl font-bold text-secondary">{stats.tvShows}</div>
             <p className="text-sm text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
           </div>
-          <div className="border-2 border-border p-4">
+          <div className="border-2 border-border p-4 hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
             <div className="flex items-center gap-1">
               <Star className="w-5 h-5 text-accent fill-accent" />
               <span className="text-2xl font-bold">{stats.avgRating}</span>
@@ -154,45 +193,43 @@ export default function LibraryPage() {
 
       {/* Filters & Search */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex items-center gap-2">
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1 border-2 border-border p-1">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                filter === "all"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilter("movies")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                filter === "movies"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Film className="w-4 h-4" />
-              Movies
-            </button>
-            <button
-              onClick={() => setFilter("tv")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                filter === "tv"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Tv className="w-4 h-4" />
-              TV Shows
-            </button>
-          </div>
+        {/* Filter Tabs */}
+        <div className="flex items-center gap-1 border-2 border-border p-1">
+          <button
+            onClick={() => setFilter("all")}
+            className={`px-4 py-2 text-sm font-medium transition-all ${
+              filter === "all"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilter("movies")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all ${
+              filter === "movies"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Film className="w-4 h-4" />
+            Movies
+          </button>
+          <button
+            onClick={() => setFilter("tv")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all ${
+              filter === "tv"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Tv className="w-4 h-4" />
+            TV Shows
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           {/* Search */}
           <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -204,11 +241,45 @@ export default function LibraryPage() {
             />
           </div>
 
+          {/* Sort Icon */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={`p-2.5 border-2 transition-all duration-200 ${
+                  sortBy
+                    ? "border-primary text-primary hover:bg-primary/10"
+                    : "border-border text-muted-foreground hover:text-foreground hover:border-primary"
+                }`}
+                title="Sort"
+              >
+                <ArrowUpDown className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() => setSortBy(null)}
+                className={!sortBy ? "bg-primary/10 text-primary" : ""}
+              >
+                Default
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {SORT_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onSelect={() => setSortBy(option.value)}
+                  className={sortBy === option.value ? "bg-primary/10 text-primary" : ""}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* View Toggle */}
           <div className="flex items-center gap-1 bg-card/50 border border-border/50 rounded-lg p-1">
             <button
               onClick={() => setViewType("grid")}
-              className={`p-2 rounded transition-colors ${
+              className={`p-2 rounded transition-all ${
                 viewType === "grid"
                   ? "bg-primary/20 text-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -219,7 +290,7 @@ export default function LibraryPage() {
             </button>
             <button
               onClick={() => setViewType("list")}
-              className={`p-2 rounded transition-colors ${
+              className={`p-2 rounded transition-all ${
                 viewType === "list"
                   ? "bg-primary/20 text-primary"
                   : "text-muted-foreground hover:text-foreground"
@@ -264,7 +335,7 @@ export default function LibraryPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer"
+              className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer"
               onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
             >
               {/* Poster */}
@@ -273,7 +344,7 @@ export default function LibraryPage() {
                   <img
                     src={upscalePoster(item.poster_url)!}
                     alt={item.title}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                 ) : item.media_type === "movie" ? (
                   <Film className="w-12 h-12 text-white/50" />
@@ -341,7 +412,7 @@ export default function LibraryPage() {
           {filteredItems.map((item) => (
             <div
               key={item.id}
-              className="group flex items-start gap-4 p-4 border-2 border-border hover:border-primary transition-all duration-300 cursor-pointer"
+              className="group flex items-start gap-4 p-4 border-2 border-border hover:border-primary hover:translate-x-1 transition-all duration-300 cursor-pointer"
               onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
             >
               {/* Poster Thumbnail */}

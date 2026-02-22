@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   Pencil,
   Check,
   Trash2,
+  ListPlus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -70,7 +71,35 @@ type UserWatchLog = {
   casting_rating: number | null;
 };
 
+type UserListInfo = {
+  id: string;
+  name: string;
+  emoji: string | null;
+  hasItem: boolean;
+};
+
+type WatchProvider = {
+  logo_path: string;
+  provider_id: number;
+  provider_name: string;
+};
+
+type WatchProviders = {
+  flatrate?: WatchProvider[];
+  rent?: WatchProvider[];
+  buy?: WatchProvider[];
+  link?: string;
+};
+
 export default function MediaDetailPage() {
+  return (
+    <Suspense>
+      <MediaDetailContent />
+    </Suspense>
+  );
+}
+
+function MediaDetailContent() {
   const params = useParams();
   const router = useRouter();
   const type = params.type as string;
@@ -88,6 +117,15 @@ export default function MediaDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
 
+  // Lists state
+  const [userLists, setUserLists] = useState<UserListInfo[]>([]);
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const [togglingListId, setTogglingListId] = useState<string | null>(null);
+  const listDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Watch providers
+  const [providers, setProviders] = useState<WatchProviders | null>(null);
+
   // Fetch TMDB detail
   useEffect(() => {
     if (type !== "movie" && type !== "tv") {
@@ -98,10 +136,20 @@ export default function MediaDetailPage() {
     async function fetchDetail() {
       try {
         setLoading(true);
-        const res = await fetch(`/api?action=detail&type=${type}&id=${id}`);
-        if (!res.ok) throw new Error("Failed to fetch details");
-        const data = await res.json();
+        const [detailRes, providersRes] = await Promise.all([
+          fetch(`/api?action=detail&type=${type}&id=${id}`),
+          fetch(`/api?action=providers&type=${type}&id=${id}`),
+        ]);
+        if (!detailRes.ok) throw new Error("Failed to fetch details");
+        const data = await detailRes.json();
         setDetail(data);
+
+        if (providersRes.ok) {
+          const provData = await providersRes.json();
+          // Use US providers by default, fallback to GB, AU
+          const regionData = provData.US || provData.GB || provData.AU || null;
+          setProviders(regionData);
+        }
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -121,7 +169,7 @@ export default function MediaDetailPage() {
 
         const tmdbId = Number(id);
 
-        const [logRes, wlRes] = await Promise.all([
+        const [logRes, wlRes, listsRes] = await Promise.all([
           supabase
             .from("watch_logs")
             .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
@@ -134,12 +182,42 @@ export default function MediaDetailPage() {
             .select("id")
             .eq("tmdb_id", tmdbId)
             .maybeSingle(),
+          supabase
+            .from("lists")
+            .select("id, name, emoji, list_items!inner(tmdb_id)")
+            .order("updated_at", { ascending: false }),
         ]);
 
         if (logRes.data) setWatchLog(logRes.data);
         if (wlRes.data) {
           setIsOnWatchlist(true);
           setWatchlistItemId(wlRes.data.id);
+        }
+
+        // Also fetch all lists (without inner join) to get lists that may be empty
+        const { data: allLists } = await supabase
+          .from("lists")
+          .select("id, name, emoji")
+          .order("updated_at", { ascending: false });
+
+        if (allLists) {
+          const itemsInLists = new Set<string>();
+          if (listsRes.data) {
+            for (const l of listsRes.data as any[]) {
+              const items = l.list_items || [];
+              if (items.some((i: any) => i.tmdb_id === tmdbId)) {
+                itemsInLists.add(l.id);
+              }
+            }
+          }
+          setUserLists(
+            allLists.map((l) => ({
+              id: l.id,
+              name: l.name,
+              emoji: l.emoji,
+              hasItem: itemsInLists.has(l.id),
+            }))
+          );
         }
       } catch {
         // silently fail
@@ -206,6 +284,51 @@ export default function MediaDetailPage() {
       setConfirmDelete(false);
     } catch {
       // silently fail
+    }
+  }
+
+  // Close list dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target as Node)) {
+        setShowListDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  async function handleToggleList(listId: string, currentlyHasItem: boolean) {
+    setTogglingListId(listId);
+    try {
+      const supabase = createClient();
+      if (currentlyHasItem) {
+        await supabase
+          .from("list_items")
+          .delete()
+          .eq("list_id", listId)
+          .eq("tmdb_id", Number(id));
+      } else {
+        const displayTitle = detail?.title || detail?.name || "Unknown";
+        const { error } = await supabase.from("list_items").insert({
+          list_id: listId,
+          tmdb_id: Number(id),
+          title: displayTitle,
+          media_type: type,
+          poster_url: detail?.poster_url || null,
+        });
+        if (error && error.code !== "23505") throw error;
+      }
+      // Update local state
+      setUserLists((prev) =>
+        prev.map((l) =>
+          l.id === listId ? { ...l, hasItem: !currentlyHasItem } : l
+        )
+      );
+    } catch {
+      // silently fail
+    } finally {
+      setTogglingListId(null);
     }
   }
 
@@ -330,6 +453,87 @@ export default function MediaDetailPage() {
               )}
             </div>
           )}
+
+          {/* Add to List (always available) */}
+          {!userDataLoading && userLists.length > 0 && (
+            <div className="relative" ref={listDropdownRef}>
+              <Button
+                variant="outline"
+                className="w-full border-2"
+                onClick={() => setShowListDropdown(!showListDropdown)}
+              >
+                <ListPlus className="w-4 h-4 mr-2" /> Add to List
+              </Button>
+              {showListDropdown && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 border-2 border-border bg-card shadow-lg max-h-60 overflow-auto">
+                  {userLists.map((list) => (
+                    <button
+                      key={list.id}
+                      type="button"
+                      onClick={() => handleToggleList(list.id, list.hasItem)}
+                      disabled={togglingListId === list.id}
+                      className="w-full text-left px-4 py-3 hover:bg-muted flex items-center gap-3 transition-colors text-sm"
+                    >
+                      <span className="text-lg">{list.emoji || "🎬"}</span>
+                      <span className="flex-1 truncate">{list.name}</span>
+                      {togglingListId === list.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
+                      ) : list.hasItem ? (
+                        <Check className="w-4 h-4 text-primary shrink-0" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Where to Watch */}
+          {providers && (providers.flatrate || providers.rent || providers.buy) && (() => {
+            // Deduplicate providers across categories, prioritising stream > rent > buy
+            const seen = new Set<number>();
+            const allProviders: (WatchProvider & { category: string })[] = [];
+            for (const [cat, list] of [
+              ["Stream", providers.flatrate],
+              ["Rent", providers.rent],
+              ["Buy", providers.buy],
+            ] as [string, WatchProvider[] | undefined][]) {
+              if (!list) continue;
+              for (const p of list) {
+                if (!seen.has(p.provider_id)) {
+                  seen.add(p.provider_id);
+                  allProviders.push({ ...p, category: cat });
+                }
+              }
+            }
+            if (allProviders.length === 0) return null;
+            return (
+              <div className="border-2 border-border p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider">Where to Watch</h3>
+                  <a
+                    href={`https://www.justwatch.com/us/${isMovie ? "movie" : "tv-show"}/${displayTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <span className="font-semibold text-[#EEC12F]">JustWatch</span>
+                  </a>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {allProviders.map((p) => (
+                    <img
+                      key={p.provider_id}
+                      src={`https://image.tmdb.org/t/p/w154${p.logo_path}`}
+                      alt={p.provider_name}
+                      title={`${p.provider_name} (${p.category})`}
+                      className="w-8 h-8 rounded border border-border object-cover"
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Info column */}

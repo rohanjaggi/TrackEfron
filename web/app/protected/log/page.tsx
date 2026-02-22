@@ -45,7 +45,7 @@ function LogWatchForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
-  const [isEditMode, setIsEditMode] = useState(false);
+  const isEditMode = !!editId;
   const [editLoading, setEditLoading] = useState(!!editId);
   const [mediaType, setMediaType] = useState<MediaType | null>(null);
   const [title, setTitle] = useState("");
@@ -200,7 +200,6 @@ function LogWatchForm() {
           .eq("id", editId)
           .single();
         if (data) {
-          setIsEditMode(true);
           setMediaType(data.media_type);
           setTitle(data.title);
           setRating(data.rating);
