@@ -23,6 +23,8 @@ import {
   Zap,
   RefreshCw,
   Compass,
+  Bookmark,
+  BookmarkCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -72,69 +74,63 @@ const DEFAULT_GENRE_PILLS = [
   { id: 99, name: "Documentary" },
 ];
 
-// Mock recommendations — placeholder for ML model
-const mockRecommendations = [
-  {
-    id: 1,
-    title: "Better Call Saul",
-    type: "TV Show",
-    year: 2015,
-    rating: 9.0,
-    matchScore: 98,
-    reason: "Because you loved Breaking Bad",
-    genres: ["Drama", "Crime"],
-  },
-  {
-    id: 2,
-    title: "The Dark Knight",
-    type: "Movie",
-    year: 2008,
-    rating: 9.0,
-    matchScore: 95,
-    reason: "Similar to Inception",
-    genres: ["Action", "Crime", "Drama"],
-  },
-  {
-    id: 3,
-    title: "Succession",
-    type: "TV Show",
-    year: 2018,
-    rating: 8.9,
-    matchScore: 92,
-    reason: "Based on your drama preferences",
-    genres: ["Drama", "Comedy"],
-  },
-  {
-    id: 4,
-    title: "Dune",
-    type: "Movie",
-    year: 2021,
-    rating: 8.0,
-    matchScore: 89,
-    reason: "Similar to Interstellar",
-    genres: ["Sci-Fi", "Adventure"],
-  },
-  {
-    id: 5,
-    title: "Severance",
-    type: "TV Show",
-    year: 2022,
-    rating: 8.7,
-    matchScore: 87,
-    reason: "Mind-bending like your favourites",
-    genres: ["Drama", "Mystery", "Sci-Fi"],
-  },
-  {
-    id: 6,
-    title: "Oppenheimer",
-    type: "Movie",
-    year: 2023,
-    rating: 8.4,
-    matchScore: 85,
-    reason: "From the director of Inception",
-    genres: ["Biography", "Drama", "History"],
-  },
-];
+
+// ─── RecMediaCard — MediaCard variant with inline watchlist button ───
+
+function RecMediaCard({
+  item,
+  onClick,
+  onWatchlist,
+  watchlisted,
+}: {
+  item: MediaItem;
+  onClick: (item: MediaItem) => void;
+  onWatchlist: (item: MediaItem) => void;
+  watchlisted: boolean;
+}) {
+  const title = item.title || item.name || "Untitled";
+  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+  return (
+    <div className="shrink-0 w-[130px] md:w-[150px] group">
+      <div className="relative cursor-pointer" onClick={() => onClick(item)}>
+        {item.poster_url ? (
+          <img
+            src={item.poster_url}
+            alt={title}
+            className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
+          />
+        ) : (
+          <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
+            <Film className="w-6 h-6 text-muted-foreground/50" />
+          </div>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onWatchlist(item); }}
+          disabled={watchlisted}
+          className="absolute top-1.5 right-1.5 w-6 h-6 bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors disabled:text-primary"
+          title={watchlisted ? "On watchlist" : "Add to watchlist"}
+        >
+          {watchlisted
+            ? <BookmarkCheck className="w-3 h-3 text-primary" />
+            : <Bookmark className="w-3 h-3" />}
+        </button>
+      </div>
+      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-primary transition-colors cursor-pointer" onClick={() => onClick(item)}>
+        {title}
+      </p>
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        {year && <span>{year}</span>}
+        {year && item.vote_average != null && item.vote_average > 0 && <span>·</span>}
+        {item.vote_average != null && item.vote_average > 0 && (
+          <span className="flex items-center gap-0.5">
+            <Star className="w-2.5 h-2.5 text-accent fill-accent" />
+            {item.vote_average.toFixed(1)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─── Shared Components ───
 
@@ -317,6 +313,37 @@ export default function DiscoverPage() {
 
   // Browse data fetched flag
   const [browseFetched, setBrowseFetched] = useState(false);
+
+  // ML recommendations (For You tab)
+  const [mlRecs, setMlRecs] = useState<MediaItem[]>([]);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [mlFetched, setMlFetched] = useState(false);
+  const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
+  const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
+
+  // ─── Fetch ML recommendations (lazy — only when For You tab is first opened) ───
+  useEffect(() => {
+    if (activeTab !== "for-you" || mlFetched) return;
+    setMlFetched(true);
+    setMlLoading(true);
+
+    async function fetchMlRecs() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
+        const data = await res.json();
+        if (Array.isArray(data)) setMlRecs(data);
+      } catch {
+        // silently fail — ML backend may not be running
+      } finally {
+        setMlLoading(false);
+      }
+    }
+
+    fetchMlRecs();
+  }, [activeTab, mlFetched]);
 
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
@@ -539,6 +566,38 @@ export default function DiscoverPage() {
   }, []);
 
   // ─── Handlers ───
+
+  async function handleAddMlToWatchlist(item: MediaItem) {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("watchlist").insert({
+        user_id: user.id,
+        tmdb_id: item.id,
+        title: item.title || item.name || "Untitled",
+        media_type: item.media_type,
+        poster_url: item.poster_url || null,
+      });
+      setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
+    } catch {
+      // silently fail (e.g. duplicate)
+    }
+  }
+
+  async function handleRefreshMlRecs() {
+    setMlLoading(true);
+    setRefreshStatus("idle");
+    try {
+      const res = await fetch("/api?action=refresh_profile", { method: "POST" });
+      setRefreshStatus(res.ok ? "ok" : "error");
+    } catch {
+      setRefreshStatus("error");
+    }
+    setMlRecs([]);
+    setMlFetched(false);
+  }
+
   async function handleGenreClick(genre: { id: number; name: string }) {
     if (selectedGenre?.id === genre.id) {
       setSelectedGenre(null);
@@ -670,72 +729,64 @@ export default function DiscoverPage() {
               <Zap className="w-5 h-5 text-primary" />
               <h2 className="text-xl font-semibold">Recommended For You</h2>
             </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
-
-          {/* Placeholder banner */}
-          <div className="border-2 border-dashed border-border p-6 bg-muted/5 text-center">
-            <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
-            <p className="text-sm font-medium mb-1">ML-Powered Recommendations Coming Soon</p>
-            <p className="text-xs text-muted-foreground max-w-md mx-auto">
-              Personalised picks trained on your watch history, ratings, and taste profile. For now, here are some sample recommendations.
-            </p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mockRecommendations.map((item) => (
-              <div
-                key={item.id}
-                className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer"
+            <div className="flex items-center gap-2">
+              {refreshStatus === "ok" && !mlLoading && (
+                <span className="text-xs text-green-500">Updated</span>
+              )}
+              {refreshStatus === "error" && !mlLoading && (
+                <span className="text-xs text-destructive">Refresh failed — ML server may be down</span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={handleRefreshMlRecs}
+                disabled={mlLoading}
               >
-                {/* Poster Area */}
-                <div className="aspect-[16/9] bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative">
-                  {item.type === "Movie" ? (
-                    <Film className="w-10 h-10 text-white/20" />
-                  ) : (
-                    <Tv className="w-10 h-10 text-white/20" />
-                  )}
-                  <div className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5">
-                    {item.matchScore}% match
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="p-4 space-y-2.5">
-                  <div>
-                    <h3 className="font-semibold group-hover:text-primary transition-colors">
-                      {item.title}
-                    </h3>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                      <span>{item.type}</span>
-                      <span>·</span>
-                      <span>{item.year}</span>
-                      <span>·</span>
-                      <span className="flex items-center gap-0.5">
-                        <Star className="w-2.5 h-2.5 text-accent fill-accent" />
-                        {item.rating}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-primary/70 italic">
-                    &ldquo;{item.reason}&rdquo;
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.genres.map((genre) => (
-                      <span key={genre} className="text-[10px] bg-muted/50 text-muted-foreground px-2 py-0.5">
-                        {genre}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
+                <RefreshCw className={`w-4 h-4 mr-2 ${mlLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
+
+          {mlLoading ? (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
+              </div>
+              <div className="flex gap-3 overflow-x-hidden pb-1">
+                {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+            </div>
+          ) : mlRecs.length === 0 ? (
+            <div className="border-2 border-dashed border-border p-8 text-center">
+              <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
+              <p className="text-sm font-medium mb-1">Log 5 or more watches to unlock personalised picks</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                The ML engine needs enough signal to build your taste profile. Keep logging!
+              </p>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
+                <p className="text-xs text-muted-foreground">{mlRecs.length} personalised recommendations</p>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+                {mlRecs.map((item) => (
+                  <RecMediaCard
+                    key={`ml-${item.id}`}
+                    item={item}
+                    onClick={handleItemClick}
+                    onWatchlist={handleAddMlToWatchlist}
+                    watchlisted={mlWatchlistedIds.has(item.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

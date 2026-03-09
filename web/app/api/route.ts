@@ -149,6 +149,43 @@ export async function GET(request: Request) {
     }
   }
 
+  if (action === "recommend") {
+    const userId = searchParams.get("user_id");
+    if (!userId) return NextResponse.json([]);
+    const mlApiUrl = process.env.ML_API_URL || "http://localhost:8000";
+    try {
+      const mlRes = await fetch(`${mlApiUrl}/recommend/${userId}/items`, {
+        signal: AbortSignal.timeout(10000),
+        cache: "no-store",
+      });
+      if (!mlRes.ok) return NextResponse.json([]);
+      const { items } = await mlRes.json();
+      if (!Array.isArray(items) || items.length === 0) return NextResponse.json([]);
+      const enriched = await Promise.all(
+        items.map(async ({ tmdb_id, media_type }: { tmdb_id: number; media_type: string }) => {
+          try {
+            const d = media_type === "movie"
+              ? await getMovieDetails(tmdb_id)
+              : await getTvDetails(tmdb_id);
+            return {
+              id: tmdb_id,
+              media_type,
+              title: d.title || d.name || "Untitled",
+              poster_url: d.poster_path ? getPoster(d.poster_path, "w342") : null,
+              vote_average: d.vote_average || null,
+              release_date: d.release_date || d.first_air_date || null,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+      return NextResponse.json(enriched.filter(Boolean));
+    } catch {
+      return NextResponse.json([]);
+    }
+  }
+
   if (action === "person_credits") {
     const id = Number(searchParams.get("id"));
     if (!id) {
@@ -195,4 +232,28 @@ export async function GET(request: Request) {
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+export async function POST(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const action = searchParams.get("action");
+
+  if (action === "refresh_profile") {
+    const mlApiUrl = process.env.ML_API_URL || "http://localhost:8000";
+    try {
+      const res = await fetch(`${mlApiUrl}/refresh-profile`, {
+        method: "POST",
+        signal: AbortSignal.timeout(120000), // 2 min max
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return NextResponse.json({ error: (err as any).detail || "refresh failed" }, { status: 500 });
+      }
+      return NextResponse.json({ status: "ok" });
+    } catch {
+      return NextResponse.json({ error: "ML backend unavailable" }, { status: 503 });
+    }
+  }
+
+  return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }
