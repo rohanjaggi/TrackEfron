@@ -392,6 +392,7 @@ def run_profiles_only() -> None:
                 new_catalog["num_votes"] = np.nan
 
         catalog = pd.concat([catalog, new_catalog], ignore_index=True)
+        catalog = catalog.drop_duplicates(subset=["tmdb_id"], keep="last").reset_index(drop=True)
         catalog.to_parquet(PROCESSED_DIR / "catalog.parquet", index=False)
         print(f"  Catalog expanded: {len(catalog)} items")
 

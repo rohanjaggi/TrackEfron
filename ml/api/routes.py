@@ -82,8 +82,15 @@ def refresh_profile() -> RetrainResponse:
     - Rebuilds user_profiles.pkl
     """
     ml_dir = Path(__file__).parent.parent
+    # Check ml-local venv first, then root project venv
     venv_python = ml_dir / ".venv" / "bin" / "python3"
-    python = str(venv_python) if venv_python.exists() else "python3"
+    root_venv_python = ml_dir.parent / ".venv" / "bin" / "python3"
+    if venv_python.exists():
+        python = str(venv_python)
+    elif root_venv_python.exists():
+        python = str(root_venv_python)
+    else:
+        python = "python3"
 
     for script, extra in [
         ("src/fetch_user_data.py", []),

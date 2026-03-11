@@ -83,7 +83,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         if (!user) return;
         const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
         const data = await res.json();
-        if (Array.isArray(data)) setRecs(data.slice(0, 3));
+        if (Array.isArray(data)) setRecs(data.slice(0, 5));
       } catch {
         // silently fail — ML backend may not be running
       } finally {
@@ -292,7 +292,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
           {recsLoading ? (
             <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
+              {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 p-2 -mx-2">
                   <div className="w-12 h-16 bg-muted/20 animate-pulse shrink-0" />
                   <div className="flex-1 space-y-2 pt-1">

@@ -58,7 +58,7 @@ def _load_artifacts() -> dict:
 
         tmdb_to_row = dict(zip(item_index["tmdb_id"].tolist(), range(len(item_index))))
         tmdb_to_svd = dict(zip(svd_idx["tmdb_id"].tolist(), range(len(svd_idx))))
-        catalog_map = catalog.set_index("tmdb_id")
+        catalog_map = catalog.drop_duplicates(subset=["tmdb_id"], keep="last").set_index("tmdb_id")
 
         _static = {
             "item_vectors": item_vectors,
@@ -155,11 +155,9 @@ def _stream1_content(profile: dict, art: dict, n: int) -> list[int]:
 
 def _stream2_collab(profile: dict, art: dict, n: int) -> list[int]:
     """
-    cold/warming users:
-      movies → nearest neighbors in MovieLens SVD embedding space
-      TV     → pre-cached TMDB recommendation IDs from catalog
-    full users:
-      same, but n is smaller (own data has taken over; collab fills gaps only)
+    Hybrid collaborative retrieval:
+      1. Movies with MovieLens coverage → SVD nearest neighbors (strongest signal)
+      2. All liked items → TMDB recommendation graph (covers post-2019 movies + TV)
 
     For SVD nearest-neighbor search: average the SVD embeddings of the user's
     liked items to form a "collab taste vector", then search the SVD index.
@@ -167,7 +165,7 @@ def _stream2_collab(profile: dict, art: dict, n: int) -> list[int]:
     candidates: list[int] = []
     liked_ids = profile["hard_positive_ids"] + profile["soft_positive_ids"]
 
-    # ── Movies: SVD nearest neighbors ────────────────────────────────────
+    # ── Movies: SVD nearest neighbors (pre-2019 MovieLens coverage) ──────
     liked_svd_rows = [
         art["svd_emb"][art["tmdb_to_svd"][tid]]
         for tid in liked_ids
@@ -189,15 +187,13 @@ def _stream2_collab(profile: dict, art: dict, n: int) -> list[int]:
         svd_tmdb_ids = art["svd_idx"]["tmdb_id"].tolist()
         candidates += [svd_tmdb_ids[i] for i in indices[0] if i >= 0]
 
-    # ── TV: TMDB pre-cached recommendation IDs ────────────────────────────
+    # ── TMDB recs graph (movies + TV, covers post-2019 + all TV) ─────────
     for tid in liked_ids:
         if tid not in art["catalog_map"].index:
             continue
         row = art["catalog_map"].loc[tid]
-        if row.get("media_type") == "tv":
-            raw = row.get("tv_rec_ids")
-            rec_ids = _as_list(raw)
-            candidates += [int(r) for r in rec_ids[:n]]
+        rec_ids = _as_list(row.get("tmdb_rec_ids"))
+        candidates += [int(r) for r in rec_ids[:n]]
 
     return candidates[:n]
 

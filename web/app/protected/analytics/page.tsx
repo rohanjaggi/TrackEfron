@@ -14,9 +14,6 @@ import {
   Radar,
   Clock,
   Clapperboard,
-  Sparkles,
-  CheckCircle2,
-  Circle,
 } from "lucide-react";
 import {
   BarChart,
@@ -899,71 +896,6 @@ export default function AnalyticsPage() {
           </div>
         </>
       )}
-
-      {/* ─── RECOMMENDATION ENGINE ─── */}
-      {(() => {
-        const reviewCount = watchLogs.length;
-        const hasReviews = reviewCount > 0;
-        const hasTextReviews = watchLogs.some((l) => l.review && l.review.trim().length > 0);
-
-        const coldState =
-          reviewCount === 0 ? "No Data Yet"
-          : reviewCount < 5 ? "Cold Start"
-          : reviewCount < 15 ? "Warming Up"
-          : "Full Profile";
-
-        const progressPct = Math.min((reviewCount / 15) * 100, 100);
-
-        const nextMilestone =
-          reviewCount === 0 ? "Log your first watch to start building your taste profile"
-          : reviewCount < 5 ? `${5 - reviewCount} more ${5 - reviewCount === 1 ? "log" : "logs"} to unlock content & collaborative recommendations`
-          : reviewCount < 15 ? `${15 - reviewCount} more ${15 - reviewCount === 1 ? "log" : "logs"} to unlock full personalisation`
-          : "Full personalisation active — all signals running";
-
-        const signals = [
-          { label: "Popularity", description: "High-rated titles as a baseline", active: true },
-          { label: "Content Similarity", description: "Matches genre, cast, and themes", active: hasReviews },
-          { label: "Collaborative Filter", description: "What similar users enjoyed", active: hasReviews },
-          { label: "Aspect Alignment", description: "Weighted by plot, acting, pacing, etc.", active: reviewCount >= 5 },
-          { label: "Review Text", description: "NLP match on your written reviews", active: hasTextReviews },
-          { label: "Watchlist Signal", description: "Titles similar to your watchlist", active: hasReviews },
-        ];
-
-        return (
-          <>
-            <SectionHeader icon={Sparkles} title="Recommendation Engine" subtitle="Your ML personalisation status" />
-            <Card>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-semibold">{coldState}</span>
-                <span className="text-xs text-muted-foreground">{reviewCount} {reviewCount === 1 ? "log" : "logs"}</span>
-              </div>
-              <div className="w-full h-2 bg-muted/30 overflow-hidden mb-2">
-                <div
-                  className="h-full bg-primary transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mb-5">{nextMilestone}</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {signals.map((s) => (
-                  <div
-                    key={s.label}
-                    className={`p-3 border flex gap-2 ${s.active ? "border-primary/40 bg-primary/5" : "border-border opacity-40"}`}
-                  >
-                    {s.active
-                      ? <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                      : <Circle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />}
-                    <div>
-                      <p className="text-xs font-semibold">{s.label}</p>
-                      <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{s.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </>
-        );
-      })()}
 
       {/* ─── YOU VS THE CROWD ─── */}
       {(hiddenGem || unpopularOpinion) && (

@@ -8,9 +8,11 @@ ML_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$ML_DIR"
 
-# Activate venv if present
+# Activate venv if present (check ml-local first, then root project venv)
 if [ -f ".venv/bin/activate" ]; then
     source .venv/bin/activate
+elif [ -f "../.venv/bin/activate" ]; then
+    source ../.venv/bin/activate
 fi
 
 echo "=== TrackEfron retrain pipeline ==="

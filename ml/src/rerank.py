@@ -21,7 +21,7 @@ from config import (
 )
 
 RERANK_POOL      = 50        # scored candidates to consider
-BLOCKBUSTER_VOTES = 100_000  # vote_count threshold above which novelty boost is suppressed
+BLOCKBUSTER_VOTES = 50_000   # vote_count threshold above which novelty boost is suppressed
 
 # ── Artifact loading ───────────────────────────────────────────────────────────
 # Static artifacts (item vectors) are loaded once — they only change on a full
@@ -39,7 +39,7 @@ def _load_artifacts() -> dict:
 
         item_index  = pd.read_parquet(PROCESSED_DIR / "item_index.parquet")
         catalog     = pd.read_parquet(PROCESSED_DIR / "catalog.parquet")
-        catalog_map = catalog.set_index("tmdb_id")
+        catalog_map = catalog.drop_duplicates(subset=["tmdb_id"], keep="last").set_index("tmdb_id")
         tmdb_to_row = dict(zip(item_index["tmdb_id"].tolist(), range(len(item_index))))
 
         _static = {

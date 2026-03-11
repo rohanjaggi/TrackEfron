@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import faiss
 import joblib
+from datetime import date
 from pathlib import Path
 
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
     PROCESSED_DIR, MODELS_DIR,
     SCORE_WEIGHTS, NEG_PENALTY_WEIGHT,
+    RELEASE_RECENCY_HALFLIFE,
 )
 
 ASPECT_COLS = [
@@ -39,7 +41,7 @@ def _load_artifacts() -> dict:
 
         item_index  = pd.read_parquet(PROCESSED_DIR / "item_index.parquet")
         catalog     = pd.read_parquet(PROCESSED_DIR / "catalog.parquet")
-        catalog_map = catalog.set_index("tmdb_id")
+        catalog_map = catalog.drop_duplicates(subset=["tmdb_id"], keep="last").set_index("tmdb_id")
 
         svd_emb = np.load(PROCESSED_DIR / "svd_embeddings.npy")
         svd_idx = pd.read_parquet(PROCESSED_DIR / "svd_index.parquet")
@@ -145,30 +147,31 @@ def _collab_signal(
     catalog_map: pd.DataFrame,
 ) -> float:
     """
-    Movies: cosine(mean SVD embedding of liked movies, candidate SVD embedding).
-    TV:     fraction of liked items whose TMDB recs contain this candidate.
+    Hybrid collaborative signal:
+    1. Movies with SVD data: cosine(mean SVD of liked movies, candidate SVD)
+    2. Fallback (post-2019 movies + all TV): fraction of liked items whose
+       TMDB recommendations contain this candidate.
     Returns 0 if insufficient signal.
     """
     if not liked_ids:
         return 0.0
 
-    if media_type == "tv":
-        hits = sum(
-            1 for lid in liked_ids
-            if lid in catalog_map.index
-            and tmdb_id in [int(r) for r in _as_list(catalog_map.loc[lid].get("tv_rec_ids"))]
-        )
-        return hits / len(liked_ids)
+    # Try SVD first for movies that have MovieLens coverage
+    if media_type == "movie" and tmdb_id in tmdb_to_svd:
+        liked_svd = [svd_emb[tmdb_to_svd[lid]] for lid in liked_ids if lid in tmdb_to_svd]
+        if liked_svd:
+            user_collab = np.mean(liked_svd, axis=0).astype(np.float32)
+            n = np.linalg.norm(user_collab)
+            if n > 0:
+                return float(np.dot(user_collab / n, svd_emb[tmdb_to_svd[tmdb_id]]))
 
-    # Movies: SVD nearest-neighbour signal
-    liked_svd = [svd_emb[tmdb_to_svd[lid]] for lid in liked_ids if lid in tmdb_to_svd]
-    if not liked_svd or tmdb_id not in tmdb_to_svd:
-        return 0.0
-    user_collab = np.mean(liked_svd, axis=0).astype(np.float32)
-    n = np.linalg.norm(user_collab)
-    if n == 0:
-        return 0.0
-    return float(np.dot(user_collab / n, svd_emb[tmdb_to_svd[tmdb_id]]))
+    # Fallback: TMDB recommendation graph (works for both movies and TV)
+    hits = sum(
+        1 for lid in liked_ids
+        if lid in catalog_map.index
+        and tmdb_id in [int(r) for r in _as_list(catalog_map.loc[lid].get("tmdb_rec_ids"))]
+    )
+    return hits / len(liked_ids)
 
 
 def _quality_prior(tmdb_id: int, catalog_map: pd.DataFrame) -> float:
@@ -190,6 +193,26 @@ def _quality_prior(tmdb_id: int, catalog_map: pd.DataFrame) -> float:
     norm_avg = float(vote_avg) / 10.0
     norm_log = float(np.log1p(vote_cnt or 0)) / np.log1p(3_000_000)
     return min(norm_avg * min(norm_log, 1.0), 1.0)
+
+
+def _release_recency(tmdb_id: int, catalog_map: pd.DataFrame) -> float:
+    """
+    Soft bias toward newer content. Exponential decay on release year:
+    score = 0.5 ^ (days_since_release / RELEASE_RECENCY_HALFLIFE)
+    Returns 0.5 (neutral) if release date is unknown.
+    """
+    if tmdb_id not in catalog_map.index:
+        return 0.5
+    row = catalog_map.loc[tmdb_id]
+    rd = row.get("release_date")
+    if rd is None or pd.isna(rd):
+        return 0.5
+    try:
+        release = date.fromisoformat(str(rd)[:10])
+        days = max((date.today() - release).days, 0)
+        return float(0.5 ** (days / RELEASE_RECENCY_HALFLIFE))
+    except (ValueError, TypeError):
+        return 0.5
 
 
 def _negative_penalty(
@@ -273,16 +296,18 @@ def score(user_id: str, candidates: list[int]) -> list[tuple[int, float]]:
             liked_ids, tmdb_id, media_type,
             art["svd_emb"], art["tmdb_to_svd"], art["catalog_map"],
         )
-        s_quality = _quality_prior(tmdb_id, art["catalog_map"])
-        s_neg     = _negative_penalty(tmdb_id, soft_neg_ids, art["catalog_map"])
+        s_quality  = _quality_prior(tmdb_id, art["catalog_map"])
+        s_recency  = _release_recency(tmdb_id, art["catalog_map"])
+        s_neg      = _negative_penalty(tmdb_id, soft_neg_ids, art["catalog_map"])
 
         final = (
-            w["content_sim"]   * s_content
-            + w["aspect_align"]  * s_aspect
-            + w["review_text"]   * s_review
-            + w["collab_signal"] * s_collab
-            + w["quality_prior"] * s_quality
-            - NEG_PENALTY_WEIGHT * s_neg
+            w["content_sim"]      * s_content
+            + w["aspect_align"]   * s_aspect
+            + w["review_text"]    * s_review
+            + w["collab_signal"]  * s_collab
+            + w["quality_prior"]  * s_quality
+            + w["release_recency"] * s_recency
+            - NEG_PENALTY_WEIGHT  * s_neg
         )
         results.append((tmdb_id, final))
 

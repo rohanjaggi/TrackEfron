@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
     SUPABASE_URL, SUPABASE_KEY, TMDB_API_KEY,
     RAW_DIR, PROCESSED_DIR, CACHE_DIR, MOVIELENS_DIR, IMDB_DIR,
+    TV_SEED_SIZE, RECENT_MOVIE_SEED_SIZE,
 )
 
 TMDB_BASE        = "https://api.themoviedb.org/3"
@@ -61,7 +62,13 @@ def fetch_supabase_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 # ── TMDB ───────────────────────────────────────────────────────────────────────
 
 def _tmdb_get(path: str, params: dict | None = None) -> dict | None:
-    cache_file = CACHE_DIR / f"{path.strip('/').replace('/', '_')}.json"
+    # Include non-api_key params in cache key so paginated/filtered requests are cached separately
+    cache_suffix = ""
+    if params:
+        sorted_params = sorted((k, v) for k, v in params.items() if k != "api_key")
+        if sorted_params:
+            cache_suffix = "_" + "_".join(f"{k}={v}" for k, v in sorted_params)
+    cache_file = CACHE_DIR / f"{path.strip('/').replace('/', '_')}{cache_suffix}.json"
 
     if cache_file.exists():
         with open(cache_file) as f:
@@ -89,17 +96,18 @@ def _tmdb_get(path: str, params: dict | None = None) -> dict | None:
 
 def _fetch_item_metadata(tmdb_id: int, media_type: str) -> dict:
     result = {
-        "tmdb_id":      tmdb_id,
-        "media_type":   media_type,
-        "genres":       [],
-        "overview":     "",
-        "vote_average": None,
-        "vote_count":   None,
-        "runtime":      None,
-        "cast_ids":     [],
-        "director_ids": [],
-        "imdb_id":      None,
-        "tv_rec_ids":   [],
+        "tmdb_id":       tmdb_id,
+        "media_type":    media_type,
+        "genres":        [],
+        "overview":      "",
+        "vote_average":  None,
+        "vote_count":    None,
+        "runtime":       None,
+        "release_date":  None,
+        "cast_ids":      [],
+        "director_ids":  [],
+        "imdb_id":       None,
+        "tmdb_rec_ids":  [],
     }
 
     # Base metadata
@@ -110,10 +118,12 @@ def _fetch_item_metadata(tmdb_id: int, media_type: str) -> dict:
         result["vote_average"] = base.get("vote_average")
         result["vote_count"]   = base.get("vote_count")
         if media_type == "movie":
-            result["runtime"] = base.get("runtime")
+            result["runtime"]      = base.get("runtime")
+            result["release_date"] = base.get("release_date")
         else:
             runtimes = base.get("episode_run_time", [])
-            result["runtime"] = runtimes[0] if runtimes else None
+            result["runtime"]      = runtimes[0] if runtimes else None
+            result["release_date"] = base.get("first_air_date")
 
     # Credits
     credits = _tmdb_get(f"/{media_type}/{tmdb_id}/credits")
@@ -133,11 +143,12 @@ def _fetch_item_metadata(tmdb_id: int, media_type: str) -> dict:
     if ext:
         result["imdb_id"] = ext.get("imdb_id")
 
-    # TV recommendations (collaborative signal proxy; no MovieLens for TV)
-    if media_type == "tv":
-        recs = _tmdb_get(f"/tv/{tmdb_id}/recommendations")
-        if recs:
-            result["tv_rec_ids"] = [r["id"] for r in recs.get("results", [])[:50]]
+    # TMDB recommendations (collaborative signal proxy for both movies and TV)
+    # Movies: fallback for post-2019 titles without MovieLens SVD data
+    # TV: primary collaborative signal (no MovieLens coverage)
+    recs = _tmdb_get(f"/{media_type}/{tmdb_id}/recommendations")
+    if recs:
+        result["tmdb_rec_ids"] = [r["id"] for r in recs.get("results", [])[:50]]
 
     return result
 
@@ -192,6 +203,61 @@ def load_movielens_popular_tmdb_ids(top_n: int = 1500) -> list[tuple[int, str]]:
 
     result = [(int(link_map[ml_id]), "movie") for ml_id in popular_ml_ids if ml_id in link_map]
     print(f"  {len(result)} MovieLens movies mapped to TMDB IDs")
+    return result
+
+
+# ── TMDB discover seeds ───────────────────────────────────────────────────────
+
+def load_tmdb_popular_tv_ids(top_n: int = TV_SEED_SIZE) -> list[tuple[int, str]]:
+    """
+    Seed the catalog with popular TV shows from TMDB discover endpoint.
+    Analogous to MovieLens seeding for movies — ensures the system has a broad
+    TV catalog even when the user has only watched a handful of shows.
+    """
+    print(f"Fetching top {top_n} popular TV shows from TMDB discover...")
+    results: list[tuple[int, str]] = []
+    page = 1
+    while len(results) < top_n:
+        data = _tmdb_get(f"/discover/tv", params={
+            "sort_by": "vote_count.desc",
+            "page": str(page),
+        })
+        if not data or not data.get("results"):
+            break
+        for item in data["results"]:
+            results.append((int(item["id"]), "tv"))
+        if page >= data.get("total_pages", 1):
+            break
+        page += 1
+    result = results[:top_n]
+    print(f"  {len(result)} TV shows from TMDB discover")
+    return result
+
+
+def load_tmdb_recent_popular_movies(top_n: int = RECENT_MOVIE_SEED_SIZE) -> list[tuple[int, str]]:
+    """
+    Seed post-2019 popular movies from TMDB discover. MovieLens 25M was last
+    updated ~2019, so newer movies have no SVD embeddings. This ensures the
+    catalog contains recent popular films that would otherwise be invisible.
+    """
+    print(f"Fetching top {top_n} recent popular movies (2019+) from TMDB discover...")
+    results: list[tuple[int, str]] = []
+    page = 1
+    while len(results) < top_n:
+        data = _tmdb_get(f"/discover/movie", params={
+            "sort_by": "vote_count.desc",
+            "primary_release_date.gte": "2019-01-01",
+            "page": str(page),
+        })
+        if not data or not data.get("results"):
+            break
+        for item in data["results"]:
+            results.append((int(item["id"]), "movie"))
+        if page >= data.get("total_pages", 1):
+            break
+        page += 1
+    result = results[:top_n]
+    print(f"  {len(result)} recent movies from TMDB discover")
     return result
 
 
@@ -265,12 +331,16 @@ def run():
     watch_df.to_parquet(PROCESSED_DIR / "watch_logs.parquet", index=False)
     watchlist_df.to_parquet(PROCESSED_DIR / "watchlist.parquet", index=False)
 
-    # Seed catalog from MovieLens popular movies so the system works for a single
-    # user — recommendations aren't limited to items other TrackEfron users watched.
-    user_ids   = set(_collect_catalog_ids(watch_df, watchlist_df))
-    seeded_ids = set(load_movielens_popular_tmdb_ids())
-    catalog_ids = sorted(user_ids | seeded_ids)
-    print(f"  Catalog: {len(catalog_ids)} items ({len(user_ids)} from users, {len(seeded_ids)} from MovieLens)")
+    # Seed catalog from multiple sources so the system works for a single user.
+    user_ids         = set(_collect_catalog_ids(watch_df, watchlist_df))
+    ml_movie_ids     = set(load_movielens_popular_tmdb_ids())
+    tv_ids           = set(load_tmdb_popular_tv_ids())
+    recent_movie_ids = set(load_tmdb_recent_popular_movies())
+    seeded_ids       = ml_movie_ids | tv_ids | recent_movie_ids
+    catalog_ids      = sorted(user_ids | seeded_ids)
+    print(f"  Catalog: {len(catalog_ids)} items "
+          f"({len(user_ids)} user, {len(ml_movie_ids)} MovieLens, "
+          f"{len(tv_ids)} TV seed, {len(recent_movie_ids)} recent movies)")
 
     if not catalog_ids:
         print("  No catalog items found. Exiting.")

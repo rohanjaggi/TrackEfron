@@ -82,16 +82,18 @@ function RecMediaCard({
   onClick,
   onWatchlist,
   watchlisted,
+  rank,
 }: {
   item: MediaItem;
   onClick: (item: MediaItem) => void;
   onWatchlist: (item: MediaItem) => void;
   watchlisted: boolean;
+  rank?: number;
 }) {
   const title = item.title || item.name || "Untitled";
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
   return (
-    <div className="shrink-0 w-[130px] md:w-[150px] group">
+    <div className="w-full group">
       <div className="relative cursor-pointer" onClick={() => onClick(item)}>
         {item.poster_url ? (
           <img
@@ -103,6 +105,11 @@ function RecMediaCard({
           <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
             <Film className="w-6 h-6 text-muted-foreground/50" />
           </div>
+        )}
+        {rank != null && (
+          <span className="absolute bottom-0 left-0 bg-background/90 border-t-2 border-r-2 border-border px-1.5 py-0.5 text-xs font-bold text-primary font-display leading-none">
+            #{rank}
+          </span>
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onWatchlist(item); }}
@@ -170,9 +177,9 @@ function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaIt
   );
 }
 
-function SkeletonCard() {
+function SkeletonCard({ className }: { className?: string } = {}) {
   return (
-    <div className="shrink-0 w-[130px] md:w-[150px]">
+    <div className={className ?? "shrink-0 w-[130px] md:w-[150px]"}>
       <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border animate-pulse" />
       <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
       <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
@@ -751,16 +758,16 @@ export default function DiscoverPage() {
 
           {mlLoading ? (
             <div>
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
               </div>
-              <div className="flex gap-3 overflow-x-hidden pb-1">
-                {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
               </div>
             </div>
           ) : mlRecs.length === 0 ? (
-            <div className="border-2 border-dashed border-border p-8 text-center">
+            <div className="border-2 border-dashed border-border p-12 text-center">
               <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
               <p className="text-sm font-medium mb-1">Log 5 or more watches to unlock personalised picks</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
@@ -769,19 +776,20 @@ export default function DiscoverPage() {
             </div>
           ) : (
             <div>
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-                <p className="text-xs text-muted-foreground">{mlRecs.length} personalised recommendations</p>
+                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{mlRecs.length} picks</span>
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-                {mlRecs.map((item) => (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                {mlRecs.map((item, idx) => (
                   <RecMediaCard
                     key={`ml-${item.id}`}
                     item={item}
                     onClick={handleItemClick}
                     onWatchlist={handleAddMlToWatchlist}
                     watchlisted={mlWatchlistedIds.has(item.id)}
+                    rank={idx + 1}
                   />
                 ))}
               </div>
