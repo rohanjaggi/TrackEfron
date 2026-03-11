@@ -3,5 +3,5 @@ __pycache__/
 venv
 .env
 .env.local
-data/
-models/
+data/raw
+data/cache
