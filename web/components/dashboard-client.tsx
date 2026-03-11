@@ -14,7 +14,9 @@ import {
   Feather,
   Loader2,
   BookOpen,
-  BarChart3
+  BarChart3,
+  Bookmark,
+  BookmarkCheck,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -30,12 +32,14 @@ type WatchLog = {
   created_at: string;
 };
 
-// Mock recommendations - will be replaced with ML model
-const recommendations = [
-  { id: 1, title: "Better Call Saul", type: "TV Show", match: 98 },
-  { id: 2, title: "The Dark Knight", type: "Movie", match: 95 },
-  { id: 3, title: "Succession", type: "TV Show", match: 92 },
-];
+type Recommendation = {
+  id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  poster_url: string | null;
+  vote_average: number | null;
+  release_date: string | null;
+};
 
 interface DashboardClientProps {
   userName: string;
@@ -49,11 +53,14 @@ function upscalePoster(url: string | null, size = "w185"): string | null {
 export function DashboardClient({ userName }: DashboardClientProps) {
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [recsLoading, setRecsLoading] = useState(true);
+  const [watchlistedIds, setWatchlistedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     async function fetchData() {
+      const supabase = createClient();
       try {
-        const supabase = createClient();
         const { data, error } = await supabase
           .from("watch_logs")
           .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
@@ -68,8 +75,43 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         setLoading(false);
       }
     }
+
+    async function fetchRecs() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
+        const data = await res.json();
+        if (Array.isArray(data)) setRecs(data.slice(0, 5));
+      } catch {
+        // silently fail — ML backend may not be running
+      } finally {
+        setRecsLoading(false);
+      }
+    }
+
     fetchData();
+    fetchRecs();
   }, []);
+
+  async function addToWatchlist(item: Recommendation) {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("watchlist").insert({
+        user_id: user.id,
+        tmdb_id: item.id,
+        title: item.title,
+        media_type: item.media_type,
+        poster_url: item.poster_url,
+      });
+      setWatchlistedIds((prev) => new Set([...prev, item.id]));
+    } catch {
+      // silently fail (e.g. duplicate)
+    }
+  }
 
   const now = new Date();
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -245,39 +287,69 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               <Target className="w-5 h-5 text-primary" />
               <h2 className="font-display text-2xl font-bold">Recommended</h2>
             </div>
-            <span className="text-xs border border-primary text-primary px-2 py-1 uppercase tracking-wider">Personalised</span>
+            <span className="text-xs border border-primary text-primary px-2 py-1 uppercase tracking-wider">ML Powered</span>
           </div>
 
-          {recommendations.length === 0 ? (
+          {recsLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 p-2 -mx-2">
+                  <div className="w-12 h-16 bg-muted/20 animate-pulse shrink-0" />
+                  <div className="flex-1 space-y-2 pt-1">
+                    <div className="h-3.5 bg-muted/20 animate-pulse rounded w-3/4" />
+                    <div className="h-3 bg-muted/20 animate-pulse rounded w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recs.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 border-2 border-muted flex items-center justify-center mx-auto mb-4">
                 <Target className="w-8 h-8 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground italic">
-                Watch more to get recommendations
+                Log more watches to unlock personalised picks
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              {recommendations.map((item) => (
+              {recs.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 hover:translate-x-1 p-2 -mx-2 transition-all duration-200 cursor-pointer"
+                  className="flex items-start gap-4 pb-4 border-b border-border/50 last:border-0 hover:bg-muted/20 p-2 -mx-2 transition-all duration-200 group"
                 >
-                  <div className="w-12 h-16 border border-accent/30 flex items-center justify-center flex-shrink-0 bg-accent/5">
-                    {item.type === "Movie" ? (
+                  <Link
+                    href={`/protected/media/${item.media_type}/${item.id}`}
+                    className="w-12 h-16 border border-accent/30 flex items-center justify-center flex-shrink-0 bg-accent/5 overflow-hidden"
+                  >
+                    {item.poster_url ? (
+                      <img src={upscalePoster(item.poster_url)!} alt={item.title} className="w-full h-full object-cover" />
+                    ) : item.media_type === "movie" ? (
                       <Film className="w-5 h-5 text-accent" />
                     ) : (
                       <Tv className="w-5 h-5 text-accent" />
                     )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold mb-1 truncate">
+                  </Link>
+                  <Link href={`/protected/media/${item.media_type}/${item.id}`} className="flex-1 min-w-0">
+                    <h3 className="font-semibold mb-1 truncate group-hover:text-primary transition-colors">
                       {item.title}
                     </h3>
-                    <p className="text-sm text-muted-foreground italic">{item.type}</p>
-                  </div>
-                  <div className="text-sm font-semibold text-primary">{item.match}%</div>
+                    <p className="text-sm text-muted-foreground italic">
+                      {item.media_type === "movie" ? "Movie" : "TV Show"}
+                    </p>
+                  </Link>
+                  <button
+                    onClick={() => addToWatchlist(item)}
+                    disabled={watchlistedIds.has(item.id)}
+                    className="shrink-0 p-1 text-muted-foreground hover:text-primary transition-colors disabled:text-primary"
+                    title={watchlistedIds.has(item.id) ? "On watchlist" : "Add to watchlist"}
+                  >
+                    {watchlistedIds.has(item.id) ? (
+                      <BookmarkCheck className="w-4 h-4" />
+                    ) : (
+                      <Bookmark className="w-4 h-4" />
+                    )}
+                  </button>
                 </div>
               ))}
               <Button variant="outline" className="w-full mt-4" asChild>

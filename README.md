@@ -8,7 +8,7 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
 - **Library** — Browse everything you've watched in grid or list view, with filtering and search
 - **Watchlist** — Save titles you want to watch next, add from search or discover
 - **Discover** — Two-tab experience:
-  - **For You** — ML-powered personalised recommendations (coming soon), with match scores and reasoning
+  - **For You** — ML-powered personalised recommendations, ranked and diversified by a two-stage retrieve → rerank pipeline
   - **Browse** — Trending, now in theatres, coming soon, top rated, and genre-based discovery powered by TMDB. Personalised rows based on your watch history: favourite genres, favourite directors, and similar titles
 - **Detail Pages** — Full movie/TV info with cast, genres, overview, and your personal review
 - **Profile** — Upload a profile picture, view your stats, and see a colour-themed backdrop extracted from your avatar
@@ -28,6 +28,7 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
 - **UI Components:** [Radix UI](https://radix-ui.com), [shadcn/ui](https://ui.shadcn.com), [Lucide Icons](https://lucide.dev)
 - **Charts:** [Recharts](https://recharts.org)
 - **Movie Data:** [TMDB API](https://www.themoviedb.org/documentation/api)
+- **ML Recommendations:** FastAPI, scikit-learn (SVD), FAISS, sentence-transformers, pandas/numpy — two-stage retrieve → rerank pipeline with content similarity, collaborative filtering, aspect-level preference modelling, and NLP review alignment
 
 ## Getting Started
 
@@ -53,6 +54,7 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
    TMDB_API_KEY=your_tmdb_api_key
    TMDB_BEARER_TOKEN=your_tmdb_bearer_token
+   ML_API_URL=http://localhost:8000
    ```
 
 3. Set up the Supabase database tables (`watch_logs`, `watchlist`) and storage bucket (`avatars`) with the appropriate RLS policies.
@@ -64,6 +66,47 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
    ```
 
    Open [http://localhost:3000](http://localhost:3000).
+
+### ML Recommendations (optional)
+
+The For You tab requires the ML API to be running. To run it locally:
+
+1. Install dependencies (Python 3.10+):
+
+   ```bash
+   cd ml
+   pip install -r requirements.txt
+   ```
+
+2. Create a `.env` file in the `ml/` directory:
+
+   ```
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_KEY=your_supabase_service_role_key
+   TMDB_API_KEY=your_tmdb_api_key
+   ```
+
+3. Run the full retrain pipeline (first time only — downloads MovieLens 25M + IMDb datasets, ~minutes):
+
+   ```bash
+   bash scripts/download_data.sh
+   bash scripts/retrain.sh
+   ```
+
+4. Start the API:
+
+   ```bash
+   uvicorn api.main:app --reload
+   ```
+
+   The API runs at `http://localhost:8000`. After logging new watches, hit `POST /refresh-profile` to update your recommendations without a full retrain.
+
+> **Note:** `data/raw/` (MovieLens 25M + IMDb, ~2 GB) is gitignored — only needed for a full retrain. The pre-built inference artifacts in `data/processed/` and `models/` (~142 MB) are committed and sufficient to serve recommendations.
+
+## Deployment
+
+- **Web (`web/`)** — [Vercel](https://vercel.com). Import the repo, set root directory to `web/`, add env vars (including `ML_API_URL` pointing to your deployed ML API), deploy.
+- **ML API (`ml/`)** — [Render](https://render.com). Create a Web Service, set root directory to `ml/`, build command `pip install -r requirements-inference.txt`, start command `uvicorn api.main:app --host 0.0.0.0 --port $PORT`. Add env vars from `ml/.env`.
 
 ## TMDB Attribution
 

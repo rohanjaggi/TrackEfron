@@ -56,6 +56,7 @@ type WatchLog = {
   rewatchability: string | null;
   times_watched: string | null;
   poster_url: string | null;
+  review: string | null;
 };
 
 type ControversialPick = {
@@ -125,7 +126,7 @@ export default function AnalyticsPage() {
         const supabase = createClient();
         const { data, error } = await supabase
           .from("watch_logs")
-          .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url")
+          .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
           .order("watched_date", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: false });
 
