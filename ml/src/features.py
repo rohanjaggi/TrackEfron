@@ -409,17 +409,20 @@ def run_profiles_only() -> None:
                 new_ov_ids.append(tid)
 
         if new_ov_texts:
-            from sentence_transformers import SentenceTransformer
-            from config import EMBEDDING_MODEL
-            _nlp_model = SentenceTransformer(EMBEDDING_MODEL)
-            new_ov_emb = _nlp_model.encode(
-                new_ov_texts, normalize_embeddings=True, convert_to_numpy=True,
-            ).astype(np.float32)
-            ov_emb = np.vstack([ov_emb, new_ov_emb])
-            ov_idx = pd.concat([ov_idx, pd.DataFrame({"tmdb_id": new_ov_ids})], ignore_index=True)
-            np.save(PROCESSED_DIR / "overview_embeddings.npy", ov_emb)
-            ov_idx.to_parquet(PROCESSED_DIR / "overview_index.parquet", index=False)
-            print(f"  Overview embeddings: {ov_emb.shape[0]} items")
+            try:
+                from sentence_transformers import SentenceTransformer
+                from config import EMBEDDING_MODEL
+                _nlp_model = SentenceTransformer(EMBEDDING_MODEL)
+                new_ov_emb = _nlp_model.encode(
+                    new_ov_texts, normalize_embeddings=True, convert_to_numpy=True,
+                ).astype(np.float32)
+                ov_emb = np.vstack([ov_emb, new_ov_emb])
+                ov_idx = pd.concat([ov_idx, pd.DataFrame({"tmdb_id": new_ov_ids})], ignore_index=True)
+                np.save(PROCESSED_DIR / "overview_embeddings.npy", ov_emb)
+                ov_idx.to_parquet(PROCESSED_DIR / "overview_index.parquet", index=False)
+                print(f"  Overview embeddings: {ov_emb.shape[0]} items")
+            except ImportError:
+                print("  sentence_transformers not available — new items will use zero overview vectors.")
 
         # Rebuild ALL item vectors (genre vocab may have expanded with new genres)
         print("  Rebuilding item vectors with expanded catalog...")
@@ -456,19 +459,24 @@ def run_profiles_only() -> None:
                 old_count = len(old_idx)
             if len(reviews) != old_count:
                 print(f"  Re-encoding {len(reviews)} reviews (was {old_count})...")
-                if _nlp_model is None:
-                    from sentence_transformers import SentenceTransformer
-                    from config import EMBEDDING_MODEL
-                    _nlp_model = SentenceTransformer(EMBEDDING_MODEL)
-                review_embeddings = _nlp_model.encode(
-                    reviews["review"].tolist(),
-                    normalize_embeddings=True, convert_to_numpy=True,
-                ).astype(np.float32)
-                np.save(rev_emb_path, review_embeddings)
-                reviews[["user_id", "tmdb_id"]].reset_index(drop=True).to_parquet(
-                    rev_idx_path, index=False,
-                )
-                review_index = reviews[["user_id", "tmdb_id"]].reset_index(drop=True)
+                try:
+                    if _nlp_model is None:
+                        from sentence_transformers import SentenceTransformer
+                        from config import EMBEDDING_MODEL
+                        _nlp_model = SentenceTransformer(EMBEDDING_MODEL)
+                    review_embeddings = _nlp_model.encode(
+                        reviews["review"].tolist(),
+                        normalize_embeddings=True, convert_to_numpy=True,
+                    ).astype(np.float32)
+                    np.save(rev_emb_path, review_embeddings)
+                    reviews[["user_id", "tmdb_id"]].reset_index(drop=True).to_parquet(
+                        rev_idx_path, index=False,
+                    )
+                    review_index = reviews[["user_id", "tmdb_id"]].reset_index(drop=True)
+                except ImportError:
+                    print("  sentence_transformers not available — keeping existing review embeddings.")
+                    review_embeddings = np.load(rev_emb_path) if rev_emb_path.exists() else None
+                    review_index = pd.read_parquet(rev_idx_path) if rev_idx_path.exists() else None
             else:
                 review_embeddings = np.load(rev_emb_path)
                 review_index = pd.read_parquet(rev_idx_path)

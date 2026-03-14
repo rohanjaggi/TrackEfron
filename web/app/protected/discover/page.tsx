@@ -601,6 +601,8 @@ export default function DiscoverPage() {
     } catch {
       setRefreshStatus("error");
     }
+    // Wait for the background refresh job on Render to finish before re-fetching
+    await new Promise((resolve) => setTimeout(resolve, 5000));
     setMlRecs([]);
     setMlFetched(false);
   }
