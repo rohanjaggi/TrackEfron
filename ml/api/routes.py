@@ -95,10 +95,9 @@ def refresh_profile() -> RetrainResponse:
             cwd=str(ml_dir),
         )
         if result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"{script} failed:\n{result.stderr[-2000:]}",
-            )
+            error_detail = f"{script} failed:\n{result.stderr[-2000:]}"
+            print(f"[refresh-profile ERROR] {error_detail}", flush=True)
+            raise HTTPException(status_code=500, detail=error_detail)
     # Refresh may have expanded the catalog, rebuilt item vectors, and FAISS index.
     # Reset static caches so the next request picks up the new artifacts.
     score.reset_cache()
