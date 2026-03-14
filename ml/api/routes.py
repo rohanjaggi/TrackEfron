@@ -9,6 +9,7 @@ GET  /health                     → liveness check
 
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -71,19 +72,9 @@ def get_recommendations_with_types(user_id: str) -> RecommendItemsResponse:
     return RecommendItemsResponse(user_id=user_id, items=items, count=len(items))
 
 
-@router.post("/refresh-profile", response_model=RetrainResponse)
-def refresh_profile() -> RetrainResponse:
-    """
-    Smart profile refresh — completes in seconds.
-    Fetches the latest watch_logs/watchlist from Supabase, then:
-    - Detects new items not in catalog → fetches TMDB metadata, expands catalog
-    - Rebuilds item vectors + FAISS index if catalog expanded
-    - Re-encodes review texts if new reviews found
-    - Rebuilds user_profiles.pkl
-    """
+def _run_refresh() -> None:
     ml_dir = Path(__file__).parent.parent
     python = sys.executable
-
     for script, extra in [
         ("src/fetch_user_data.py", []),
         ("src/features.py", ["--profiles-only"]),
@@ -97,13 +88,24 @@ def refresh_profile() -> RetrainResponse:
         if result.returncode != 0:
             error_detail = f"{script} failed:\n{result.stderr[-2000:]}"
             print(f"[refresh-profile ERROR] {error_detail}", flush=True)
-            raise HTTPException(status_code=500, detail=error_detail)
-    # Refresh may have expanded the catalog, rebuilt item vectors, and FAISS index.
-    # Reset static caches so the next request picks up the new artifacts.
+            return
+        print(f"[refresh-profile] {script} OK", flush=True)
     score.reset_cache()
     retrieve.reset_cache()
     rerank.reset_cache()
-    return RetrainResponse(status="ok", message="Profile refreshed.")
+    print("[refresh-profile] Done — caches reset.", flush=True)
+
+
+@router.post("/refresh-profile", response_model=RetrainResponse)
+def refresh_profile() -> RetrainResponse:
+    """
+    Kick off a background profile refresh and return immediately (202-style).
+    Fetches the latest watch_logs/watchlist from Supabase, then rebuilds profiles.
+    Runs in a daemon thread so the HTTP response is not held open by slow scripts.
+    """
+    t = threading.Thread(target=_run_refresh, daemon=True)
+    t.start()
+    return RetrainResponse(status="ok", message="Refresh started.")
 
 
 @router.post("/retrain", response_model=RetrainResponse)
