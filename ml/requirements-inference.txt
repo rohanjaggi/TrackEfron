@@ -16,4 +16,3 @@ requests
 joblib
 python-dotenv
 tqdm
-sentence-transformers
