@@ -759,13 +759,24 @@ export default function DiscoverPage() {
           </div>
 
           {mlLoading ? (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                  <h2 className="font-display text-base md:text-lg font-bold">Top Picks</h2>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+                  {Array.from({ length: 10 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
+                </div>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="font-display text-sm font-bold text-muted-foreground uppercase tracking-wider">More For You</h2>
+                  <div className="flex-1 border-t border-border" />
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {Array.from({ length: 16 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
+                </div>
               </div>
             </div>
           ) : mlRecs.length === 0 ? (
@@ -777,24 +788,48 @@ export default function DiscoverPage() {
               </p>
             </div>
           ) : (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{mlRecs.length} picks</span>
+            <div className="space-y-6">
+              {/* Top 10 */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                  <h2 className="font-display text-base md:text-lg font-bold">Top Picks</h2>
+                  <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">top 10</span>
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+                  {mlRecs.slice(0, 10).map((item) => (
+                    <RecMediaCard
+                      key={`ml-${item.id}`}
+                      item={item}
+                      onClick={handleItemClick}
+                      onWatchlist={handleAddMlToWatchlist}
+                      watchlisted={mlWatchlistedIds.has(item.id)}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {mlRecs.map((item, idx) => (
-                  <RecMediaCard
-                    key={`ml-${item.id}`}
-                    item={item}
-                    onClick={handleItemClick}
-                    onWatchlist={handleAddMlToWatchlist}
-                    watchlisted={mlWatchlistedIds.has(item.id)}
-                    rank={idx + 1}
-                  />
-                ))}
-              </div>
+
+              {/* The rest */}
+              {mlRecs.length > 10 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <h2 className="font-display text-sm font-bold text-muted-foreground uppercase tracking-wider">More For You</h2>
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-xs text-muted-foreground">{mlRecs.length - 10} more</span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                    {mlRecs.slice(10).map((item) => (
+                      <RecMediaCard
+                        key={`ml-${item.id}`}
+                        item={item}
+                        onClick={handleItemClick}
+                        onWatchlist={handleAddMlToWatchlist}
+                        watchlisted={mlWatchlistedIds.has(item.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -44,7 +44,7 @@ RECENCY_HALFLIFE    = 60    # days, for exponential decay on old reviews
 
 # ── Candidate generation ──────────────────────────────────────────────
 CANDIDATE_POOL_SIZE = 200
-FINAL_RECS          = 20
+FINAL_RECS          = 50
 
 # ── Cold start thresholds ─────────────────────────────────────────────
 COLD_THRESHOLD = 5    # < 5 reviews

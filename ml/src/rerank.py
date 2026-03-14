@@ -20,7 +20,7 @@ from config import (
     FINAL_RECS,
 )
 
-RERANK_POOL      = 50        # scored candidates to consider
+RERANK_POOL      = 150       # scored candidates to consider
 BLOCKBUSTER_VOTES = 50_000   # vote_count threshold above which novelty boost is suppressed
 
 # ── Artifact loading ───────────────────────────────────────────────────────────
