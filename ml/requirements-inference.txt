@@ -15,3 +15,5 @@ uvicorn>=0.23
 requests
 joblib
 python-dotenv
+tqdm
+sentence-transformers
