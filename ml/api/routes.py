@@ -8,12 +8,12 @@ GET  /health                     → liveness check
 """
 
 import subprocess
+import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from recommend import recommend, recommend_with_types
@@ -82,15 +82,7 @@ def refresh_profile() -> RetrainResponse:
     - Rebuilds user_profiles.pkl
     """
     ml_dir = Path(__file__).parent.parent
-    # Check ml-local venv first, then root project venv
-    venv_python = ml_dir / ".venv" / "bin" / "python3"
-    root_venv_python = ml_dir.parent / ".venv" / "bin" / "python3"
-    if venv_python.exists():
-        python = str(venv_python)
-    elif root_venv_python.exists():
-        python = str(root_venv_python)
-    else:
-        python = "python3"
+    python = sys.executable
 
     for script, extra in [
         ("src/fetch_user_data.py", []),
