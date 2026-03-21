@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Merriweather, EB_Garamond } from "next/font/google";
+import { Cormorant_Garamond, Azeret_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
@@ -9,20 +9,21 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "TrackEfron - Track, Review, and Discover Shows",
-  description: "Track the movies and TV shows you watch, write reviews, and get personalized recommendations",
+  title: "TrackEfron — Track, Review & Discover",
+  description: "Log and review the films, TV shows, and music you love. Get personalised recommendations.",
 };
 
-const merriweather = Merriweather({
-  weight: ["300", "400", "700", "900"],
-  variable: "--font-serif",
+const cormorant = Cormorant_Garamond({
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-display",
   display: "swap",
   subsets: ["latin"],
 });
 
-const garamond = EB_Garamond({
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-display",
+const azeretMono = Azeret_Mono({
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-mono",
   display: "swap",
   subsets: ["latin"],
 });
@@ -34,11 +35,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${merriweather.variable} ${garamond.variable} font-serif antialiased`}>
+      <body className={`${cormorant.variable} ${azeretMono.variable} antialiased`}>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          defaultTheme="dark"
+          enableSystem={false}
           disableTransitionOnChange
         >
           {children}
