@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,8 @@ import {
   BookOpen,
   Clock,
   Users,
-  Loader2
+  Loader2,
+  Disc3
 } from "lucide-react";
 
 interface ProfileProps {
@@ -33,6 +35,7 @@ interface ProfileProps {
     avatarUrl: string;
     profileColor: string;
     createdAt: string;
+    spotifyConnected: boolean;
   };
 }
 
@@ -79,6 +82,7 @@ function extractDominantColor(file: File): Promise<string> {
 }
 
 export function ProfileClient({ profile }: ProfileProps) {
+  const searchParams = useSearchParams();
   const [isEditing, setIsEditing] = useState(false);
   const [fullName, setFullName] = useState(profile.fullName);
   const [username, setUsername] = useState(profile.username);
@@ -93,6 +97,9 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [watchlistCount, setWatchlistCount] = useState(0);
   const [friendsCount, setFriendsCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [spotifyConnected, setSpotifyConnected] = useState(profile.spotifyConnected);
+  const [spotifyLoading, setSpotifyLoading] = useState(false);
+  const spotifyStatus = searchParams.get("spotify");
 
   useEffect(() => {
     async function fetchStats() {
@@ -133,6 +140,16 @@ export function ProfileClient({ profile }: ProfileProps) {
       : "—",
     watchlist: watchlistCount,
     friends: friendsCount,
+  };
+
+  const handleSpotifyDisconnect = async () => {
+    setSpotifyLoading(true);
+    try {
+      await fetch("/api/spotify/disconnect", { method: "POST" });
+      setSpotifyConnected(false);
+    } finally {
+      setSpotifyLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -466,6 +483,68 @@ export function ProfileClient({ profile }: ProfileProps) {
               Email cannot be changed
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Connected Services */}
+      <div className="border-2 border-border p-6">
+        <h2 className="font-display text-xl font-semibold mb-4">Connected Services</h2>
+
+        {spotifyStatus === "connected" && (
+          <div className="mb-4 p-3 border-2 border-green-500 bg-green-500/10 text-green-500 text-sm">
+            Spotify connected successfully!
+          </div>
+        )}
+        {spotifyStatus === "denied" && (
+          <div className="mb-4 p-3 border-2 border-yellow-500 bg-yellow-500/10 text-yellow-500 text-sm">
+            Spotify connection was denied.
+          </div>
+        )}
+        {spotifyStatus === "error" && (
+          <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
+            Something went wrong connecting to Spotify. Please try again.
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div
+              className="w-10 h-10 flex items-center justify-center border-2"
+              style={{ borderColor: "#1DB954", color: "#1DB954" }}
+            >
+              <Disc3 className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-medium">Spotify</p>
+              <p className="text-xs text-muted-foreground">
+                {spotifyConnected
+                  ? "Connected — enables personalised music recommendations"
+                  : "Connect to unlock personalised music recommendations"}
+              </p>
+            </div>
+          </div>
+
+          {spotifyConnected ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-2"
+              onClick={handleSpotifyDisconnect}
+              disabled={spotifyLoading}
+            >
+              {spotifyLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Disconnect"}
+            </Button>
+          ) : (
+            <a href="/api/spotify/connect">
+              <Button
+                size="sm"
+                className="border-2"
+                style={{ backgroundColor: "#1DB954", color: "#000", borderColor: "#1DB954" }}
+              >
+                Connect
+              </Button>
+            </a>
+          )}
         </div>
       </div>
 

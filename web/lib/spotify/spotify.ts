@@ -56,7 +56,7 @@ function normaliseAlbum(a: any): SpotifySearchResult {
   };
 }
 
-function normaliseTrack(t: any): SpotifySearchResult {
+export function normaliseTrack(t: any): SpotifySearchResult {
   return {
     id: t.id,
     name: t.name,

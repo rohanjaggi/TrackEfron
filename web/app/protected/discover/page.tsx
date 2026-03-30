@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { SpotifyArtistResult } from "@/app/api/spotify/me/route";
 
 // ─── Types ───
 
@@ -477,6 +478,11 @@ export default function DiscoverPage() {
   const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
   const [personalMusicLoading, setPersonalMusicLoading] = useState(false);
   const [personalMusicFetched, setPersonalMusicFetched] = useState(false);
+  const [spotifyTopTracks, setSpotifyTopTracks] = useState<MusicMediaItem[]>([]);
+  const [spotifyTopArtists, setSpotifyTopArtists] = useState<SpotifyArtistResult[]>([]);
+  const [spotifyOAuthConnected, setSpotifyOAuthConnected] = useState<boolean | null>(null);
+  const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(false);
+  const [spotifyOAuthFetched, setSpotifyOAuthFetched] = useState(false);
 
   // Search (shared across tabs)
   const [searchQuery, setSearchQuery] = useState("");
@@ -618,6 +624,38 @@ export default function DiscoverPage() {
 
     fetchPersonalMusic();
   }, [mode, personalMusicFetched]);
+
+  // ─── Fetch Spotify OAuth personalised data (lazy — top tracks & artists) ───
+  useEffect(() => {
+    if (mode !== "music" || spotifyOAuthFetched) return;
+    setSpotifyOAuthFetched(true);
+    setSpotifyOAuthLoading(true);
+
+    async function fetchSpotifyOAuth() {
+      try {
+        const [tracksRes, artistsRes] = await Promise.all([
+          fetch("/api/spotify/me?action=top-tracks"),
+          fetch("/api/spotify/me?action=top-artists"),
+        ]);
+        const tracksData = await tracksRes.json();
+        const artistsData = await artistsRes.json();
+
+        if (tracksData.connected === false || artistsData.connected === false) {
+          setSpotifyOAuthConnected(false);
+          return;
+        }
+        setSpotifyOAuthConnected(true);
+        if (Array.isArray(tracksData)) setSpotifyTopTracks(tracksData);
+        if (Array.isArray(artistsData)) setSpotifyTopArtists(artistsData);
+      } catch {
+        setSpotifyOAuthConnected(false);
+      } finally {
+        setSpotifyOAuthLoading(false);
+      }
+    }
+
+    fetchSpotifyOAuth();
+  }, [mode, spotifyOAuthFetched]);
 
   // ─── Fetch ML recommendations (lazy — only when For You tab is first opened) ───
   useEffect(() => {
@@ -1127,6 +1165,78 @@ export default function DiscoverPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Spotify OAuth — top tracks & artists */}
+          {!activeMoodPill && spotifyOAuthLoading && (
+            <MusicRow
+              title="Your Top Tracks"
+              subtitle="Loading from Spotify..."
+              icon={TrendingUp}
+              items={[]}
+              loading
+              onQueue={handleAddToQueue}
+              queuedIds={queuedIds}
+            />
+          )}
+          {!activeMoodPill && spotifyOAuthConnected === true && (
+            <>
+              {spotifyTopTracks.length > 0 && (
+                <MusicRow
+                  title="Your Top Tracks"
+                  subtitle="Your most-played tracks on Spotify"
+                  icon={TrendingUp}
+                  items={spotifyTopTracks}
+                  onQueue={handleAddToQueue}
+                  queuedIds={queuedIds}
+                />
+              )}
+              {spotifyTopArtists.length > 0 && (
+                <MusicRow
+                  title="Your Top Artists"
+                  subtitle="Artists you listen to most"
+                  icon={TrendingUp}
+                  items={spotifyTopArtists.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    artist: a.genres.slice(0, 2).join(", ") || "Artist",
+                    album_name: "",
+                    image_url: a.image_url,
+                    release_date: "",
+                    type: "album" as const,
+                  }))}
+                  onQueue={handleAddToQueue}
+                  queuedIds={queuedIds}
+                />
+              )}
+            </>
+          )}
+          {!activeMoodPill && spotifyOAuthConnected === false && (
+            <div
+              className="border-2 p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4"
+              style={{ borderColor: "var(--border-raw)", background: "var(--surface)" }}
+            >
+              <div
+                className="w-10 h-10 flex items-center justify-center border-2 shrink-0"
+                style={{ borderColor: "#1DB954", color: "#1DB954" }}
+              >
+                <Disc3 className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium mb-0.5">Connect Spotify for personalised picks</p>
+                <p className="text-xs text-muted-foreground">
+                  See your top tracks and artists right here once you connect your account.
+                </p>
+              </div>
+              <a href="/api/spotify/connect" className="shrink-0">
+                <button
+                  className="px-4 py-2 text-sm font-medium border-2"
+                  style={{ backgroundColor: "#1DB954", color: "#000", borderColor: "#1DB954" }}
+                >
+                  Connect Spotify
+                </button>
+              </a>
             </div>
           )}
 

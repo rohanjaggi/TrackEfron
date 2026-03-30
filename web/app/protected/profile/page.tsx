@@ -16,6 +16,12 @@ async function ProfileLoader() {
   // Keep profiles table in sync with auth metadata
   await syncProfile(supabase);
 
+  const { data: spotifyRow } = await supabase
+    .from("spotify_tokens")
+    .select("spotify_user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
   const profile = {
     id: user.id,
     email: user.email || "",
@@ -24,6 +30,7 @@ async function ProfileLoader() {
     avatarUrl: user.user_metadata?.avatar_url || "",
     profileColor: user.user_metadata?.profile_color || "",
     createdAt: user.created_at,
+    spotifyConnected: !!spotifyRow,
   };
 
   return <ProfileClient profile={profile} />;
