@@ -32,21 +32,37 @@ type ActiveTab = "watchlist" | "lists";
 
 type WatchlistItem = {
   id: string;
-  tmdb_id: number;
+  tmdb_id: number | null;
+  spotify_id: string | null;
+  artist: string | null;
   title: string;
-  media_type: "movie" | "tv";
+  media_type: "movie" | "tv" | "album" | "track";
   poster_url: string | null;
+  image_url?: string | null;
+  added_at: string;
+};
+
+type MusicQueueItem = {
+  id: string;
+  spotify_id: string | null;
+  media_type: "album" | "track";
+  title: string;
+  artist: string | null;
+  image_url: string | null;
   added_at: string;
 };
 
 type SearchResult = {
-  id: number;
+  id: number | string;
+  spotify_id?: string;
+  artist?: string;
   title?: string;
   name?: string;
-  media_type: "movie" | "tv";
+  media_type: "movie" | "tv" | "album" | "track";
   release_date?: string;
   first_air_date?: string;
   poster_url?: string | null;
+  image_url?: string | null;
   vote_average?: number;
 };
 
@@ -92,13 +108,15 @@ function WatchlistPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [musicQueue, setMusicQueue] = useState<MusicQueueItem[]>([]);
+  const [musicQueueLoading, setMusicQueueLoading] = useState(true);
 
   // Add search state
   const [addQuery, setAddQuery] = useState("");
   const [addResults, setAddResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
-  const [addingId, setAddingId] = useState<number | null>(null);
+  const [addingId, setAddingId] = useState<string | number | null>(null);
 
   // Lists state
   const [lists, setLists] = useState<UserList[]>([]);
@@ -113,8 +131,25 @@ function WatchlistPageContent() {
 
   useEffect(() => {
     fetchWatchlist();
+    fetchMusicQueue();
     fetchLists();
   }, []);
+
+  async function fetchMusicQueue() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("music_queue")
+        .select("*")
+        .order("added_at", { ascending: false });
+      if (error) throw error;
+      setMusicQueue(data || []);
+    } catch {
+      // silently fail
+    } finally {
+      setMusicQueueLoading(false);
+    }
+  }
 
   async function fetchWatchlist() {
     try {
@@ -163,12 +198,29 @@ function WatchlistPageContent() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
-        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setAddResults(data);
-          setShowAddDropdown(true);
+        let results: SearchResult[];
+        if (mode === "music") {
+          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+          const raw = await res.json();
+          results = Array.isArray(raw)
+            ? raw.map((r: any) => ({
+                id: r.id,
+                spotify_id: r.id,
+                artist: r.artist,
+                name: r.name,
+                media_type: r.type as "album" | "track",
+                image_url: r.image_url,
+                poster_url: r.image_url,
+                release_date: r.release_date,
+              }))
+            : [];
+        } else {
+          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+          const raw = await res.json();
+          results = Array.isArray(raw) ? raw : [];
         }
+        setAddResults(results);
+        setShowAddDropdown(true);
       } catch {
         // silently fail
       } finally {
@@ -197,29 +249,46 @@ function WatchlistPageContent() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase.from("watchlist").insert({
-        user_id: user.id,
-        tmdb_id: result.id,
-        title: result.title || result.name || "Untitled",
-        media_type: result.media_type,
-        poster_url: result.poster_url || null,
-      });
-
-      if (error) {
-        if (error.code === "23505") {
-          // duplicate — already in watchlist
-        } else {
-          throw error;
-        }
+      const isMusic = result.media_type === "album" || result.media_type === "track";
+      if (isMusic) {
+        const { error } = await supabase.from("music_queue").insert({
+          user_id: user.id,
+          spotify_id: result.spotify_id || String(result.id),
+          media_type: result.media_type,
+          title: result.title || result.name || "Untitled",
+          artist: result.artist || null,
+          image_url: result.image_url || result.poster_url || null,
+        });
+        if (error && error.code !== "23505") throw error;
+        await fetchMusicQueue();
+      } else {
+        const { error } = await supabase.from("watchlist").insert({
+          user_id: user.id,
+          tmdb_id: result.id as number,
+          title: result.title || result.name || "Untitled",
+          media_type: result.media_type,
+          poster_url: result.poster_url || null,
+        });
+        if (error && error.code !== "23505") throw error;
+        await fetchWatchlist();
       }
 
       setAddQuery("");
       setShowAddDropdown(false);
-      await fetchWatchlist();
     } catch {
       // silently fail
     } finally {
       setAddingId(null);
+    }
+  }
+
+  async function handleRemoveMusicQueue(id: string) {
+    try {
+      const supabase = createClient();
+      await supabase.from("music_queue").delete().eq("id", id);
+      setMusicQueue(musicQueue.filter((item) => item.id !== id));
+    } catch {
+      // silently fail
     }
   }
 
@@ -300,14 +369,21 @@ function WatchlistPageContent() {
   const isMusicFilter = filter === "music" || filter === "albums";
   const effectiveViewType = filter === "all" ? "list" : viewType;
 
-  const stats = {
-    total: watchlist.length,
-    movies: watchlist.filter((i) => i.media_type === "movie").length,
-    tvShows: watchlist.filter((i) => i.media_type === "tv").length,
-    albums: watchlist.filter((i) => i.media_type === "album").length,
-  };
+  const stats = mode === "music"
+    ? {
+        total: musicQueue.length,
+        albums: musicQueue.filter((i) => i.media_type === "album").length,
+        tracks: musicQueue.filter((i) => i.media_type === "track").length,
+      }
+    : {
+        total: watchlist.length,
+        movies: watchlist.filter((i) => i.media_type === "movie").length,
+        tvShows: watchlist.filter((i) => i.media_type === "tv").length,
+        albums: 0,
+      };
 
   const watchlistTmdbIds = new Set(watchlist.map((i) => i.tmdb_id));
+  const musicQueueSpotifyIds = new Set(musicQueue.map((i) => i.spotify_id).filter(Boolean));
 
   return (
     <div className="flex flex-col gap-8">
@@ -369,7 +445,7 @@ function WatchlistPageContent() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search for a movie or TV show..."
+                placeholder={mode === "music" ? "Search for an album or track..." : "Search for a movie or TV show..."}
                 value={addQuery}
                 onChange={(e) => setAddQuery(e.target.value)}
                 onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
@@ -385,31 +461,39 @@ function WatchlistPageContent() {
                 {addResults.slice(0, 8).map((result) => {
                   const label = result.title || result.name || "Untitled";
                   const year = (result.release_date || result.first_air_date || "").slice(0, 4);
-                  const alreadyAdded = watchlistTmdbIds.has(result.id);
+                  const isMusicResult = result.media_type === "album" || result.media_type === "track";
+                  const alreadyAdded = isMusicResult
+                    ? musicQueueSpotifyIds.has(result.spotify_id || String(result.id))
+                    : watchlistTmdbIds.has(result.id as number);
+                  const artUrl = result.image_url || result.poster_url || null;
                   return (
                     <div
                       key={`${result.media_type}-${result.id}`}
                       className="flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors"
                     >
-                      {result.poster_url ? (
+                      {artUrl ? (
                         <img
-                          src={result.poster_url}
+                          src={artUrl}
                           alt={label}
-                          className="w-8 h-12 object-cover rounded shrink-0"
+                          className={`object-cover rounded shrink-0 ${isMusicResult ? "w-10 h-10" : "w-8 h-12"}`}
                         />
                       ) : (
-                        <div className="w-8 h-12 bg-muted/50 rounded flex items-center justify-center shrink-0">
-                          {result.media_type === "movie"
-                            ? <Film className="w-4 h-4 text-muted-foreground" />
-                            : <Tv className="w-4 h-4 text-muted-foreground" />}
+                        <div className={`bg-muted/50 rounded flex items-center justify-center shrink-0 ${isMusicResult ? "w-10 h-10" : "w-8 h-12"}`}>
+                          {result.media_type === "movie" ? <Film className="w-4 h-4 text-muted-foreground" />
+                            : result.media_type === "tv" ? <Tv className="w-4 h-4 text-muted-foreground" />
+                            : result.media_type === "album" ? <Disc3 className="w-4 h-4 text-muted-foreground" />
+                            : <Music2 className="w-4 h-4 text-muted-foreground" />}
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{label}</div>
                         <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          <span>{result.media_type === "movie" ? "Movie" : "TV Show"}</span>
+                          {isMusicResult && result.artist && (
+                            <span className="text-accent truncate">{result.artist}</span>
+                          )}
+                          <span>{isMusicResult ? (result.media_type === "album" ? "Album" : "Track") : result.media_type === "movie" ? "Movie" : "TV Show"}</span>
                           {year && <><span>·</span><span>{year}</span></>}
-                          {result.vote_average != null && result.vote_average > 0 && (
+                          {!isMusicResult && result.vote_average != null && result.vote_average > 0 && (
                             <>
                               <span>·</span>
                               <span className="flex items-center gap-1">
@@ -455,32 +539,57 @@ function WatchlistPageContent() {
                 </div>
                 <div>
                   <div className="text-2xl font-bold">{stats.total}</div>
-                  <p className="text-sm text-muted-foreground">To Watch</p>
+                  <p className="text-sm text-muted-foreground">{mode === "music" ? "In Queue" : "To Watch"}</p>
                 </div>
               </div>
             </div>
-            <div className="border-2 border-border p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
-                  <Film className="w-5 h-5 text-accent" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">{stats.movies}</div>
-                  <p className="text-sm text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
-                </div>
-              </div>
-            </div>
-            <div className="border-2 border-border p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
-                  <Tv className="w-5 h-5 text-secondary" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">{stats.tvShows}</div>
-                  <p className="text-sm text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
+            {mode === "music" ? (<>
+              <div className="border-2 border-border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
+                    <Disc3 className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{(stats as any).albums}</div>
+                    <p className="text-sm text-muted-foreground">Albums</p>
+                  </div>
                 </div>
               </div>
-            </div>
+              <div className="border-2 border-border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
+                    <Music2 className="w-5 h-5 text-secondary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{(stats as any).tracks}</div>
+                    <p className="text-sm text-muted-foreground">Tracks</p>
+                  </div>
+                </div>
+              </div>
+            </>) : (<>
+              <div className="border-2 border-border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
+                    <Film className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{(stats as any).movies}</div>
+                    <p className="text-sm text-muted-foreground">{(stats as any).movies === 1 ? "Movie" : "Movies"}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="border-2 border-border p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
+                    <Tv className="w-5 h-5 text-secondary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{(stats as any).tvShows}</div>
+                    <p className="text-sm text-muted-foreground">{(stats as any).tvShows === 1 ? "TV Show" : "TV Shows"}</p>
+                  </div>
+                </div>
+              </div>
+            </>)}
           </div>
 
           {/* Filters & Search */}
@@ -584,26 +693,82 @@ function WatchlistPageContent() {
             </div>
           </div>
 
-          {/* Content */}
-          {loading ? (
+          {/* Content — music mode shows music_queue, film mode shows watchlist */}
+          {mode === "music" ? (
+            musicQueueLoading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : musicQueue.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
+                  <Disc3 className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h2 className="text-xl font-semibold mb-2">Your music queue is empty</h2>
+                <p className="text-muted-foreground mb-6 max-w-md">
+                  Use the search bar above to find albums and tracks to add.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {musicQueue.map((item) => (
+                  <div
+                    key={item.id}
+                    className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 relative"
+                  >
+                    <div className="aspect-square bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                      ) : item.media_type === "album" ? (
+                        <Disc3 className="w-12 h-12 text-white/50" />
+                      ) : (
+                        <Music2 className="w-12 h-12 text-white/50" />
+                      )}
+                      <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          className="bg-green-500 hover:bg-green-600"
+                          onClick={(e) => { e.stopPropagation(); router.push("/protected/log"); }}
+                        >
+                          <Check className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={(e) => { e.stopPropagation(); handleRemoveMusicQueue(item.id); }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="p-3 space-y-1">
+                      <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors text-sm">
+                        {item.title}
+                      </h3>
+                      {item.artist && (
+                        <p className="text-xs text-accent truncate">{item.artist}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {item.media_type === "album" ? "Album" : "Track"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : loading ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                {isMusicFilter
-                  ? <Disc3 className="w-10 h-10 text-muted-foreground" />
-                  : <Clock className="w-10 h-10 text-muted-foreground" />}
+                <Clock className="w-10 h-10 text-muted-foreground" />
               </div>
-              <h2 className="text-xl font-semibold mb-2">
-                {isMusicFilter ? "Your music queue is empty" : "Your watchlist is empty"}
-              </h2>
+              <h2 className="text-xl font-semibold mb-2">Your watchlist is empty</h2>
               <p className="text-muted-foreground mb-6 max-w-md">
                 {searchQuery
                   ? "No results match your search. Try different keywords."
-                  : isMusicFilter
-                  ? "Use the search bar above to find albums to add."
                   : "Use the search bar above to find movies and TV shows to add."}
               </p>
             </div>

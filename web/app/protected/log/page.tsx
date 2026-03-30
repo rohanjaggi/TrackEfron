@@ -26,6 +26,9 @@ type MediaType = "movie" | "tv" | "album" | "track";
 
 type TmdbResult = {
   id: number;
+  spotify_id?: string;
+  artist?: string;
+  album_name?: string;
   title?: string;
   name?: string;
   release_date?: string;
@@ -79,6 +82,18 @@ function LogWatchForm() {
   const [pacingRating, setPacingRating] = useState(0);
   const [castingRating, setCastingRating] = useState(0);
   const [hoverCategory, setHoverCategory] = useState<{ [key: string]: number }>({});
+  // Music-specific state
+  const [spotifyId, setSpotifyId] = useState<string | null>(null);
+  const [artist, setArtist] = useState("");
+  const [albumName, setAlbumName] = useState("");
+  const [lyricsRating, setLyricsRating] = useState(0);
+  const [productionRating, setProductionRating] = useState(0);
+  const [vocalsRating, setVocalsRating] = useState(0);
+  const [melodyRating, setMelodyRating] = useState(0);
+  const [replayRating, setReplayRating] = useState(0);
+  const [energyRating, setEnergyRating] = useState(0);
+  const [listenedOn, setListenedOn] = useState("");
+  const [listeningContext, setListeningContext] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,39 +122,75 @@ function LogWatchForm() {
         return;
       }
 
-      const logData = {
-        tmdb_id: selectedMovie?.id || null,
-        title,
-        media_type: mediaType,
-        poster_url: selectedMovie?.poster_url || null,
-        rating,
-        review: review || null,
-        watched_date: watchedDate || null,
-        watched_on: watchedOn || null,
-        watch_duration: watchDuration || null,
-        discovered_via: discoveredVia || null,
-        rewatchability: rewatchability || null,
-        watched_with: watchedWith || null,
-        times_watched: timesWatched || null,
-        plot_rating: plotRating || null,
-        cinematography_rating: cinematographyRating || null,
-        acting_rating: actingRating || null,
-        soundtrack_rating: soundtrackRating || null,
-        pacing_rating: pacingRating || null,
-        casting_rating: castingRating || null,
-      };
+      const isMusic = mediaType === "album" || mediaType === "track";
 
-      if (isEditMode && editId) {
-        const { error: updateError } = await supabase
-          .from("watch_logs")
-          .update(logData)
-          .eq("id", editId);
-        if (updateError) throw updateError;
+      if (isMusic) {
+        const musicData = {
+          spotify_id: spotifyId || null,
+          media_type: mediaType,
+          title,
+          artist: artist || null,
+          album_name: albumName || null,
+          image_url: selectedMovie?.poster_url || null,
+          release_date: selectedMovie?.release_date || null,
+          rating,
+          review: review || null,
+          listened_date: watchedDate || null,
+          listened_on: listenedOn || null,
+          listening_context: listeningContext || null,
+          lyrics_rating: lyricsRating || null,
+          production_rating: productionRating || null,
+          vocals_rating: vocalsRating || null,
+          melody_rating: melodyRating || null,
+          replay_rating: replayRating || null,
+          energy_rating: energyRating || null,
+        };
+        if (isEditMode && editId) {
+          const { error: updateError } = await supabase
+            .from("listen_logs")
+            .update(musicData)
+            .eq("id", editId);
+          if (updateError) throw updateError;
+        } else {
+          const { error: insertError } = await supabase
+            .from("listen_logs")
+            .insert({ user_id: user.id, ...musicData });
+          if (insertError) throw insertError;
+        }
       } else {
-        const { error: insertError } = await supabase
-          .from("watch_logs")
-          .insert({ user_id: user.id, ...logData });
-        if (insertError) throw insertError;
+        const logData = {
+          tmdb_id: selectedMovie?.id || null,
+          title,
+          media_type: mediaType,
+          poster_url: selectedMovie?.poster_url || null,
+          rating,
+          review: review || null,
+          watched_date: watchedDate || null,
+          watched_on: watchedOn || null,
+          watch_duration: watchDuration || null,
+          discovered_via: discoveredVia || null,
+          rewatchability: rewatchability || null,
+          watched_with: watchedWith || null,
+          times_watched: timesWatched || null,
+          plot_rating: plotRating || null,
+          cinematography_rating: cinematographyRating || null,
+          acting_rating: actingRating || null,
+          soundtrack_rating: soundtrackRating || null,
+          pacing_rating: pacingRating || null,
+          casting_rating: castingRating || null,
+        };
+        if (isEditMode && editId) {
+          const { error: updateError } = await supabase
+            .from("watch_logs")
+            .update(logData)
+            .eq("id", editId);
+          if (updateError) throw updateError;
+        } else {
+          const { error: insertError } = await supabase
+            .from("watch_logs")
+            .insert({ user_id: user.id, ...logData });
+          if (insertError) throw insertError;
+        }
       }
 
       // Reset form
@@ -164,6 +215,17 @@ function LogWatchForm() {
       setSoundtrackRating(0);
       setPacingRating(0);
       setCastingRating(0);
+      setSpotifyId(null);
+      setArtist("");
+      setAlbumName("");
+      setLyricsRating(0);
+      setProductionRating(0);
+      setVocalsRating(0);
+      setMelodyRating(0);
+      setReplayRating(0);
+      setEnergyRating(0);
+      setListenedOn("");
+      setListeningContext("");
 
       router.push("/protected/library");
     } catch (err) {
@@ -184,9 +246,28 @@ function LogWatchForm() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
-        const res = await fetch(`/api?q=${encodeURIComponent(q)}&type=${mediaType}`);
-        const data = await res.json();
-        setResults(Array.isArray(data) ? data : []);
+        const isMusic = mediaType === "album" || mediaType === "track";
+        let data: TmdbResult[];
+        if (isMusic) {
+          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=${mediaType}`);
+          const raw = await res.json();
+          data = Array.isArray(raw)
+            ? raw.map((r: any) => ({
+                id: 0,
+                spotify_id: r.id,
+                name: r.name,
+                artist: r.artist,
+                album_name: r.album_name,
+                poster_url: r.image_url,
+                release_date: r.release_date,
+              }))
+            : [];
+        } else {
+          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+          const raw = await res.json();
+          data = Array.isArray(raw) ? raw : [];
+        }
+        setResults(data);
       } finally {
         setIsSearching(false);
       }
@@ -195,45 +276,81 @@ function LogWatchForm() {
     return () => clearTimeout(t);
   }, [title, mediaType]);
 
-  // Load existing watch log for edit mode
+  // Load existing log for edit mode (watch_logs for film, listen_logs for music)
   useEffect(() => {
     if (!editId) return;
     async function loadExisting() {
       try {
         const supabase = createClient();
-        const { data } = await supabase
+        // Try watch_logs first
+        const { data: filmData } = await supabase
           .from("watch_logs")
           .select("*")
           .eq("id", editId)
           .single();
-        if (data) {
-          setMediaType(data.media_type);
-          setTitle(data.title);
-          setRating(data.rating);
-          setReview(data.review || "");
-          setWatchedDate(data.watched_date || new Date().toISOString().split('T')[0]);
-          setWatchedOn(data.watched_on || "");
-          setWatchDuration(data.watch_duration || "");
-          setDiscoveredVia(data.discovered_via || "");
-          setRewatchability(data.rewatchability || "");
-          setWatchedWith(data.watched_with || "");
-          setTimesWatched(data.times_watched || "");
-          setPlotRating(data.plot_rating || 0);
-          setCinematographyRating(data.cinematography_rating || 0);
-          setActingRating(data.acting_rating || 0);
-          setSoundtrackRating(data.soundtrack_rating || 0);
-          setPacingRating(data.pacing_rating || 0);
-          setCastingRating(data.casting_rating || 0);
-          if (data.tmdb_id) {
-            setSelectedMovie({
-              id: data.tmdb_id,
-              title: data.title,
-              poster_url: data.poster_url,
-            } as TmdbResult);
+
+        if (filmData) {
+          setMediaType(filmData.media_type);
+          setTitle(filmData.title);
+          setRating(filmData.rating);
+          setReview(filmData.review || "");
+          setWatchedDate(filmData.watched_date || new Date().toISOString().split('T')[0]);
+          setWatchedOn(filmData.watched_on || "");
+          setWatchDuration(filmData.watch_duration || "");
+          setDiscoveredVia(filmData.discovered_via || "");
+          setRewatchability(filmData.rewatchability || "");
+          setWatchedWith(filmData.watched_with || "");
+          setTimesWatched(filmData.times_watched || "");
+          setPlotRating(filmData.plot_rating || 0);
+          setCinematographyRating(filmData.cinematography_rating || 0);
+          setActingRating(filmData.acting_rating || 0);
+          setSoundtrackRating(filmData.soundtrack_rating || 0);
+          setPacingRating(filmData.pacing_rating || 0);
+          setCastingRating(filmData.casting_rating || 0);
+          if (filmData.tmdb_id) {
+            setSelectedMovie({ id: filmData.tmdb_id, title: filmData.title, poster_url: filmData.poster_url } as TmdbResult);
           }
-          if (data.watched_on || data.watch_duration || data.discovered_via ||
-              data.rewatchability || data.watched_with || data.times_watched) {
+          if (filmData.watched_on || filmData.watch_duration || filmData.discovered_via ||
+              filmData.rewatchability || filmData.watched_with || filmData.times_watched) {
             setShowMoreDetails(true);
+          }
+        } else {
+          // Try listen_logs (music)
+          const { data: musicData } = await supabase
+            .from("listen_logs")
+            .select("*")
+            .eq("id", editId)
+            .single();
+          if (musicData) {
+            setMediaType(musicData.media_type);
+            setTitle(musicData.title);
+            setRating(musicData.rating);
+            setReview(musicData.review || "");
+            setWatchedDate(musicData.listened_date || new Date().toISOString().split('T')[0]);
+            setSpotifyId(musicData.spotify_id || null);
+            setArtist(musicData.artist || "");
+            setAlbumName(musicData.album_name || "");
+            setListenedOn(musicData.listened_on || "");
+            setListeningContext(musicData.listening_context || "");
+            setLyricsRating(musicData.lyrics_rating || 0);
+            setProductionRating(musicData.production_rating || 0);
+            setVocalsRating(musicData.vocals_rating || 0);
+            setMelodyRating(musicData.melody_rating || 0);
+            setReplayRating(musicData.replay_rating || 0);
+            setEnergyRating(musicData.energy_rating || 0);
+            if (musicData.spotify_id) {
+              setSelectedMovie({
+                id: 0,
+                spotify_id: musicData.spotify_id,
+                name: musicData.title,
+                artist: musicData.artist,
+                poster_url: musicData.image_url,
+                release_date: musicData.release_date,
+              } as TmdbResult);
+            }
+            if (musicData.listened_on || musicData.listening_context) {
+              setShowMoreDetails(true);
+            }
           }
         }
       } catch {
@@ -397,15 +514,25 @@ function LogWatchForm() {
               className="mt-1 max-h-64 overflow-auto"
               style={{ background: "var(--surface)", border: "1px solid var(--border-raw)" }}
             >
-              {results.slice(0, 8).map((r: any) => {
+              {results.slice(0, 8).map((r: any, idx: number) => {
                 const lbl = r.title || r.name || "Untitled";
                 const yr = (r.release_date || r.first_air_date || "").slice(0, 4);
                 const isFilmResult = mediaType === "movie" || mediaType === "tv";
+                const isMusicResult = !isFilmResult;
                 return (
                   <button
-                    key={r.id}
+                    key={r.spotify_id || r.id || idx}
                     type="button"
-                    onClick={() => { setTitle(lbl); setSelectedMovie(r); setResults([]); }}
+                    onClick={() => {
+                      setTitle(lbl);
+                      setSelectedMovie(r);
+                      setResults([]);
+                      if (isMusicResult) {
+                        setSpotifyId(r.spotify_id || null);
+                        setArtist(r.artist || "");
+                        setAlbumName(r.album_name || "");
+                      }
+                    }}
                     className="w-full text-left flex gap-3 items-center transition-colors duration-100"
                     style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-raw)", color: "var(--text)" }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--surface-2)"}
@@ -414,13 +541,20 @@ function LogWatchForm() {
                     {r.poster_url && (
                       <div
                         className="flex-shrink-0 overflow-hidden"
-                        style={{ width: isFilmResult ? 26 : 32, height: isFilmResult ? 38 : 32, background: "var(--surface-2)" }}
+                        style={{ width: isFilmResult ? 26 : 32, height: isFilmResult ? 38 : 32, background: "var(--surface-2)", position: "relative" }}
                       >
-                        <img src={r.poster_url} alt={lbl} className="w-full h-full object-cover" />
+                        <img
+                          src={r.poster_url.replace(/\/w\d+\//, "/w342/")}
+                          alt={lbl}
+                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                        />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="font-display text-[14px] font-semibold truncate">{lbl}</div>
+                      {isMusicResult && r.artist && (
+                        <div className="text-[11px]" style={{ color: "var(--mode-accent)" }}>{r.artist}</div>
+                      )}
                       {yr && <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{yr}</div>}
                     </div>
                   </button>
@@ -436,9 +570,16 @@ function LogWatchForm() {
               style={{ background: "var(--mode-accent-dim)", border: "1px solid var(--mode-accent)" }}
             >
               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--mode-accent)" }} />
-              <span className="font-display text-[14px] font-semibold flex-1 truncate" style={{ color: "var(--text)" }}>
-                {selectedMovie.title || selectedMovie.name}
-              </span>
+              <div className="flex-1 min-w-0">
+                <span className="font-display text-[14px] font-semibold block truncate" style={{ color: "var(--text)" }}>
+                  {selectedMovie.title || selectedMovie.name}
+                </span>
+                {selectedMovie.artist && (
+                  <span className="text-[11px] block truncate" style={{ color: "var(--mode-accent)" }}>
+                    {selectedMovie.artist}
+                  </span>
+                )}
+              </div>
               {(selectedMovie.release_date || selectedMovie.first_air_date) && (
                 <span className="text-[11px] flex-shrink-0" style={{ color: "var(--text-muted)" }}>
                   {(selectedMovie.release_date || selectedMovie.first_air_date || "").slice(0, 4)}
@@ -518,11 +659,11 @@ function LogWatchForm() {
           )}
         </div>
 
-        {/* Date Watched */}
+        {/* Date Watched / Listened */}
         <div className="space-y-2">
           <Label htmlFor="watchedDate" className="text-base flex items-center gap-2">
             <Calendar className="w-4 h-4" />
-            Date Watched
+            {isSelectedMusic ? "Date Listened" : "Date Watched"}
           </Label>
           <Input
             id="watchedDate"
@@ -552,18 +693,25 @@ function LogWatchForm() {
           </p>
         </div>
 
-        {/* Category Ratings */}
+        {/* Category Ratings — mode-aware */}
         <div className="space-y-4">
           <Label className="text-base block">Rate by Category (Optional)</Label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-            {([
+            {(isSelectedMusic ? [
+              { key: "lyrics", label: "Lyrics", value: lyricsRating, setter: setLyricsRating },
+              { key: "production", label: "Production", value: productionRating, setter: setProductionRating },
+              { key: "vocals", label: "Vocals", value: vocalsRating, setter: setVocalsRating },
+              { key: "melody", label: "Melody", value: melodyRating, setter: setMelodyRating },
+              { key: "replay", label: "Replay Value", value: replayRating, setter: setReplayRating },
+              { key: "energy", label: "Energy", value: energyRating, setter: setEnergyRating },
+            ] : [
               { key: "plot", label: "Plot", value: plotRating, setter: setPlotRating },
               { key: "cinematography", label: "Cinematography", value: cinematographyRating, setter: setCinematographyRating },
               { key: "acting", label: "Acting", value: actingRating, setter: setActingRating },
               { key: "soundtrack", label: "Soundtrack", value: soundtrackRating, setter: setSoundtrackRating },
               { key: "pacing", label: "Pacing", value: pacingRating, setter: setPacingRating },
               { key: "casting", label: "Casting", value: castingRating, setter: setCastingRating },
-            ] as const).map(({ key, label, value, setter }) => (
+            ] as { key: string; label: string; value: number; setter: (v: number) => void }[]).map(({ key, label, value, setter }) => (
               <div key={key} className="flex items-center justify-between gap-3">
                 <Label className="text-sm text-muted-foreground w-28 shrink-0">{label}</Label>
                 <div className="flex items-center gap-0.5">
@@ -581,9 +729,7 @@ function LogWatchForm() {
                       >
                         <Star
                           className={`w-5 h-5 transition-colors duration-150 ${
-                            isActive
-                              ? "text-accent fill-accent"
-                              : "text-muted-foreground/30"
+                            isActive ? "text-accent fill-accent" : "text-muted-foreground/30"
                           }`}
                         />
                       </button>
@@ -611,110 +757,148 @@ function LogWatchForm() {
 
           {showMoreDetails && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div className="space-y-2">
-                <Label className="text-sm">Where did you watch?</Label>
-                <select
-                  value={watchedOn}
-                  onChange={(e) => setWatchedOn(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="Netflix">Netflix</option>
-                  <option value="Disney+">Disney+</option>
-                  <option value="Prime Video">Prime Video</option>
-                  <option value="Hulu">Hulu</option>
-                  <option value="HBO Max">HBO Max</option>
-                  <option value="Apple TV+">Apple TV+</option>
-                  <option value="Paramount+">Paramount+</option>
-                  <option value="Peacock">Peacock</option>
-                  <option value="Streaming Site">Streaming Site</option>
-                  <option value="Cinema">Cinema</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+              {isSelectedMusic ? (<>
+                <div className="space-y-2">
+                  <Label className="text-sm">Where did you listen?</Label>
+                  <select
+                    value={listenedOn}
+                    onChange={(e) => setListenedOn(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Spotify">Spotify</option>
+                    <option value="Apple Music">Apple Music</option>
+                    <option value="YouTube Music">YouTube Music</option>
+                    <option value="SoundCloud">SoundCloud</option>
+                    <option value="Vinyl">Vinyl</option>
+                    <option value="CD">CD</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">How long did it take to finish?</Label>
-                <select
-                  value={watchDuration}
-                  onChange={(e) => setWatchDuration(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="One sitting">One sitting</option>
-                  <option value="A few days">A few days</option>
-                  <option value="About a week">About a week</option>
-                  <option value="A few weeks">A few weeks</option>
-                  <option value="Over a month">Over a month</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">What was the context?</Label>
+                  <select
+                    value={listeningContext}
+                    onChange={(e) => setListeningContext(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Chill">Chill</option>
+                    <option value="Workout">Workout</option>
+                    <option value="Study">Study</option>
+                    <option value="Commute">Commute</option>
+                    <option value="Party">Party</option>
+                    <option value="Sleep">Sleep</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </>) : (<>
+                <div className="space-y-2">
+                  <Label className="text-sm">Where did you watch?</Label>
+                  <select
+                    value={watchedOn}
+                    onChange={(e) => setWatchedOn(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Netflix">Netflix</option>
+                    <option value="Disney+">Disney+</option>
+                    <option value="Prime Video">Prime Video</option>
+                    <option value="Hulu">Hulu</option>
+                    <option value="HBO Max">HBO Max</option>
+                    <option value="Apple TV+">Apple TV+</option>
+                    <option value="Paramount+">Paramount+</option>
+                    <option value="Peacock">Peacock</option>
+                    <option value="Streaming Site">Streaming Site</option>
+                    <option value="Cinema">Cinema</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">How did you discover this?</Label>
-                <select
-                  value={discoveredVia}
-                  onChange={(e) => setDiscoveredVia(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="Friend/Family">Friend/Family</option>
-                  <option value="Social Media">Social Media</option>
-                  <option value="Streaming Recommendation">Streaming Recommendation</option>
-                  <option value="Trailer">Trailer</option>
-                  <option value="Review/Article">Review/Article</option>
-                  <option value="Just Browsing">TrackEfron</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">How long did it take to finish?</Label>
+                  <select
+                    value={watchDuration}
+                    onChange={(e) => setWatchDuration(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="One sitting">One sitting</option>
+                    <option value="A few days">A few days</option>
+                    <option value="About a week">About a week</option>
+                    <option value="A few weeks">A few weeks</option>
+                    <option value="Over a month">Over a month</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">Would you rewatch?</Label>
-                <select
-                  value={rewatchability}
-                  onChange={(e) => setRewatchability(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="Definitely">Definitely</option>
-                  <option value="Probably">Probably</option>
-                  <option value="Maybe">Maybe</option>
-                  <option value="Unlikely">Unlikely</option>
-                  <option value="No way">No way</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">How did you discover this?</Label>
+                  <select
+                    value={discoveredVia}
+                    onChange={(e) => setDiscoveredVia(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Friend/Family">Friend/Family</option>
+                    <option value="Social Media">Social Media</option>
+                    <option value="Streaming Recommendation">Streaming Recommendation</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Review/Article">Review/Article</option>
+                    <option value="Just Browsing">TrackEfron</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">Who did you watch with?</Label>
-                <select
-                  value={watchedWith}
-                  onChange={(e) => setWatchedWith(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="Solo">Solo</option>
-                  <option value="Partner">Partner</option>
-                  <option value="Friends">Friends</option>
-                  <option value="Family">Family</option>
-                  <option value="Group">Group</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">Would you rewatch?</Label>
+                  <select
+                    value={rewatchability}
+                    onChange={(e) => setRewatchability(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Definitely">Definitely</option>
+                    <option value="Probably">Probably</option>
+                    <option value="Maybe">Maybe</option>
+                    <option value="Unlikely">Unlikely</option>
+                    <option value="No way">No way</option>
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">How many times have you watched this?</Label>
-                <select
-                  value={timesWatched}
-                  onChange={(e) => setTimesWatched(e.target.value)}
-                  className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Select...</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6+">6+</option>
-                </select>
-              </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">Who did you watch with?</Label>
+                  <select
+                    value={watchedWith}
+                    onChange={(e) => setWatchedWith(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="Solo">Solo</option>
+                    <option value="Partner">Partner</option>
+                    <option value="Friends">Friends</option>
+                    <option value="Family">Family</option>
+                    <option value="Group">Group</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm">How many times have you watched this?</Label>
+                  <select
+                    value={timesWatched}
+                    onChange={(e) => setTimesWatched(e.target.value)}
+                    className="w-full px-3 py-2 bg-card border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select...</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6+">6+</option>
+                  </select>
+                </div>
+              </>)}
             </div>
           )}
         </div>
@@ -784,17 +968,16 @@ function LogWatchForm() {
                       background: "var(--surface-2)",
                       position: "relative",
                       overflow: "hidden",
-                      maxHeight: isSelectedMusic ? 280 : 380,
                     }}
                   >
                     {selectedMovie.poster_url ? (
                       <img
-                        src={selectedMovie.poster_url}
+                        src={selectedMovie.poster_url.replace(/\/w\d+\//, "/w780/")}
                         alt={selectedMovie.title || selectedMovie.name}
-                        className="w-full h-full object-cover"
+                        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center">
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {isSelectedMusic
                           ? <Disc3 className="w-12 h-12" style={{ color: "var(--text-dim)" }} />
                           : <Film className="w-12 h-12" style={{ color: "var(--text-dim)" }} />}
@@ -811,6 +994,9 @@ function LogWatchForm() {
                       >
                         {selectedMovie.title || selectedMovie.name}
                       </h3>
+                      {selectedMovie.artist && (
+                        <p className="text-[12px] mb-1" style={{ color: "var(--mode-accent)" }}>{selectedMovie.artist}</p>
+                      )}
                       <p className="label-upper">
                         {(selectedMovie.release_date || selectedMovie.first_air_date || "").slice(0, 4)}
                         {mediaType && ` · ${mediaType === "movie" ? "Movie" : mediaType === "tv" ? "TV Show" : mediaType === "album" ? "Album" : "Track"}`}

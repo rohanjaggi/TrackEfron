@@ -245,13 +245,31 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     async function fetchData() {
       const supabase = createClient();
       try {
-        const { data, error } = await supabase
-          .from("watch_logs")
-          .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-          .order("watched_date", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setWatchLogs(data || []);
+        const [filmRes, musicRes] = await Promise.all([
+          supabase
+            .from("watch_logs")
+            .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+            .order("watched_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("listen_logs")
+            .select("id, title, media_type, rating, review, listened_date, image_url, created_at")
+            .order("listened_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+        ]);
+        if (filmRes.error) throw filmRes.error;
+        const musicMapped: WatchLog[] = (musicRes.data || []).map((m) => ({
+          id: m.id,
+          title: m.title,
+          media_type: m.media_type as "album" | "track",
+          rating: m.rating,
+          review: m.review,
+          watched_date: m.listened_date,
+          poster_url: m.image_url,
+          tmdb_id: null,
+          created_at: m.created_at,
+        }));
+        setWatchLogs([...(filmRes.data || []), ...musicMapped]);
       } catch {
         /* silently fail */
       } finally {
@@ -302,15 +320,16 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const filmLogs = watchLogs.filter(i => i.media_type === "movie" || i.media_type === "tv");
   const musicLogs = watchLogs.filter(i => i.media_type === "album" || i.media_type === "track");
 
+  const activeLogs = mode === "music" ? musicLogs : filmLogs;
   const stats = {
     total: watchLogs.length,
     filmCount: filmLogs.length,
     musicCount: musicLogs.length,
-    reviews: watchLogs.filter(i => i.review && i.review.trim().length > 0).length,
-    avgRating: watchLogs.length > 0
-      ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
+    reviews: activeLogs.filter(i => i.review && i.review.trim().length > 0).length,
+    avgRating: activeLogs.length > 0
+      ? (activeLogs.reduce((acc, i) => acc + Number(i.rating), 0) / activeLogs.length).toFixed(1)
       : "—",
-    thisMonth: watchLogs.filter(i => {
+    thisMonth: activeLogs.filter(i => {
       const d = i.watched_date || i.created_at;
       return d >= thisMonthStart;
     }).length,
@@ -613,7 +632,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         ) : recs.length === 0 ? (
           <div className="py-12 text-center">
             <p className="font-display italic text-lg" style={{ color: "var(--text-muted)" }}>
-              Log more watches to unlock personalised picks
+              Log more {mode === "music" ? "listens" : "watches"} to unlock personalised picks
             </p>
           </div>
         ) : (

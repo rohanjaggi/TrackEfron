@@ -25,8 +25,12 @@ import {
   Compass,
   Bookmark,
   BookmarkCheck,
+  Disc3,
+  Music2,
+  Headphones,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useMode } from "@/lib/mode-context";
 
 // ─── Types ───
 
@@ -61,7 +65,35 @@ type ForYouRow = {
   items: MediaItem[];
 };
 
+type MusicMediaItem = {
+  id: string;
+  name: string;
+  artist: string;
+  album_name: string;
+  image_url: string | null;
+  release_date: string;
+  type: "album" | "track";
+};
+
 // ─── Constants ───
+
+const MOOD_PILLS = [
+  { label: "Chill", query: "chill vibes" },
+  { label: "Workout", query: "workout motivation" },
+  { label: "Study", query: "study focus lofi" },
+  { label: "Party", query: "party hits" },
+  { label: "Sleep", query: "sleep calm ambient" },
+  { label: "Focus", query: "deep focus concentration" },
+];
+
+const MUSIC_GENRE_QUERIES = [
+  { title: "Hot in Pop", subtitle: "Chart-topping pop releases", query: "pop hits 2024" },
+  { title: "Hip-Hop Now", subtitle: "Latest rap and hip-hop", query: "hip hop rap 2024" },
+  { title: "R&B & Soul", subtitle: "Smooth soul and R&B", query: "r&b soul neo soul" },
+  { title: "Electronic & Dance", subtitle: "Electronic beats and dance", query: "electronic dance edm" },
+  { title: "Indie Picks", subtitle: "Independent and alternative", query: "indie alternative indie pop" },
+  { title: "Jazz & Blues", subtitle: "Classic and contemporary", query: "jazz blues piano" },
+];
 
 const DEFAULT_GENRE_PILLS = [
   { id: 28, name: "Action" },
@@ -288,14 +320,163 @@ function SectionDivider({ icon: Icon, title, subtitle }: { icon: React.ElementTy
   );
 }
 
+// ─── Music Components ───
+
+function MusicCard({
+  item,
+  onQueue,
+  queued,
+}: {
+  item: MusicMediaItem;
+  onQueue: (item: MusicMediaItem) => void;
+  queued: boolean;
+}) {
+  return (
+    <div className="shrink-0 w-[130px] md:w-[150px] group">
+      <div className="relative">
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.name}
+            className="w-full aspect-square object-cover border-2 border-border group-hover:border-[var(--music)] transition-colors duration-200"
+          />
+        ) : (
+          <div className="w-full aspect-square bg-muted/20 border-2 border-border flex items-center justify-center">
+            <Disc3 className="w-6 h-6 text-muted-foreground/50" />
+          </div>
+        )}
+        <button
+          onClick={() => onQueue(item)}
+          disabled={queued}
+          className="absolute top-1.5 right-1.5 w-6 h-6 bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors disabled:text-[var(--music)]"
+          title={queued ? "In queue" : "Add to queue"}
+        >
+          {queued
+            ? <BookmarkCheck className="w-3 h-3 text-[var(--music)]" />
+            : <Bookmark className="w-3 h-3" />}
+        </button>
+      </div>
+      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-[var(--music)] transition-colors">
+        {item.name}
+      </p>
+      <p className="text-xs text-muted-foreground truncate">{item.artist}</p>
+    </div>
+  );
+}
+
+function SkeletonMusicCard() {
+  return (
+    <div className="shrink-0 w-[130px] md:w-[150px]">
+      <div className="w-full aspect-square bg-muted/20 border-2 border-border animate-pulse" />
+      <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
+      <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
+    </div>
+  );
+}
+
+function MusicRow({
+  title,
+  subtitle,
+  icon: Icon,
+  items,
+  loading,
+  onQueue,
+  queuedIds,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: React.ElementType;
+  items: MusicMediaItem[];
+  loading?: boolean;
+  onQueue: (item: MusicMediaItem) => void;
+  queuedIds: Set<string>;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    const el = scrollRef.current;
+    if (el) {
+      el.addEventListener("scroll", checkScroll, { passive: true });
+      return () => el.removeEventListener("scroll", checkScroll);
+    }
+  }, [checkScroll, items]);
+
+  const scroll = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === "left" ? -el.clientWidth * 0.75 : el.clientWidth * 0.75, behavior: "smooth" });
+  };
+
+  if (!loading && items.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {Icon && <Icon className="w-4 h-4 text-[var(--music)] shrink-0" />}
+          <div className="min-w-0">
+            <h2 className="font-display text-base md:text-lg font-bold truncate">{title}</h2>
+            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0 ml-2">
+          {canScrollLeft && (
+            <button onClick={() => scroll("left")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          )}
+          {canScrollRight && (
+            <button onClick={() => scroll("right")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {loading
+          ? Array.from({ length: 8 }).map((_, i) => <SkeletonMusicCard key={i} />)
+          : items.map((item) => (
+              <MusicCard key={item.id} item={item} onQueue={onQueue} queued={queuedIds.has(item.id)} />
+            ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ───
 
 type Tab = "for-you" | "browse";
 
 export default function DiscoverPage() {
   const router = useRouter();
+  const { mode } = useMode();
   const searchRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("for-you");
+
+  // Music state
+  const [newReleases, setNewReleases] = useState<MusicMediaItem[]>([]);
+  const [musicLoading, setMusicLoading] = useState(false);
+  const [musicFetched, setMusicFetched] = useState(false);
+  const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
+  const [musicSearchResults, setMusicSearchResults] = useState<MusicMediaItem[]>([]);
+  const [activeMoodPill, setActiveMoodPill] = useState<string | null>(null);
+  const [moodResults, setMoodResults] = useState<MusicMediaItem[]>([]);
+  const [moodLoading, setMoodLoading] = useState(false);
+  const [musicGenreRows, setMusicGenreRows] = useState<{ title: string; subtitle: string; items: MusicMediaItem[] }[]>([]);
+  const [musicGenreLoading, setMusicGenreLoading] = useState(false);
+  const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
+  const [personalMusicLoading, setPersonalMusicLoading] = useState(false);
+  const [personalMusicFetched, setPersonalMusicFetched] = useState(false);
 
   // Search (shared across tabs)
   const [searchQuery, setSearchQuery] = useState("");
@@ -327,6 +508,116 @@ export default function DiscoverPage() {
   const [mlFetched, setMlFetched] = useState(false);
   const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
+
+  // ─── Fetch music browse data (lazy — only when mode is music) ───
+  useEffect(() => {
+    if (mode !== "music" || musicFetched) return;
+    setMusicFetched(true);
+    setMusicLoading(true);
+
+    async function fetchMusicBrowse() {
+      try {
+        const res = await fetch("/api/spotify?action=new-releases");
+        const data = await res.json();
+        if (Array.isArray(data)) setNewReleases(data);
+      } catch {
+        // silently fail
+      } finally {
+        setMusicLoading(false);
+      }
+    }
+
+    async function fetchQueuedIds() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data } = await supabase
+          .from("music_queue")
+          .select("spotify_id")
+          .eq("user_id", user.id);
+        if (data) setQueuedIds(new Set(data.map((i: { spotify_id: string }) => i.spotify_id).filter(Boolean)));
+      } catch {
+        // silently fail
+      }
+    }
+
+    async function fetchMusicGenres() {
+      setMusicGenreLoading(true);
+      try {
+        const rows = await Promise.all(
+          MUSIC_GENRE_QUERIES.map(async (g) => {
+            try {
+              const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(g.query)}&type=album`);
+              const data = await res.json();
+              return { title: g.title, subtitle: g.subtitle, items: Array.isArray(data) ? data : [] };
+            } catch {
+              return { title: g.title, subtitle: g.subtitle, items: [] };
+            }
+          })
+        );
+        setMusicGenreRows(rows.filter((r) => r.items.length > 0));
+      } finally {
+        setMusicGenreLoading(false);
+      }
+    }
+
+    fetchMusicBrowse();
+    fetchQueuedIds();
+    fetchMusicGenres();
+  }, [mode, musicFetched]);
+
+  // ─── Personalised music rows (lazy — top artists from listen_logs) ───
+  useEffect(() => {
+    if (mode !== "music" || personalMusicFetched) return;
+    setPersonalMusicFetched(true);
+    setPersonalMusicLoading(true);
+
+    async function fetchPersonalMusic() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: logs } = await supabase
+          .from("listen_logs")
+          .select("artist")
+          .not("artist", "is", null);
+        if (!logs || logs.length === 0) return;
+
+        // Count artist frequency and take top 3
+        const freq = new Map<string, number>();
+        logs.forEach((l: { artist: string | null }) => {
+          if (!l.artist) return;
+          // Use first artist if comma-separated
+          const primary = l.artist.split(",")[0].trim();
+          freq.set(primary, (freq.get(primary) || 0) + 1);
+        });
+        const topArtists = Array.from(freq.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([name]) => name);
+
+        const rows = await Promise.all(
+          topArtists.map(async (artist) => {
+            try {
+              const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(artist)}&type=album`);
+              const data = await res.json();
+              return { title: `More from ${artist}`, items: Array.isArray(data) ? data : [] };
+            } catch {
+              return { title: `More from ${artist}`, items: [] };
+            }
+          })
+        );
+        setPersonalMusicRows(rows.filter((r) => r.items.length > 0));
+      } catch {
+        // silently fail
+      } finally {
+        setPersonalMusicLoading(false);
+      }
+    }
+
+    fetchPersonalMusic();
+  }, [mode, personalMusicFetched]);
 
   // ─── Fetch ML recommendations (lazy — only when For You tab is first opened) ───
   useEffect(() => {
@@ -541,17 +832,27 @@ export default function DiscoverPage() {
     const q = searchQuery.trim();
     if (!q) {
       setSearchResults([]);
+      setMusicSearchResults([]);
       setShowDropdown(false);
       return;
     }
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
-        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setSearchResults(data);
-          setShowDropdown(true);
+        if (mode === "music") {
+          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setMusicSearchResults(data);
+            setShowDropdown(true);
+          }
+        } else {
+          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setSearchResults(data);
+            setShowDropdown(true);
+          }
         }
       } catch {
         // silently fail
@@ -560,7 +861,7 @@ export default function DiscoverPage() {
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [searchQuery]);
+  }, [searchQuery, mode]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -636,6 +937,44 @@ export default function DiscoverPage() {
     router.push(`/protected/media/${result.media_type}/${result.id}`);
   }
 
+  async function handleAddToQueue(item: MusicMediaItem) {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("music_queue").insert({
+        user_id: user.id,
+        spotify_id: item.id,
+        media_type: item.type,
+        title: item.name,
+        artist: item.artist,
+        image_url: item.image_url,
+      });
+      setQueuedIds((prev) => new Set([...prev, item.id]));
+    } catch {
+      // silently fail (e.g. duplicate)
+    }
+  }
+
+  async function handleMoodClick(pill: { label: string; query: string }) {
+    if (activeMoodPill === pill.label) {
+      setActiveMoodPill(null);
+      setMoodResults([]);
+      return;
+    }
+    setActiveMoodPill(pill.label);
+    setMoodLoading(true);
+    try {
+      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(pill.query)}&type=album,track`);
+      const data = await res.json();
+      if (Array.isArray(data)) setMoodResults(data);
+    } catch {
+      setMoodResults([]);
+    } finally {
+      setMoodLoading(false);
+    }
+  }
+
   const filterWatched = (items: MediaItem[]) =>
     watchedIds.size > 0 ? items.filter((i) => !watchedIds.has(i.id)) : items;
 
@@ -644,7 +983,11 @@ export default function DiscoverPage() {
       {/* ─── Header ─── */}
       <div>
         <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Discover</h1>
-        <p className="text-muted-foreground">Find your next favourite movie or show</p>
+        <p className="text-muted-foreground">
+          {mode === "music"
+            ? "Find your next favourite album or track"
+            : "Find your next favourite movie or show"}
+        </p>
       </div>
 
       {/* ─── Search ─── */}
@@ -652,16 +995,20 @@ export default function DiscoverPage() {
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search movies and TV shows..."
+            placeholder={mode === "music" ? "Search albums and tracks..." : "Search movies and TV shows..."}
             className="pl-11 py-5 text-base bg-card border-2 border-border"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+            onFocus={() => {
+              if (mode === "music" && musicSearchResults.length > 0) setShowDropdown(true);
+              if (mode !== "music" && searchResults.length > 0) setShowDropdown(true);
+            }}
           />
           {isSearching && (
             <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
           )}
-          {showDropdown && searchResults.length > 0 && (
+          {/* Film search dropdown */}
+          {mode !== "music" && showDropdown && searchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
               {searchResults.slice(0, 8).map((result) => {
                 const label = result.title || result.name || "Untitled";
@@ -695,10 +1042,169 @@ export default function DiscoverPage() {
               })}
             </div>
           )}
+          {/* Music search dropdown */}
+          {mode === "music" && showDropdown && musicSearchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
+              {musicSearchResults.slice(0, 8).map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  onClick={() => {
+                    setShowDropdown(false);
+                    setSearchQuery("");
+                    handleAddToQueue(result);
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-muted/50 flex gap-3 items-center transition-colors"
+                >
+                  {result.image_url ? (
+                    <img src={result.image_url} alt={result.name} className="w-10 h-10 object-cover shrink-0 border border-border" />
+                  ) : (
+                    <div className="w-10 h-10 bg-muted/30 flex items-center justify-center shrink-0 border border-border">
+                      <Disc3 className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{result.name}</div>
+                    <div className="text-xs flex items-center gap-2">
+                      <span className="text-[var(--music)] truncate">{result.artist}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground">{result.type === "album" ? "Album" : "Track"}</span>
+                      {result.release_date && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{result.release_date.slice(0, 4)}</span></>}
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">+ Queue</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ─── Tabs ─── */}
+      {/* ─── MUSIC MODE ─── */}
+      {mode === "music" && (
+        <div className="flex flex-col gap-6">
+          {/* Mood pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0 mr-1">Mood</span>
+            {MOOD_PILLS.map((pill) => (
+              <button
+                key={pill.label}
+                onClick={() => handleMoodClick(pill)}
+                className={`shrink-0 px-3 py-1.5 text-xs font-medium border-2 transition-colors ${
+                  activeMoodPill === pill.label
+                    ? "border-[var(--music)] bg-[var(--music)] text-background"
+                    : "border-border hover:border-[var(--music)]/50"
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Mood results */}
+          {activeMoodPill && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-display text-lg font-bold">{activeMoodPill} Music</h2>
+                  <p className="text-xs text-muted-foreground">Albums and tracks for {activeMoodPill.toLowerCase()} vibes</p>
+                </div>
+                <button
+                  onClick={() => { setActiveMoodPill(null); setMoodResults([]); }}
+                  className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {moodLoading ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                  {moodResults.map((item) => (
+                    <MusicCard key={item.id} item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* New Releases row */}
+          {!activeMoodPill && (
+            <MusicRow
+              title="New Releases"
+              subtitle="Fresh drops from Spotify"
+              icon={Disc3}
+              items={newReleases}
+              loading={musicLoading}
+              onQueue={handleAddToQueue}
+              queuedIds={queuedIds}
+            />
+          )}
+
+          {/* Personalised rows — based on top artists in listen_logs */}
+          {!activeMoodPill && (
+            <>
+              {personalMusicLoading
+                ? (
+                  <MusicRow
+                    title="From Your Library"
+                    subtitle="Based on artists you've logged"
+                    icon={Headphones}
+                    items={[]}
+                    loading
+                    onQueue={handleAddToQueue}
+                    queuedIds={queuedIds}
+                  />
+                )
+                : personalMusicRows.map((row) => (
+                  <MusicRow
+                    key={row.title}
+                    title={row.title}
+                    icon={Headphones}
+                    items={row.items}
+                    onQueue={handleAddToQueue}
+                    queuedIds={queuedIds}
+                  />
+                ))}
+            </>
+          )}
+
+          {/* Genre rows */}
+          {!activeMoodPill && (
+            <>
+              {musicGenreLoading
+                ? MUSIC_GENRE_QUERIES.slice(0, 3).map((g) => (
+                  <MusicRow
+                    key={g.title}
+                    title={g.title}
+                    subtitle={g.subtitle}
+                    icon={Music2}
+                    items={[]}
+                    loading
+                    onQueue={handleAddToQueue}
+                    queuedIds={queuedIds}
+                  />
+                ))
+                : musicGenreRows.map((row) => (
+                  <MusicRow
+                    key={row.title}
+                    title={row.title}
+                    subtitle={row.subtitle}
+                    icon={Music2}
+                    items={row.items}
+                    onQueue={handleAddToQueue}
+                    queuedIds={queuedIds}
+                  />
+                ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── FILM MODE — Tabs ─── */}
+      {mode !== "music" && (
       <div className="flex items-center gap-1 border-b-2 border-border">
         <button
           onClick={() => setActiveTab("for-you")}
@@ -729,9 +1235,10 @@ export default function DiscoverPage() {
           )}
         </button>
       </div>
+      )}
 
       {/* ─── FOR YOU TAB ─── */}
-      {activeTab === "for-you" && (
+      {mode !== "music" && activeTab === "for-you" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -801,7 +1308,7 @@ export default function DiscoverPage() {
       )}
 
       {/* ─── BROWSE TAB ─── */}
-      {activeTab === "browse" && (
+      {mode !== "music" && activeTab === "browse" && (
         <div className="flex flex-col gap-6">
           {/* Genre Pills */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>

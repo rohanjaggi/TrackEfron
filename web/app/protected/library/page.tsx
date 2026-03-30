@@ -10,7 +10,6 @@ import {
   Search,
   Plus,
   Star,
-  Calendar,
   Film,
   Tv,
   Loader2,
@@ -50,18 +49,32 @@ const SORT_OPTIONS: { value: SortType; label: string }[] = [
 type WatchLog = {
   id: string;
   title: string;
-  media_type: "movie" | "tv";
+  media_type: "movie" | "tv" | "album" | "track";
   rating: number;
   review: string | null;
   watched_date: string | null;
   poster_url: string | null;
   tmdb_id: number | null;
   created_at: string;
+  artist?: string | null;
 };
 
-function upscalePoster(url: string | null, size = "w500"): string | null {
+function upscalePoster(url: string | null, size = "w780"): string | null {
   if (!url) return null;
   return url.replace(/\/w\d+\//, `/${size}/`);
+}
+
+function StarDisplay({ rating, accent }: { rating: number; accent: string }) {
+  const full = Math.floor(rating);
+  const hasHalf = rating % 1 >= 0.5;
+  const empty = 5 - full - (hasHalf ? 1 : 0);
+  return (
+    <span style={{ letterSpacing: "2px", fontSize: "11px", display: "inline-flex", alignItems: "center" }}>
+      <span style={{ color: accent }}>{"★".repeat(full)}</span>
+      {hasHalf && <span style={{ color: accent, opacity: 0.55 }}>★</span>}
+      <span style={{ color: accent, opacity: 0.2 }}>{"★".repeat(empty)}</span>
+    </span>
+  );
 }
 
 export default function LibraryPage() {
@@ -90,13 +103,35 @@ export default function LibraryPage() {
   async function fetchLibrary() {
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("watch_logs")
-        .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-        .order("created_at", { ascending: false });
+      const [filmRes, musicRes] = await Promise.all([
+        supabase
+          .from("watch_logs")
+          .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("listen_logs")
+          .select("id, title, media_type, rating, review, listened_date, image_url, created_at, artist")
+          .order("created_at", { ascending: false }),
+      ]);
 
-      if (error) throw error;
-      setWatchedItems(data || []);
+      const filmItems: WatchLog[] = (filmRes.data || []);
+      const musicItems: WatchLog[] = (musicRes.data || []).map((m) => ({
+        id: m.id,
+        title: m.title,
+        media_type: m.media_type as "album" | "track",
+        rating: m.rating,
+        review: m.review,
+        watched_date: m.listened_date,
+        poster_url: m.image_url,
+        tmdb_id: null,
+        created_at: m.created_at,
+        artist: m.artist,
+      }));
+
+      const combined = [...filmItems, ...musicItems].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      );
+      setWatchedItems(combined);
     } catch {
       // silently fail, will show empty state
     } finally {
@@ -109,11 +144,13 @@ export default function LibraryPage() {
   }, []);
 
   async function handleDelete(id: string) {
-    setWatchedItems((prev) => prev.filter((item) => item.id !== id));
+    const item = watchedItems.find((i) => i.id === id);
+    const isMusic = item?.media_type === "album" || item?.media_type === "track";
+    setWatchedItems((prev) => prev.filter((i) => i.id !== id));
     setDeletingId(null);
     try {
       const supabase = createClient();
-      await supabase.from("watch_logs").delete().eq("id", id);
+      await supabase.from(isMusic ? "listen_logs" : "watch_logs").delete().eq("id", id);
     } catch {
       fetchLibrary();
     }
@@ -474,84 +511,115 @@ export default function LibraryPage() {
         }`}>
           {filteredItems.map((item) => {
             const isMusic = item.media_type === "album" || item.media_type === "track";
+            const accent = isMusic ? "var(--music)" : "var(--film)";
+            const typeLabel = item.media_type === "movie" ? "Movie"
+              : item.media_type === "tv" ? "TV Show"
+              : item.media_type === "album" ? "Album"
+              : "Track";
             return (
               <div
                 key={item.id}
-                className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer"
+                className="group cursor-pointer"
+                style={{
+                  position: "relative",
+                  overflow: "hidden",
+                  border: "1px solid var(--border-raw)",
+                  transition: "border-color 0.2s",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-raw)"}
                 onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
               >
-                {/* Art — portrait for film, square for music */}
-                <div className={`${isMusic ? "aspect-square" : "aspect-[2/3]"} bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 flex items-center justify-center relative overflow-hidden`}>
+                {/* Accent top line */}
+                <div className="absolute top-0 left-0 right-0 h-px z-20" style={{ background: accent }} />
+
+                {/* Art */}
+                <div
+                  className={isMusic ? "aspect-square" : "aspect-[2/3]"}
+                  style={{ position: "relative", overflow: "hidden", background: "var(--surface-2)" }}
+                >
                   {item.poster_url ? (
                     <img
                       src={upscalePoster(item.poster_url)!}
                       alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      className="group-hover:scale-105 transition-transform duration-500"
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                     />
-                  ) : item.media_type === "movie" ? (
-                    <Film className="w-12 h-12 text-white/50" />
-                  ) : item.media_type === "tv" ? (
-                    <Tv className="w-12 h-12 text-white/50" />
                   ) : (
-                    <Disc3 className="w-12 h-12 text-white/50" />
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {item.media_type === "movie" ? <Film className="w-10 h-10" style={{ color: "var(--text-dim)" }} />
+                        : item.media_type === "tv" ? <Tv className="w-10 h-10" style={{ color: "var(--text-dim)" }} />
+                        : <Disc3 className="w-10 h-10" style={{ color: "var(--text-dim)" }} />}
+                    </div>
                   )}
-                  {/* Rating Badge */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-full">
-                    <Star className="w-3 h-3 text-accent fill-accent" />
-                    <span className="text-xs font-medium text-white">{Number(item.rating)}</span>
+
+                  {/* Permanent bottom gradient */}
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ background: "linear-gradient(to top, rgba(10,10,8,0.97) 0%, rgba(10,10,8,0.5) 38%, transparent 65%)" }}
+                  />
+
+                  {/* Info overlaid at bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+                    <StarDisplay rating={item.rating} accent={accent} />
+                    <h3
+                      className="font-display leading-tight mt-1 mb-0.5"
+                      style={{ fontSize: "13px", fontWeight: 700, color: "var(--text)", lineHeight: 1.25 }}
+                    >
+                      {item.title}
+                    </h3>
+                    {isMusic && item.artist && (
+                      <p style={{ fontSize: "10px", color: accent, letterSpacing: "0.03em", marginBottom: "2px" }} className="truncate">
+                        {item.artist}
+                      </p>
+                    )}
+                    <p style={{ fontSize: "9px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                      {typeLabel}
+                      {item.watched_date && ` · ${new Date(item.watched_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
+                    </p>
                   </div>
-                  {/* Edit/Delete Overlay */}
-                  <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+
+                  {/* Review hover overlay */}
+                  {item.review && (
+                    <div
+                      className="absolute inset-0 flex items-end p-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                      style={{ background: "rgba(10,10,8,0.88)" }}
+                    >
+                      <p className="text-[10px] italic line-clamp-5" style={{ color: "var(--text-muted)" }}>
+                        &ldquo;{item.review}&rdquo;
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Edit/Delete — top-left on hover */}
+                  <div className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-20">
                     <button
                       onClick={(e) => { e.stopPropagation(); router.push(`/protected/log?edit=${item.id}`); }}
-                      className="p-1.5 bg-black/60 backdrop-blur-sm rounded-full hover:bg-black/80 transition-colors"
+                      className="p-1.5 transition-colors"
+                      style={{ background: "rgba(10,10,8,0.85)", border: "1px solid var(--border-hover)" }}
                       title="Edit"
                     >
-                      <Pencil className="w-3.5 h-3.5 text-white" />
+                      <Pencil className="w-3 h-3" style={{ color: "var(--text)" }} />
                     </button>
                     {deletingId === item.id ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-                        className="px-2 py-1 bg-destructive backdrop-blur-sm rounded-full text-xs font-medium text-white"
+                        className="px-2 py-1 text-[10px] font-medium tracking-wide uppercase"
+                        style={{ background: "#ef4444", color: "white", border: "1px solid transparent" }}
                       >
-                        Confirm?
+                        Confirm
                       </button>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); setDeletingId(item.id); }}
-                        className="p-1.5 bg-black/60 backdrop-blur-sm rounded-full hover:bg-destructive transition-colors"
+                        className="p-1.5 transition-colors"
+                        style={{ background: "rgba(10,10,8,0.85)", border: "1px solid var(--border-hover)" }}
                         title="Delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5 text-white" />
+                        <Trash2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
                       </button>
                     )}
                   </div>
-                  {/* Review hover overlay */}
-                  {item.review && (
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4 pointer-events-none">
-                      <p className="text-xs text-white/80 line-clamp-3">{item.review}</p>
-                    </div>
-                  )}
-                </div>
-                {/* Info */}
-                <div className="p-3 space-y-1.5">
-                  <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors text-sm">
-                    {item.title}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>
-                      {item.media_type === "movie" ? "Movie"
-                        : item.media_type === "tv" ? "TV Show"
-                        : item.media_type === "album" ? "Album"
-                        : "Track"}
-                    </span>
-                  </div>
-                  {item.watched_date && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      <span>{new Date(item.watched_date).toLocaleDateString()}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -564,90 +632,102 @@ export default function LibraryPage() {
            Music thumbnails: square (w-14 h-14)
            Both coexist cleanly in list layout.
         ────────────────────────────────────────────────────────── */
-        <div className="space-y-3">
+        <div style={{ display: "flex", flexDirection: "column" }}>
           {filteredItems.map((item) => {
             const isMusic = item.media_type === "album" || item.media_type === "track";
+            const accent = isMusic ? "var(--music)" : "var(--film)";
+            const typeLabel = item.media_type === "movie" ? "Movie"
+              : item.media_type === "tv" ? "TV Show"
+              : item.media_type === "album" ? "Album"
+              : "Track";
             return (
               <div
                 key={item.id}
-                className="group flex items-start gap-4 p-4 border-2 border-border hover:border-primary hover:translate-x-1 transition-all duration-300 cursor-pointer"
+                className="group flex items-start gap-4 cursor-pointer"
+                style={{
+                  padding: "16px 0",
+                  borderBottom: "1px solid var(--border-raw)",
+                  transition: "opacity 0.15s",
+                }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = "0.8"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
                 onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
               >
-                {/* Thumbnail — portrait for film, square for music */}
-                <div className={`flex-shrink-0 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 flex items-center justify-center overflow-hidden ${
-                  isMusic ? "w-14 h-14" : "w-14 h-20"
-                }`}>
+                {/* Thumbnail */}
+                <div
+                  className="flex-shrink-0 overflow-hidden"
+                  style={{
+                    width: isMusic ? 48 : 40,
+                    height: isMusic ? 48 : 60,
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border-raw)",
+                  }}
+                >
                   {item.poster_url ? (
-                    <img
-                      src={upscalePoster(item.poster_url)!}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : item.media_type === "movie" ? (
-                    <Film className="w-8 h-8 text-white/50" />
-                  ) : item.media_type === "tv" ? (
-                    <Tv className="w-8 h-8 text-white/50" />
+                    <img src={upscalePoster(item.poster_url)!} alt={item.title} className="w-full h-full object-cover" />
                   ) : (
-                    <Disc3 className="w-8 h-8 text-white/50" />
+                    <div className="w-full h-full flex items-center justify-center">
+                      {item.media_type === "movie" ? <Film className="w-4 h-4" style={{ color: "var(--text-dim)" }} />
+                        : item.media_type === "tv" ? <Tv className="w-4 h-4" style={{ color: "var(--text-dim)" }} />
+                        : <Disc3 className="w-4 h-4" style={{ color: "var(--text-dim)" }} />}
+                    </div>
                   )}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                        <span className="flex items-center gap-1">
-                          {item.media_type === "movie" ? <Film className="w-3 h-3" />
-                            : item.media_type === "tv" ? <Tv className="w-3 h-3" />
-                            : <Disc3 className="w-3 h-3" />}
-                          {item.media_type === "movie" ? "Movie"
-                            : item.media_type === "tv" ? "TV Show"
-                            : item.media_type === "album" ? "Album"
-                            : "Track"}
-                        </span>
-                        {item.watched_date && (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {new Date(item.watched_date).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1 bg-primary/10 px-3 py-1.5 rounded-full">
-                        <Star className="w-4 h-4 text-accent fill-accent" />
-                        <span className="font-semibold">{Number(item.rating)}</span>
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => router.push(`/protected/log?edit=${item.id}`)}>
-                            <Pencil className="w-4 h-4 mr-2" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => handleDelete(item.id)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                  {item.review && (
-                    <p className="text-sm text-muted-foreground mt-3 line-clamp-2">{item.review}</p>
+                  <h3
+                    className="font-display truncate mb-0.5"
+                    style={{ fontSize: "15px", fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}
+                  >
+                    {item.title}
+                  </h3>
+                  {isMusic && item.artist && (
+                    <p style={{ fontSize: "11px", color: accent, marginBottom: "2px" }} className="truncate">
+                      {item.artist}
+                    </p>
                   )}
+                  <p style={{ fontSize: "10px", letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                    {typeLabel}
+                    {item.watched_date && ` · ${new Date(item.watched_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
+                  </p>
+                  {item.review && (
+                    <p className="mt-1.5 text-[11px] italic line-clamp-2" style={{ color: "var(--text-muted)" }}>
+                      &ldquo;{item.review}&rdquo;
+                    </p>
+                  )}
+                </div>
+
+                {/* Rating + actions */}
+                <div className="flex-shrink-0 flex items-center gap-3">
+                  <div className="text-right">
+                    <StarDisplay rating={item.rating} accent={accent} />
+                    <p style={{ fontSize: "10px", color: "var(--text-dim)", letterSpacing: "0.05em", marginTop: "2px" }}>
+                      {item.rating}/5
+                    </p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ color: "var(--text-muted)", border: "1px solid var(--border-raw)" }}
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => router.push(`/protected/log?edit=${item.id}`)}>
+                        <Pencil className="w-4 h-4 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             );
