@@ -7,6 +7,10 @@ const BASE_URL = "https://api.spotify.com/v1";
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
 export async function getSpotifyToken(): Promise<string> {
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+    throw new Error("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET environment variables");
+  }
+
   if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
     return tokenCache.token;
   }

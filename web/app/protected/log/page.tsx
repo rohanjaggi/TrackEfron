@@ -236,6 +236,7 @@ function LogWatchForm() {
   };
 
   useEffect(() => {
+    if (isEditMode && selectedMovie) return;
     const q = title.trim();
     if (!q) {
       setResults([]);
@@ -252,8 +253,8 @@ function LogWatchForm() {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=${mediaType}`);
           const raw = await res.json();
           data = Array.isArray(raw)
-            ? raw.map((r: any) => ({
-                id: 0,
+            ? raw.map((r: any, idx: number) => ({
+                id: idx + 1,
                 spotify_id: r.id,
                 name: r.name,
                 artist: r.artist,
@@ -492,10 +493,9 @@ function LogWatchForm() {
               type="text"
               placeholder={`Search ${mediaType === "movie" ? "movies" : mediaType === "tv" ? "TV shows" : mediaType === "album" ? "albums" : "tracks"}…`}
               value={title}
-              onChange={(e) => { if (!isEditMode) setTitle(e.target.value); }}
-              className={`pl-10 bg-card border border-border ${isEditMode ? "opacity-60 cursor-not-allowed" : ""}`}
+              onChange={(e) => setTitle(e.target.value)}
+              className="pl-10 bg-card border border-border"
               style={{ fontFamily: "var(--font-mono)", fontSize: "13px" }}
-              readOnly={isEditMode}
               required
             />
             {isSearching && (

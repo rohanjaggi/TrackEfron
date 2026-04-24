@@ -71,15 +71,22 @@ type UserList = {
   name: string;
   description: string | null;
   emoji: string | null;
+  list_type: "film" | "music";
   created_at: string;
   updated_at: string;
   list_items: { count: number }[];
 };
 
-const EMOJI_OPTIONS = [
+const FILM_EMOJI_OPTIONS = [
   "🎬", "🍿", "🎥", "📺", "🌙", "❤️", "🔥", "⭐",
   "🎭", "👻", "😂", "💀", "🚀", "🧠", "🎄", "🏠",
   "👫", "👨‍👩‍👧‍👦", "🌍", "🏆"
+];
+
+const MUSIC_EMOJI_OPTIONS = [
+  "🎵", "🎶", "🎧", "🎤", "🎸", "🎹", "🥁", "🎷",
+  "❤️", "🔥", "⭐", "🌙", "💿", "📀", "🎼", "🪩",
+  "🎻", "🎺", "🌍", "🏆"
 ];
 
 function upscalePoster(url: string | null, size = "w500"): string | null {
@@ -124,7 +131,9 @@ function WatchlistPageContent() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
-  const [newListEmoji, setNewListEmoji] = useState("🎬");
+  const defaultEmoji = mode === "music" ? "🎵" : "🎬";
+  const emojiOptions = mode === "music" ? MUSIC_EMOJI_OPTIONS : FILM_EMOJI_OPTIONS;
+  const [newListEmoji, setNewListEmoji] = useState(defaultEmoji);
   const [creatingList, setCreatingList] = useState(false);
   const [deletingListId, setDeletingListId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -132,8 +141,11 @@ function WatchlistPageContent() {
   useEffect(() => {
     fetchWatchlist();
     fetchMusicQueue();
-    fetchLists();
   }, []);
+
+  useEffect(() => {
+    fetchLists();
+  }, [mode]);
 
   async function fetchMusicQueue() {
     try {
@@ -175,6 +187,7 @@ function WatchlistPageContent() {
       const { data, error } = await supabase
         .from("lists")
         .select("*, list_items(count)")
+        .eq("list_type", mode)
         .order("updated_at", { ascending: false });
 
       if (error) throw error;
@@ -321,13 +334,14 @@ function WatchlistPageContent() {
         name,
         description: newListDescription.trim() || null,
         emoji: newListEmoji || null,
+        list_type: mode,
       });
 
       if (error) throw error;
 
       setNewListName("");
       setNewListDescription("");
-      setNewListEmoji("🎬");
+      setNewListEmoji(defaultEmoji);
       setShowCreateForm(false);
       await fetchLists();
     } catch {
@@ -904,7 +918,7 @@ function WatchlistPageContent() {
           {!loading && filteredItems.length > 0 && (
             <div className="border-2 border-border p-4 text-center">
               <p className="text-sm text-muted-foreground">
-                Click <Check className="w-4 h-4 inline text-green-500" /> to log a watch, or <Trash2 className="w-4 h-4 inline text-destructive" /> to remove from watchlist.
+                Click <Check className="w-4 h-4 inline text-green-500" /> to log a {mode === "music" ? "listen" : "watch"}, or <Trash2 className="w-4 h-4 inline text-destructive" /> to remove from {mode === "music" ? "queue" : "watchlist"}.
               </p>
             </div>
           )}
@@ -927,7 +941,7 @@ function WatchlistPageContent() {
                     setShowCreateForm(false);
                     setNewListName("");
                     setNewListDescription("");
-                    setNewListEmoji("🎬");
+                    setNewListEmoji(defaultEmoji);
                   }}
                   className="text-muted-foreground hover:text-foreground"
                 >
@@ -939,7 +953,7 @@ function WatchlistPageContent() {
               <div>
                 <label className="text-sm text-muted-foreground mb-2 block">Pick an icon</label>
                 <div className="flex flex-wrap gap-2">
-                  {EMOJI_OPTIONS.map((emoji) => (
+                  {emojiOptions.map((emoji) => (
                     <button
                       key={emoji}
                       type="button"
@@ -959,7 +973,7 @@ function WatchlistPageContent() {
               <div>
                 <label className="text-sm text-muted-foreground mb-1.5 block">Name *</label>
                 <Input
-                  placeholder="e.g. Movie Night with Friends"
+                  placeholder={mode === "music" ? "e.g. Chill Vibes Playlist" : "e.g. Movie Night with Friends"}
                   value={newListName}
                   onChange={(e) => setNewListName(e.target.value)}
                   className="bg-card border-2 border-border"
@@ -994,7 +1008,7 @@ function WatchlistPageContent() {
                     setShowCreateForm(false);
                     setNewListName("");
                     setNewListDescription("");
-                    setNewListEmoji("🎬");
+                    setNewListEmoji(defaultEmoji);
                   }}
                 >
                   Cancel
@@ -1024,7 +1038,9 @@ function WatchlistPageContent() {
               </div>
               <h2 className="text-xl font-semibold mb-2">No lists yet</h2>
               <p className="text-muted-foreground mb-6 max-w-md">
-                Create lists to organise movies and shows by genre, mood, or occasion.
+                {mode === "music"
+                  ? "Create lists to organise albums and tracks by genre, mood, or vibe."
+                  : "Create lists to organise movies and shows by genre, mood, or occasion."}
               </p>
             </div>
           ) : (
@@ -1050,7 +1066,7 @@ function WatchlistPageContent() {
                         )}
                         <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <Film className="w-3 h-3" />
+                            {list.list_type === "music" ? <Music2 className="w-3 h-3" /> : <Film className="w-3 h-3" />}
                             {itemCount} {itemCount === 1 ? "title" : "titles"}
                           </span>
                           <span>

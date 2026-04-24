@@ -15,7 +15,9 @@ import {
   Pencil,
   Check,
   X,
-  Loader2
+  Loader2,
+  Disc3,
+  Music2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,28 +26,36 @@ type ListMeta = {
   name: string;
   description: string | null;
   emoji: string | null;
+  list_type: "film" | "music";
   created_at: string;
   updated_at: string;
 };
 
 type ListItem = {
   id: string;
-  tmdb_id: number;
+  tmdb_id: number | null;
+  spotify_id: string | null;
+  artist: string | null;
   title: string;
   media_type: string;
   poster_url: string | null;
+  image_url: string | null;
   added_at: string;
   position: number;
 };
 
 type SearchResult = {
-  id: number;
+  id: number | string;
+  spotify_id?: string;
+  artist?: string;
+  album_name?: string;
   title?: string;
   name?: string;
-  media_type: "movie" | "tv";
+  media_type: "movie" | "tv" | "album" | "track";
   release_date?: string;
   first_air_date?: string;
   poster_url?: string | null;
+  image_url?: string | null;
   vote_average?: number;
 };
 
@@ -72,6 +82,8 @@ function ListDetailContent() {
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isMusic = list?.list_type === "music";
+
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -87,7 +99,7 @@ function ListDetailContent() {
   const [addResults, setAddResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
-  const [addingId, setAddingId] = useState<number | null>(null);
+  const [addingId, setAddingId] = useState<number | string | null>(null);
 
   useEffect(() => {
     fetchListData();
@@ -114,7 +126,6 @@ function ListDetailContent() {
       setEditDescription(listRes.data.description || "");
       setItems(itemsRes.data || []);
     } catch {
-      // list not found or access denied
       router.push("/protected/watchlist?tab=lists");
     } finally {
       setLoading(false);
@@ -133,12 +144,30 @@ function ListDetailContent() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
-        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
+        if (isMusic) {
+          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+          const raw = await res.json();
+          const data: SearchResult[] = Array.isArray(raw)
+            ? raw.map((r: any) => ({
+                id: r.id,
+                spotify_id: r.id,
+                name: r.name,
+                artist: r.artist,
+                album_name: r.album_name,
+                media_type: r.type as "album" | "track",
+                release_date: r.release_date,
+                image_url: r.image_url,
+              }))
+            : [];
           setAddResults(data);
-          setShowAddDropdown(true);
+        } else {
+          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setAddResults(data);
+          }
         }
+        setShowAddDropdown(true);
       } catch {
         // silently fail
       } finally {
@@ -147,7 +176,7 @@ function ListDetailContent() {
     }, 350);
 
     return () => clearTimeout(t);
-  }, [addQuery]);
+  }, [addQuery, isMusic]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -161,27 +190,33 @@ function ListDetailContent() {
   }, []);
 
   async function handleAddItem(result: SearchResult) {
-    setAddingId(result.id);
+    setAddingId(result.spotify_id || result.id);
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("list_items").insert({
-        list_id: listId,
-        tmdb_id: result.id,
-        title: result.title || result.name || "Untitled",
-        media_type: result.media_type,
-        poster_url: result.poster_url || null,
-        position: items.length,
-      });
 
-      if (error) {
-        if (error.code === "23505") {
-          // already in this list
-        } else {
-          throw error;
-        }
+      if (isMusic) {
+        const { error } = await supabase.from("list_items").insert({
+          list_id: listId,
+          spotify_id: result.spotify_id || String(result.id),
+          title: result.name || result.title || "Untitled",
+          artist: result.artist || null,
+          media_type: result.media_type,
+          image_url: result.image_url || null,
+          position: items.length,
+        });
+        if (error && error.code !== "23505") throw error;
+      } else {
+        const { error } = await supabase.from("list_items").insert({
+          list_id: listId,
+          tmdb_id: result.id,
+          title: result.title || result.name || "Untitled",
+          media_type: result.media_type,
+          poster_url: result.poster_url || null,
+          position: items.length,
+        });
+        if (error && error.code !== "23505") throw error;
       }
 
-      // Update list's updated_at
       await supabase
         .from("lists")
         .update({ updated_at: new Date().toISOString() })
@@ -246,7 +281,9 @@ function ListDetailContent() {
     }
   }
 
-  const itemTmdbIds = new Set(items.map((i) => i.tmdb_id));
+  const existingIds = new Set(
+    items.map((i) => i.spotify_id || String(i.tmdb_id))
+  );
 
   if (loading) {
     return (
@@ -311,7 +348,7 @@ function ListDetailContent() {
         ) : (
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4">
-              <span className="text-4xl">{list.emoji || "🎬"}</span>
+              <span className="text-4xl">{list.emoji || (isMusic ? "🎵" : "🎬")}</span>
               <div>
                 <h1 className="font-display text-2xl md:text-3xl font-bold">{list.name}</h1>
                 {list.description && (
@@ -319,7 +356,7 @@ function ListDetailContent() {
                 )}
                 <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <Film className="w-3.5 h-3.5" />
+                    {isMusic ? <Music2 className="w-3.5 h-3.5" /> : <Film className="w-3.5 h-3.5" />}
                     {items.length} {items.length === 1 ? "title" : "titles"}
                   </span>
                   <span>Created {new Date(list.created_at).toLocaleDateString()}</span>
@@ -379,7 +416,7 @@ function ListDetailContent() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search for a movie or TV show..."
+            placeholder={isMusic ? "Search for an album or track..." : "Search for a movie or TV show..."}
             value={addQuery}
             onChange={(e) => setAddQuery(e.target.value)}
             onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
@@ -395,37 +432,50 @@ function ListDetailContent() {
             {addResults.slice(0, 8).map((result) => {
               const label = result.title || result.name || "Untitled";
               const year = (result.release_date || result.first_air_date || "").slice(0, 4);
-              const alreadyAdded = itemTmdbIds.has(result.id);
+              const resultKey = result.spotify_id || String(result.id);
+              const alreadyAdded = existingIds.has(resultKey);
+              const resultIsMusic = result.media_type === "album" || result.media_type === "track";
               return (
                 <div
-                  key={`${result.media_type}-${result.id}`}
+                  key={`${result.media_type}-${resultKey}`}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors"
                 >
-                  {result.poster_url ? (
+                  {(result.poster_url || result.image_url) ? (
                     <img
-                      src={result.poster_url}
+                      src={resultIsMusic ? (result.image_url || result.poster_url)! : result.poster_url!}
                       alt={label}
-                      className="w-8 h-12 object-cover rounded shrink-0"
+                      className={`${resultIsMusic ? "w-10 h-10 rounded" : "w-8 h-12 rounded"} object-cover shrink-0`}
                     />
                   ) : (
-                    <div className="w-8 h-12 bg-muted/50 rounded flex items-center justify-center shrink-0">
-                      {result.media_type === "movie"
-                        ? <Film className="w-4 h-4 text-muted-foreground" />
-                        : <Tv className="w-4 h-4 text-muted-foreground" />}
+                    <div className={`${resultIsMusic ? "w-10 h-10" : "w-8 h-12"} bg-muted/50 rounded flex items-center justify-center shrink-0`}>
+                      {resultIsMusic
+                        ? <Disc3 className="w-4 h-4 text-muted-foreground" />
+                        : result.media_type === "movie"
+                          ? <Film className="w-4 h-4 text-muted-foreground" />
+                          : <Tv className="w-4 h-4 text-muted-foreground" />}
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{label}</div>
                     <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      <span>{result.media_type === "movie" ? "Movie" : "TV Show"}</span>
-                      {year && <><span>·</span><span>{year}</span></>}
-                      {result.vote_average != null && result.vote_average > 0 && (
+                      {resultIsMusic ? (
                         <>
-                          <span>·</span>
-                          <span className="flex items-center gap-1">
-                            <Star className="w-3 h-3 text-accent fill-accent" />
-                            {result.vote_average.toFixed(1)}
-                          </span>
+                          <span>{result.media_type === "album" ? "Album" : "Track"}</span>
+                          {result.artist && <><span>·</span><span className="truncate">{result.artist}</span></>}
+                        </>
+                      ) : (
+                        <>
+                          <span>{result.media_type === "movie" ? "Movie" : "TV Show"}</span>
+                          {year && <><span>·</span><span>{year}</span></>}
+                          {result.vote_average != null && result.vote_average > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="flex items-center gap-1">
+                                <Star className="w-3 h-3 text-accent fill-accent" />
+                                {result.vote_average.toFixed(1)}
+                              </span>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -439,10 +489,10 @@ function ListDetailContent() {
                       size="sm"
                       variant="outline"
                       className="shrink-0"
-                      disabled={addingId === result.id}
+                      disabled={addingId === (result.spotify_id || result.id)}
                       onClick={() => handleAddItem(result)}
                     >
-                      {addingId === result.id ? (
+                      {addingId === (result.spotify_id || result.id) ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         <><Plus className="w-4 h-4 mr-1" /> Add</>
@@ -460,58 +510,79 @@ function ListDetailContent() {
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-            <Film className="w-10 h-10 text-muted-foreground" />
+            {isMusic ? <Music2 className="w-10 h-10 text-muted-foreground" /> : <Film className="w-10 h-10 text-muted-foreground" />}
           </div>
           <h2 className="text-xl font-semibold mb-2">This list is empty</h2>
           <p className="text-muted-foreground max-w-md">
-            Use the search bar above to add movies and TV shows.
+            {isMusic
+              ? "Use the search bar above to add albums and tracks."
+              : "Use the search bar above to add movies and TV shows."}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer relative"
-              onClick={() => router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
-            >
-              <div className="aspect-[2/3] bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden">
-                {item.poster_url ? (
-                  <img
-                    src={upscalePoster(item.poster_url)!}
-                    alt={item.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : item.media_type === "movie" ? (
-                  <Film className="w-12 h-12 text-white/50" />
-                ) : (
-                  <Tv className="w-12 h-12 text-white/50" />
-                )}
-                {/* Remove button on hover */}
-                <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveItem(item.id);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Remove
-                  </Button>
+        <div className={`grid ${isMusic ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"} gap-4`}>
+          {items.map((item) => {
+            const itemIsMusic = item.media_type === "album" || item.media_type === "track";
+            const artUrl = itemIsMusic ? item.image_url : upscalePoster(item.poster_url);
+            return (
+              <div
+                key={item.id}
+                className="group border-2 border-border overflow-hidden hover:border-primary transition-all duration-300 cursor-pointer relative"
+                onClick={() => {
+                  if (itemIsMusic && item.spotify_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.spotify_id}`);
+                  } else if (item.tmdb_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`);
+                  }
+                }}
+              >
+                <div className={`${itemIsMusic ? "aspect-square" : "aspect-[2/3]"} bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden`}>
+                  {artUrl ? (
+                    <img
+                      src={artUrl}
+                      alt={item.title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : itemIsMusic ? (
+                    <Disc3 className="w-12 h-12 text-white/50" />
+                  ) : item.media_type === "movie" ? (
+                    <Film className="w-12 h-12 text-white/50" />
+                  ) : (
+                    <Tv className="w-12 h-12 text-white/50" />
+                  )}
+                  {/* Remove button on hover */}
+                  <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveItem(item.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+                <div className="p-4 space-y-1">
+                  <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">
+                    {item.title}
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {itemIsMusic ? (
+                      <>
+                        <span>{item.media_type === "album" ? "Album" : "Track"}</span>
+                        {item.artist && <><span>·</span><span className="truncate">{item.artist}</span></>}
+                      </>
+                    ) : (
+                      <span>{item.media_type === "movie" ? "Movie" : "TV Show"}</span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="p-4 space-y-2">
-                <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors">
-                  {item.title}
-                </h3>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{item.media_type === "movie" ? "Movie" : "TV Show"}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

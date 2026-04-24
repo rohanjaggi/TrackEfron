@@ -918,13 +918,25 @@ export default function DiscoverPage() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from("watchlist").insert({
-        user_id: user.id,
-        tmdb_id: item.id,
-        title: item.title || item.name || "Untitled",
-        media_type: item.media_type,
-        poster_url: item.poster_url || null,
-      });
+      const isMusic = item.media_type === "album" || item.media_type === "track";
+      if (isMusic) {
+        await supabase.from("music_queue").insert({
+          user_id: user.id,
+          spotify_id: String(item.id),
+          media_type: item.media_type,
+          title: item.title || item.name || "Untitled",
+          artist: null,
+          image_url: item.poster_url || null,
+        });
+      } else {
+        await supabase.from("watchlist").insert({
+          user_id: user.id,
+          tmdb_id: item.id,
+          title: item.title || item.name || "Untitled",
+          media_type: item.media_type,
+          poster_url: item.poster_url || null,
+        });
+      }
       setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
     } catch {
       // silently fail (e.g. duplicate)
@@ -940,8 +952,7 @@ export default function DiscoverPage() {
     } catch {
       setRefreshStatus("error");
     }
-    // Wait for the background refresh job on Render to finish before re-fetching
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     setMlRecs([]);
     setMlFetched(false);
   }

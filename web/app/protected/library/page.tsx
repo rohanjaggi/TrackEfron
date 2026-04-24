@@ -55,6 +55,7 @@ type WatchLog = {
   watched_date: string | null;
   poster_url: string | null;
   tmdb_id: number | null;
+  spotify_id?: string | null;
   created_at: string;
   artist?: string | null;
 };
@@ -110,7 +111,7 @@ export default function LibraryPage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("listen_logs")
-          .select("id, title, media_type, rating, review, listened_date, image_url, created_at, artist")
+          .select("id, title, media_type, rating, review, listened_date, image_url, created_at, artist, spotify_id")
           .order("created_at", { ascending: false }),
       ]);
 
@@ -124,6 +125,7 @@ export default function LibraryPage() {
         watched_date: m.listened_date,
         poster_url: m.image_url,
         tmdb_id: null,
+        spotify_id: m.spotify_id,
         created_at: m.created_at,
         artist: m.artist,
       }));
@@ -528,7 +530,14 @@ export default function LibraryPage() {
                 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--border-raw)"}
-                onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
+                onClick={() => {
+                  const isMusicItem = item.media_type === "album" || item.media_type === "track";
+                  if (isMusicItem && item.spotify_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.spotify_id}`);
+                  } else if (item.tmdb_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`);
+                  }
+                }}
               >
                 {/* Accent top line */}
                 <div className="absolute top-0 left-0 right-0 h-px z-20" style={{ background: accent }} />
@@ -651,7 +660,14 @@ export default function LibraryPage() {
                 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = "0.8"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
-                onClick={() => item.tmdb_id && router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
+                onClick={() => {
+                  const isMusicItem = item.media_type === "album" || item.media_type === "track";
+                  if (isMusicItem && item.spotify_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.spotify_id}`);
+                  } else if (item.tmdb_id) {
+                    router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`);
+                  }
+                }}
               >
                 {/* Thumbnail */}
                 <div
