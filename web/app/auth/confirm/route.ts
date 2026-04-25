@@ -17,10 +17,9 @@ export async function GET(request: NextRequest) {
       token_hash,
     });
     if (!error) {
-      // Copy AI API key from signup metadata to user_ai_settings table
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.user_metadata?.ai_api_key) {
-        await supabase.from("user_ai_settings").upsert(
+        const { error: upsertErr } = await supabase.from("user_ai_settings").upsert(
           {
             user_id: user.id,
             ai_api_key: user.user_metadata.ai_api_key,
@@ -28,9 +27,11 @@ export async function GET(request: NextRequest) {
           },
           { onConflict: "user_id" }
         );
-        await supabase.auth.updateUser({
-          data: { ai_api_key: null },
-        });
+        if (!upsertErr) {
+          await supabase.auth.updateUser({
+            data: { ai_api_key: null },
+          });
+        }
       }
       redirect(next);
     } else {

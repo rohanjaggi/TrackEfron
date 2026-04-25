@@ -611,7 +611,7 @@ export function ProfileClient({ profile }: ProfileProps) {
             <div>
               <p className="font-medium">Server Configured</p>
               <p className="text-xs text-muted-foreground">
-                AI features are configured by the server ({aiKeyInfo.provider === "openai" ? "OpenAI" : "Anthropic"})
+                AI features are configured by the server ({aiKeyInfo.provider === "openai" ? "OpenAI" : aiKeyInfo.provider === "gemini" ? "Gemini" : "Anthropic"})
               </p>
             </div>
           </div>
@@ -631,7 +631,7 @@ export function ProfileClient({ profile }: ProfileProps) {
                   <div className="flex items-center gap-2">
                     <p className="font-medium">{aiKeyInfo.maskedKey}</p>
                     <span className="text-xs px-2 py-0.5 border border-primary text-primary">
-                      {aiKeyInfo.provider === "anthropic" ? "Anthropic" : "OpenAI"}
+                      {aiKeyInfo.provider === "anthropic" ? "Anthropic" : aiKeyInfo.provider === "gemini" ? "Gemini" : "OpenAI"}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
