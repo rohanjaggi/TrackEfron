@@ -113,7 +113,7 @@ export async function POST(request: Request) {
               tmdb_id: match.id,
               title: match.title || match.name,
               poster_url: match.poster_path
-                ? `https://image.tmdb.org/t/p/w185${match.poster_path}`
+                ? `https://image.tmdb.org/t/p/w342${match.poster_path}`
                 : null,
             });
           }

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
       const results = await getTrending();
       const enrichedResults = results.map((result: any) => ({
         ...result,
-        poster_url: result.poster_path ? getPoster(result.poster_path, "w185") : null,
+        poster_url: result.poster_path ? getPoster(result.poster_path, "w342") : null,
       }));
       return NextResponse.json(enrichedResults);
     } catch (error: any) {
