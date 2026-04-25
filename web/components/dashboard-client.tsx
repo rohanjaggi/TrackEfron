@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import { StarDisplay } from "@/components/ui/star-display";
 
 type WatchLog = {
   id: string;
@@ -71,7 +72,7 @@ function FeaturedCard({
         className="animate-pulse"
         style={{
           background: "var(--surface)",
-          border: "1px solid var(--border-raw)",
+          border: "2px solid var(--border-raw)",
           minHeight: 300,
         }}
       />
@@ -85,7 +86,7 @@ function FeaturedCard({
         className="flex flex-col items-center justify-center text-center p-8"
         style={{
           background: "var(--surface)",
-          border: "1px solid var(--border-raw)",
+          border: "2px solid var(--border-raw)",
           minHeight: 280,
           position: "relative",
           overflow: "hidden",
@@ -101,7 +102,7 @@ function FeaturedCard({
         />
         <div
           className="relative z-10 w-16 h-16 flex items-center justify-center mb-4"
-          style={{ border: `1px solid ${accentColor}`, background: accentDim }}
+          style={{ border: `2px solid ${accentColor}`, background: accentDim }}
         >
           {isMusic
             ? <Music2 className="w-7 h-7" style={{ color: accentColor }} />
@@ -126,7 +127,7 @@ function FeaturedCard({
       style={{
         position: "relative",
         overflow: "hidden",
-        border: "1px solid var(--border-raw)",
+        border: "2px solid var(--border-raw)",
       }}
     >
       {/* Accent top line */}
@@ -191,7 +192,7 @@ function FeaturedCard({
       <div
         className="absolute bottom-0 left-0 right-0 p-4 z-20"
       >
-        <StarDisplay rating={item.rating} />
+        <StarDisplay rating={item.rating} size="md" />
         <h3
           className="font-display mt-1 mb-1 leading-tight"
           style={{ fontSize: "20px", fontWeight: 700, color: "var(--text)" }}
@@ -217,21 +218,6 @@ function FeaturedCard({
   );
 }
 
-// ─── 5-star display (half-star support, ratings stored as 0–5) ─
-/** Renders a 5-star display supporting half-stars (ratings stored as 0–5). */
-function StarDisplay({ rating }: { rating: number }) {
-  const full = Math.floor(rating);
-  const hasHalf = rating % 1 >= 0.5;
-  const empty = 5 - full - (hasHalf ? 1 : 0);
-
-  return (
-    <span style={{ letterSpacing: "2px", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: 0 }}>
-      <span style={{ color: "var(--mode-accent)" }}>{"★".repeat(full)}</span>
-      {hasHalf && <span style={{ color: "var(--mode-accent)", opacity: 0.55 }}>★</span>}
-      <span style={{ color: "var(--mode-accent)", opacity: 0.2 }}>{"★".repeat(empty)}</span>
-    </span>
-  );
-}
 
 export function DashboardClient({ userName }: DashboardClientProps) {
   const { mode } = useMode();
@@ -404,7 +390,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               style={{
                 background: accentColor,
                 color: "var(--bg)",
-                border: `1px solid ${accentColor}`,
+                border: `2px solid ${accentColor}`,
               }}
             >
               <Plus className="w-4 h-4" />
@@ -417,7 +403,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               style={{
                 background: "none",
                 color: "var(--text-muted)",
-                border: "1px solid var(--border-raw)",
+                border: "2px solid var(--border-raw)",
               }}
               onMouseEnter={e => {
                 (e.currentTarget as HTMLElement).style.color = "var(--text)";
@@ -448,7 +434,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       <div>
         <div
           className="flex items-baseline justify-between pb-3 mb-0"
-          style={{ borderBottom: "1px solid var(--border-raw)" }}
+          style={{ borderBottom: "2px solid var(--border-raw)" }}
         >
           <h2
             className="font-display"
@@ -473,7 +459,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               <div
                 key={i}
                 className="flex items-center gap-4 py-4"
-                style={{ borderBottom: "1px solid var(--border-raw)" }}
+                style={{ borderBottom: "2px solid var(--border-raw)" }}
               >
                 <div
                   className="flex-shrink-0 animate-pulse"
@@ -490,7 +476,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           <div className="py-16 text-center">
             <div
               className="w-16 h-16 flex items-center justify-center mx-auto mb-4"
-              style={{ background: "var(--surface)", border: "1px solid var(--border-raw)" }}
+              style={{ background: "var(--surface)", border: "2px solid var(--border-raw)" }}
             >
               {mode === "music"
                 ? <Music2 className="w-7 h-7" style={{ color: "var(--text-muted)" }} />
@@ -570,7 +556,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
                   {/* Rating */}
                   <div className="flex-shrink-0 text-right">
-                    <StarDisplay rating={item.rating} />
+                    <StarDisplay rating={item.rating} size="md" />
                     <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)", letterSpacing: "0.06em" }}>
                       {item.rating}/5
                     </p>
@@ -586,7 +572,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       <div>
         <div
           className="flex items-baseline justify-between pb-3 mb-0"
-          style={{ borderBottom: "1px solid var(--border-raw)" }}
+          style={{ borderBottom: "2px solid var(--border-raw)" }}
         >
           <div className="flex items-center gap-3">
             <h2
@@ -619,7 +605,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               <div
                 key={i}
                 className="flex items-center gap-4 py-4"
-                style={{ borderBottom: "1px solid var(--border-raw)" }}
+                style={{ borderBottom: "2px solid var(--border-raw)" }}
               >
                 <div className="w-11 h-16 flex-shrink-0 animate-pulse" style={{ background: "var(--surface-2)" }} />
                 <div className="flex-1 flex flex-col gap-2">
