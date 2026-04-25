@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import { StarDisplay } from "@/components/ui/star-display";
 
 type ViewType = "grid" | "list";
 // "film" = movies+tv, "music" = albums+tracks
@@ -65,18 +66,6 @@ function upscalePoster(url: string | null, size = "w342"): string | null {
   return url.replace(/\/w\d+\//, `/${size}/`);
 }
 
-function StarDisplay({ rating, accent }: { rating: number; accent: string }) {
-  const full = Math.floor(rating);
-  const hasHalf = rating % 1 >= 0.5;
-  const empty = 5 - full - (hasHalf ? 1 : 0);
-  return (
-    <span style={{ letterSpacing: "2px", fontSize: "11px", display: "inline-flex", alignItems: "center" }}>
-      <span style={{ color: accent }}>{"★".repeat(full)}</span>
-      {hasHalf && <span style={{ color: accent, opacity: 0.55 }}>★</span>}
-      <span style={{ color: accent, opacity: 0.2 }}>{"★".repeat(empty)}</span>
-    </span>
-  );
-}
 
 export default function LibraryPage() {
   const router = useRouter();
