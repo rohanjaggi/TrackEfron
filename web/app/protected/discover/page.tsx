@@ -1683,7 +1683,7 @@ export default function DiscoverPage() {
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
                 {(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).map((item, idx) => (
-                  <div key={`rec-${item.id}`} className="group relative">
+                  <div key={`rec-${item.id}-${idx}`} className="group relative">
                     <RecMediaCard
                       item={item}
                       onClick={handleItemClick}

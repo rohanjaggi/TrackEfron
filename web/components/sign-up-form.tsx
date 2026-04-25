@@ -183,14 +183,14 @@ export function SignUpForm({
                   <Input
                     id="ai-api-key"
                     type="password"
-                    placeholder="sk-ant-... or sk-..."
+                    placeholder="sk-ant-... / sk-... / AIza..."
                     value={aiApiKey}
                     onChange={(e) => setAiApiKey(e.target.value)}
                     className="pl-10"
                   />
                   {aiApiKey && (
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 border border-primary text-primary">
-                      {aiApiKey.startsWith("sk-ant-") ? "Anthropic" : aiApiKey.startsWith("sk-") ? "OpenAI" : "?"}
+                      {aiApiKey.startsWith("sk-ant-") ? "Anthropic" : aiApiKey.startsWith("AIza") ? "Gemini" : aiApiKey.startsWith("sk-") ? "OpenAI" : "?"}
                     </span>
                   )}
                 </div>

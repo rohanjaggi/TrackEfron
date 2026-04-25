@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type Provider = "anthropic" | "openai";
+type Provider = "anthropic" | "openai" | "gemini";
 type Tier = "powerful" | "fast" | "fastest";
 
 const MODEL_MAP: Record<Provider, Record<Tier, string>> = {
@@ -15,6 +16,11 @@ const MODEL_MAP: Record<Provider, Record<Tier, string>> = {
     powerful: "gpt-5.4",
     fast: "gpt-5.4-mini",
     fastest: "gpt-5.4-nano",
+  },
+  gemini: {
+    powerful: "gemini-2.5-flash",
+    fast: "gemini-2.5-flash",
+    fastest: "gemini-3.1-flash-lite-preview",
   },
 };
 
@@ -40,6 +46,12 @@ interface ProviderConfig {
   apiKey: string;
 }
 
+function detectProvider(key: string): Provider {
+  if (key.startsWith("sk-ant-")) return "anthropic";
+  if (key.startsWith("AIza")) return "gemini";
+  return "openai";
+}
+
 async function resolveProvider(
   supabase: SupabaseClient,
   userId: string,
@@ -50,6 +62,9 @@ async function resolveProvider(
   if (process.env.ANTHROPIC_API_KEY) {
     return { provider: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY };
   }
+  if (process.env.GEMINI_API_KEY) {
+    return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY };
+  }
 
   const { data } = await supabase
     .from("user_ai_settings")
@@ -59,8 +74,7 @@ async function resolveProvider(
 
   if (data?.ai_api_key) {
     const key = data.ai_api_key as string;
-    const provider: Provider = key.startsWith("sk-ant-") ? "anthropic" : "openai";
-    return { provider, apiKey: key };
+    return { provider: detectProvider(key), apiKey: key };
   }
 
   return null;
@@ -110,7 +124,7 @@ async function callOpenAI(
   const client = new OpenAI({ apiKey });
   const response = await client.chat.completions.create({
     model,
-    max_tokens: options.maxTokens,
+    max_completion_tokens: options.maxTokens,
     messages: [
       { role: "system", content: options.system },
       { role: "user", content: options.userMessage },
@@ -132,6 +146,45 @@ async function callOpenAI(
   }
 }
 
+async function callGemini(
+  apiKey: string,
+  model: string,
+  options: CallAIOptions,
+): Promise<CallAIResult> {
+  const client = new GoogleGenAI({ apiKey });
+
+  const schema = options.tool.input_schema as Record<string, unknown>;
+
+  const response = await client.models.generateContent({
+    model,
+    contents: options.userMessage,
+    config: {
+      systemInstruction: options.system,
+      maxOutputTokens: options.maxTokens,
+      tools: [{
+        functionDeclarations: [{
+          name: options.tool.name,
+          description: options.tool.description || "",
+          parameters: schema,
+        }],
+      }],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.ANY,
+          allowedFunctionNames: [options.toolName],
+        },
+      },
+    },
+  });
+
+  const fc = response.functionCalls?.[0];
+  if (!fc || !fc.args) {
+    return { error: "AI failed to generate structured output", code: "PROVIDER_ERROR" };
+  }
+
+  return { data: fc.args, model };
+}
+
 export async function callAI(options: CallAIOptions): Promise<CallAIResult> {
   const config = await resolveProvider(options.supabase, options.userId);
   if (!config) {
@@ -146,6 +199,9 @@ export async function callAI(options: CallAIOptions): Promise<CallAIResult> {
   try {
     if (config.provider === "anthropic") {
       return await callAnthropic(config.apiKey, model, options);
+    }
+    if (config.provider === "gemini") {
+      return await callGemini(config.apiKey, model, options);
     }
     return await callOpenAI(config.apiKey, model, options);
   } catch (err) {

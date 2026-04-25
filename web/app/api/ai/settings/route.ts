@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-function detectProvider(key: string): "anthropic" | "openai" | null {
+function detectProvider(key: string): "anthropic" | "openai" | "gemini" | null {
   if (key.startsWith("sk-ant-")) return "anthropic";
+  if (key.startsWith("AIza")) return "gemini";
   if (key.startsWith("sk-")) return "openai";
   return null;
 }
@@ -19,10 +20,11 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY) {
+  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY) {
+    const provider = process.env.OPENAI_API_KEY ? "openai" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "gemini";
     return NextResponse.json({
       hasKey: true,
-      provider: process.env.OPENAI_API_KEY ? "openai" : "anthropic",
+      provider,
       maskedKey: null,
       source: "env",
     });
@@ -66,7 +68,7 @@ export async function PUT(request: Request) {
   const provider = detectProvider(apiKey);
   if (!provider) {
     return NextResponse.json(
-      { error: "Unrecognized key format. Use an Anthropic (sk-ant-...) or OpenAI (sk-...) key." },
+      { error: "Unrecognized key format. Use an Anthropic (sk-ant-...), OpenAI (sk-...), or Gemini (AIza...) key." },
       { status: 400 }
     );
   }

@@ -60,7 +60,7 @@ type WatchLog = {
   artist?: string | null;
 };
 
-function upscalePoster(url: string | null, size = "w780"): string | null {
+function upscalePoster(url: string | null, size = "w342"): string | null {
   if (!url) return null;
   return url.replace(/\/w\d+\//, `/${size}/`);
 }
@@ -553,6 +553,7 @@ export default function LibraryPage() {
                       alt={item.title}
                       className="group-hover:scale-105 transition-transform duration-500"
                       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
                     />
                   ) : (
                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -680,7 +681,7 @@ export default function LibraryPage() {
                   }}
                 >
                   {item.poster_url ? (
-                    <img src={upscalePoster(item.poster_url)!} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={upscalePoster(item.poster_url)!} alt={item.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       {item.media_type === "movie" ? <Film className="w-4 h-4" style={{ color: "var(--text-dim)" }} />

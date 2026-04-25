@@ -174,9 +174,11 @@ export function ProfileClient({ profile }: ProfileProps) {
 
   const detectedProvider = aiKeyInput.startsWith("sk-ant-")
     ? "Anthropic"
-    : aiKeyInput.startsWith("sk-")
-      ? "OpenAI"
-      : null;
+    : aiKeyInput.startsWith("AIza")
+      ? "Gemini"
+      : aiKeyInput.startsWith("sk-")
+        ? "OpenAI"
+        : null;
 
   const stats = {
     watched: watchLogs.length,
@@ -671,7 +673,7 @@ export function ProfileClient({ profile }: ProfileProps) {
                 <Input
                   value={aiKeyInput}
                   onChange={(e) => setAiKeyInput(e.target.value)}
-                  placeholder="sk-ant-... or sk-..."
+                  placeholder="sk-ant-... / sk-... / AIza..."
                   className="bg-card border-2 border-border pr-24"
                   type="password"
                 />
