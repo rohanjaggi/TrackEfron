@@ -59,13 +59,14 @@ def get_recommendations(user_id: str) -> RecommendResponse:
 
 
 @router.get("/recommend/{user_id}/items", response_model=RecommendItemsResponse)
-def get_recommendations_with_types(user_id: str) -> RecommendItemsResponse:
+def get_recommendations_with_types(user_id: str, limit: int = 20) -> RecommendItemsResponse:
     """
-    Return up to 20 personalised recommendations with media_type for each.
-    Used by the web frontend so it can fetch TMDB details for the correct media type.
+    Return personalised recommendations with media_type for each.
+    Accepts ?limit=N (default 20, max 50) to return more candidates for AI enrichment.
     """
+    top_n = min(max(limit, 1), 50)
     try:
-        items = recommend_with_types(user_id)
+        items = recommend_with_types(user_id, top_n=top_n)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

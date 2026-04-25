@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, User, AtSign } from "lucide-react";
+import { ArrowLeft, User, AtSign, Key } from "lucide-react";
 
 export function SignUpForm({
   className,
@@ -26,6 +26,7 @@ export function SignUpForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
+  const [aiApiKey, setAiApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -66,15 +67,19 @@ export function SignUpForm({
     }
 
     try {
+      const metadata: Record<string, string> = {
+        full_name: fullName.trim(),
+        username: username.toLowerCase().trim(),
+      };
+      if (aiApiKey.trim()) {
+        metadata.ai_api_key = aiApiKey.trim();
+      }
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/protected`,
-          data: {
-            full_name: fullName.trim(),
-            username: username.toLowerCase().trim(),
-          },
+          data: metadata,
         },
       });
       if (error) throw error;
@@ -170,6 +175,28 @@ export function SignUpForm({
                   value={repeatPassword}
                   onChange={(e) => setRepeatPassword(e.target.value)}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ai-api-key">AI API Key (Optional)</Label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="ai-api-key"
+                    type="password"
+                    placeholder="sk-ant-... or sk-..."
+                    value={aiApiKey}
+                    onChange={(e) => setAiApiKey(e.target.value)}
+                    className="pl-10"
+                  />
+                  {aiApiKey && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 border border-primary text-primary">
+                      {aiApiKey.startsWith("sk-ant-") ? "Anthropic" : aiApiKey.startsWith("sk-") ? "OpenAI" : "?"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Paste an Anthropic or OpenAI key to enable AI features. You can add this later in profile settings.
+                </p>
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
               <Button type="submit" className="w-full" disabled={isLoading}>

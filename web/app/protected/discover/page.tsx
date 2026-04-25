@@ -515,6 +515,23 @@ export default function DiscoverPage() {
   const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
 
+  // AI recommendations
+  const [aiMusicRecs, setAiMusicRecs] = useState<(MusicMediaItem & { explanation?: string })[]>([]);
+  const [aiMusicLoading, setAiMusicLoading] = useState(false);
+  const [aiMusicFetched, setAiMusicFetched] = useState(false);
+  const [aiFilmRecs, setAiFilmRecs] = useState<(MediaItem & { explanation?: string; source?: string })[]>([]);
+  const [aiFilmLoading, setAiFilmLoading] = useState(false);
+  const [aiFilmFetched, setAiFilmFetched] = useState(false);
+
+  // Vibe search
+  const [vibeResults, setVibeResults] = useState<any[]>([]);
+  const [vibeInterpretation, setVibeInterpretation] = useState<string>("");
+  const [vibeLoading, setVibeLoading] = useState(false);
+  const [isVibeQuery, setIsVibeQuery] = useState(false);
+
+  // AI key status
+  const [aiNotConfigured, setAiNotConfigured] = useState(false);
+
   // ─── Fetch music browse data (lazy — only when mode is music) ───
   useEffect(() => {
     if (mode !== "music" || musicFetched) return;
@@ -680,6 +697,70 @@ export default function DiscoverPage() {
 
     fetchMlRecs();
   }, [activeTab, mlFetched]);
+
+  // ─── Fetch AI music recommendations (lazy — only when mode is music) ───
+  useEffect(() => {
+    if (mode !== "music" || aiMusicFetched) return;
+    setAiMusicFetched(true);
+    setAiMusicLoading(true);
+
+    async function fetchAiMusicRecs() {
+      try {
+        const res = await fetch("/api/ai/recommend?mode=music");
+        const data = await res.json();
+        if (data?.code === "NO_API_KEY") {
+          setAiNotConfigured(true);
+        } else if (Array.isArray(data)) {
+          setAiMusicRecs(data.map((r: any) => ({
+            id: r.spotify_id || r.title,
+            name: r.title,
+            artist: r.artist,
+            album_name: r.album_name || "",
+            image_url: r.image_url || null,
+            release_date: "",
+            type: r.type || "album",
+            explanation: r.explanation,
+          })));
+        }
+      } catch {
+        // AI endpoint may not be configured
+      } finally {
+        setAiMusicLoading(false);
+      }
+    }
+
+    fetchAiMusicRecs();
+  }, [mode, aiMusicFetched]);
+
+  // ─── Fetch AI film recommendations (lazy — only when For You tab + film mode) ───
+  useEffect(() => {
+    if (mode === "music" || activeTab !== "for-you" || aiFilmFetched) return;
+    setAiFilmFetched(true);
+    setAiFilmLoading(true);
+
+    async function fetchAiFilmRecs() {
+      try {
+        const res = await fetch("/api/ai/recommend?mode=film");
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAiFilmRecs(data.map((r: any) => ({
+            id: r.tmdb_id,
+            title: r.title,
+            media_type: r.media_type,
+            poster_url: r.poster_url,
+            explanation: r.explanation,
+            source: r.source,
+          })));
+        }
+      } catch {
+        // AI endpoint may not be configured
+      } finally {
+        setAiFilmLoading(false);
+      }
+    }
+
+    fetchAiFilmRecs();
+  }, [mode, activeTab, aiFilmFetched]);
 
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
@@ -865,15 +946,55 @@ export default function DiscoverPage() {
     fetchPersonalized();
   }, [activeTab, browseFetched]);
 
+  // ─── Vibe query detection ───
+  function detectVibeQuery(q: string): boolean {
+    const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
+    const lower = q.toLowerCase();
+    return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
+  }
+
   // ─── Search ───
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
       setSearchResults([]);
       setMusicSearchResults([]);
+      setVibeResults([]);
+      setVibeInterpretation("");
+      setIsVibeQuery(false);
       setShowDropdown(false);
       return;
     }
+
+    const isVibe = detectVibeQuery(q);
+    setIsVibeQuery(isVibe);
+
+    if (isVibe) {
+      const t = setTimeout(async () => {
+        try {
+          setVibeLoading(true);
+          setShowDropdown(true);
+          const res = await fetch("/api/ai/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
+          });
+          const data = await res.json();
+          if (data?.code === "NO_API_KEY") {
+            setAiNotConfigured(true);
+          } else if (data.results) {
+            setVibeResults(data.results);
+            setVibeInterpretation(data.interpretation || "");
+          }
+        } catch {
+          // silently fail
+        } finally {
+          setVibeLoading(false);
+        }
+      }, 800);
+      return () => clearTimeout(t);
+    }
+
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
@@ -918,25 +1039,13 @@ export default function DiscoverPage() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const isMusic = item.media_type === "album" || item.media_type === "track";
-      if (isMusic) {
-        await supabase.from("music_queue").insert({
-          user_id: user.id,
-          spotify_id: String(item.id),
-          media_type: item.media_type,
-          title: item.title || item.name || "Untitled",
-          artist: null,
-          image_url: item.poster_url || null,
-        });
-      } else {
-        await supabase.from("watchlist").insert({
-          user_id: user.id,
-          tmdb_id: item.id,
-          title: item.title || item.name || "Untitled",
-          media_type: item.media_type,
-          poster_url: item.poster_url || null,
-        });
-      }
+      await supabase.from("watchlist").insert({
+        user_id: user.id,
+        tmdb_id: item.id,
+        title: item.title || item.name || "Untitled",
+        media_type: item.media_type,
+        poster_url: item.poster_url || null,
+      });
       setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
     } catch {
       // silently fail (e.g. duplicate)
@@ -955,6 +1064,52 @@ export default function DiscoverPage() {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     setMlRecs([]);
     setMlFetched(false);
+  }
+
+  async function handleRefreshAiMusicRecs() {
+    setAiMusicLoading(true);
+    try {
+      const res = await fetch("/api/ai/recommend?mode=music&refresh=true");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setAiMusicRecs(data.map((r: any) => ({
+          id: r.spotify_id || r.title,
+          name: r.title,
+          artist: r.artist,
+          album_name: r.album_name || "",
+          image_url: r.image_url || null,
+          release_date: "",
+          type: r.type || "album",
+          explanation: r.explanation,
+        })));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setAiMusicLoading(false);
+    }
+  }
+
+  async function handleRefreshAiFilmRecs() {
+    setAiFilmLoading(true);
+    try {
+      const res = await fetch("/api/ai/recommend?mode=film&refresh=true");
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setAiFilmRecs(data.map((r: any) => ({
+          id: r.tmdb_id,
+          title: r.title,
+          media_type: r.media_type,
+          poster_url: r.poster_url,
+          explanation: r.explanation,
+          source: r.source,
+        })));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setAiFilmLoading(false);
+    }
   }
 
   async function handleGenreClick(genre: { id: number; name: string }) {
@@ -1053,8 +1208,73 @@ export default function DiscoverPage() {
               if (mode !== "music" && searchResults.length > 0) setShowDropdown(true);
             }}
           />
-          {isSearching && (
+          {(isSearching || vibeLoading) && (
             <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+          )}
+          {isVibeQuery && <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-primary flex items-center gap-1"><Sparkles className="w-3 h-3" />Vibe</span>}
+          {/* Vibe search dropdown */}
+          {showDropdown && isVibeQuery && (vibeResults.length > 0 || vibeLoading) && (
+            <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-96 overflow-auto shadow-lg">
+              {vibeInterpretation && (
+                <div className="px-4 py-2 border-b border-border bg-primary/5">
+                  <p className="text-xs text-primary flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" />
+                    {vibeInterpretation}
+                  </p>
+                </div>
+              )}
+              {vibeLoading ? (
+                <div className="px-4 py-6 text-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">Finding the perfect match...</p>
+                </div>
+              ) : (
+                vibeResults.map((result: any, i: number) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      setSearchQuery("");
+                      if (result.tmdb_id) {
+                        router.push(`/protected/media/${result.type === "tv" ? "tv" : "movie"}/${result.tmdb_id}`);
+                      } else if (result.spotify_id) {
+                        handleAddToQueue({
+                          id: result.spotify_id,
+                          name: result.title,
+                          artist: result.artist || "",
+                          album_name: "",
+                          image_url: result.image_url || null,
+                          release_date: "",
+                          type: result.type || "album",
+                        });
+                      }
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-muted/50 flex gap-3 items-center transition-colors"
+                  >
+                    {(result.image_url || result.poster_url) ? (
+                      <img
+                        src={result.image_url || result.poster_url}
+                        alt={result.title}
+                        className={`${mode === "music" ? "w-10 h-10" : "w-8 h-12"} object-cover shrink-0 border border-border`}
+                      />
+                    ) : (
+                      <div className={`${mode === "music" ? "w-10 h-10" : "w-8 h-12"} bg-muted/30 flex items-center justify-center shrink-0 border border-border`}>
+                        {mode === "music" ? <Disc3 className="w-4 h-4 text-muted-foreground" /> : <Film className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{result.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {result.artist && <span>{result.artist} · </span>}
+                        {result.year && <span>{result.year} · </span>}
+                        {result.why}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
           )}
           {/* Film search dropdown */}
           {mode !== "music" && showDropdown && searchResults.length > 0 && (
@@ -1176,6 +1396,56 @@ export default function DiscoverPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* AI Music Recommendations — For You */}
+          {!activeMoodPill && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[var(--music)]" />
+                  <h2 className="text-xl font-semibold">For You</h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={handleRefreshAiMusicRecs}
+                  disabled={aiMusicLoading}
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${aiMusicLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              {aiMusicLoading ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
+                </div>
+              ) : aiMusicRecs.length > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                  {aiMusicRecs.map((item) => (
+                    <div key={item.id} className="group relative">
+                      <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
+                      {item.explanation && (
+                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
+                          <p className="text-xs text-white/90 line-clamp-4">{item.explanation}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : !aiMusicLoading ? (
+                <div className="border-2 border-dashed border-border p-8 text-center">
+                  <Sparkles className="w-6 h-6 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    {aiNotConfigured
+                      ? "Add an AI API key in your profile settings to unlock personalized recommendations."
+                      : "Log some music to get AI-powered recommendations"}
+                  </p>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -1367,7 +1637,7 @@ export default function DiscoverPage() {
               <h2 className="text-xl font-semibold">Recommended For You</h2>
             </div>
             <div className="flex items-center gap-2">
-              {refreshStatus === "ok" && !mlLoading && (
+              {refreshStatus === "ok" && !mlLoading && !aiFilmLoading && (
                 <span className="text-xs text-green-500">Updated</span>
               )}
               {refreshStatus === "error" && !mlLoading && (
@@ -1377,16 +1647,16 @@ export default function DiscoverPage() {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={handleRefreshMlRecs}
-                disabled={mlLoading}
+                onClick={() => { handleRefreshMlRecs(); handleRefreshAiFilmRecs(); }}
+                disabled={mlLoading || aiFilmLoading}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${mlLoading ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-4 h-4 mr-2 ${(mlLoading || aiFilmLoading) ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
             </div>
           </div>
 
-          {mlLoading ? (
+          {(mlLoading || aiFilmLoading) && aiFilmRecs.length === 0 && mlRecs.length === 0 ? (
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
@@ -1396,7 +1666,7 @@ export default function DiscoverPage() {
                 {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
               </div>
             </div>
-          ) : mlRecs.length === 0 ? (
+          ) : (aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length === 0 ? (
             <div className="border-2 border-dashed border-border p-12 text-center">
               <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
               <p className="text-sm font-medium mb-1">Log 5 or more watches to unlock personalised picks</p>
@@ -1409,18 +1679,24 @@ export default function DiscoverPage() {
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{mlRecs.length} picks</span>
+                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length} picks</span>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {mlRecs.map((item, idx) => (
-                  <RecMediaCard
-                    key={`ml-${item.id}`}
-                    item={item}
-                    onClick={handleItemClick}
-                    onWatchlist={handleAddMlToWatchlist}
-                    watchlisted={mlWatchlistedIds.has(item.id)}
-                    rank={idx + 1}
-                  />
+                {(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).map((item, idx) => (
+                  <div key={`rec-${item.id}`} className="group relative">
+                    <RecMediaCard
+                      item={item}
+                      onClick={handleItemClick}
+                      onWatchlist={handleAddMlToWatchlist}
+                      watchlisted={mlWatchlistedIds.has(item.id)}
+                      rank={idx + 1}
+                    />
+                    {(item as any).explanation && (
+                      <div className="absolute inset-0 bg-black/85 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
+                        <p className="text-[10px] text-white/90 line-clamp-5">{(item as any).explanation}</p>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

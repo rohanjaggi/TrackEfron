@@ -88,6 +88,8 @@ function UserProfileContent() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [lists, setLists] = useState<UserList[]>([]);
   const [friendDataLoading, setFriendDataLoading] = useState(false);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -147,8 +149,8 @@ function UserProfileContent() {
       } else {
         setRelationship("none");
       }
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
     } finally {
       setLoading(false);
     }
@@ -184,8 +186,16 @@ function UserProfileContent() {
         setWatchLogs(logsRes.data || []);
         setWatchlist(watchlistRes.data || []);
         setLists((listsRes.data as UserList[]) || []);
-      } catch {
-        // silently fail — RLS will block if not friends
+
+        // Fetch friend's taste fingerprint
+        const { data: dnaData } = await supabase
+          .from("taste_dna")
+          .select("fingerprint")
+          .eq("user_id", profile!.id)
+          .single();
+        if (dnaData?.fingerprint) setFingerprint(dnaData.fingerprint);
+      } catch (err) {
+        console.error("Failed to fetch friend data:", err);
       } finally {
         setFriendDataLoading(false);
       }
@@ -196,6 +206,7 @@ function UserProfileContent() {
   async function handleSendRequest() {
     if (!profile) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -203,11 +214,13 @@ function UserProfileContent() {
       const { error } = await supabase.from("friendships").insert({
         requester_id: user.id,
         addressee_id: profile.id,
+        status: "pending",
       });
       if (error && error.code !== "23505") throw error;
       setRelationship("pending_sent");
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to send friend request:", err);
+      setActionError("Failed to send friend request. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -216,6 +229,7 @@ function UserProfileContent() {
   async function handleAccept() {
     if (!friendshipId) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       await supabase
@@ -223,8 +237,9 @@ function UserProfileContent() {
         .update({ status: "accepted" })
         .eq("id", friendshipId);
       setRelationship("friends");
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to accept friend request:", err);
+      setActionError("Failed to accept request. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -233,13 +248,15 @@ function UserProfileContent() {
   async function handleCancel() {
     if (!friendshipId) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       await supabase.from("friendships").delete().eq("id", friendshipId);
       setRelationship("none");
       setFriendshipId(null);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("Failed to cancel/decline friendship:", err);
+      setActionError("Failed to update friendship. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -337,6 +354,9 @@ function UserProfileContent() {
             {profile.full_name || profile.username}
           </h1>
           <p className="text-muted-foreground">@{profile.username}</p>
+          {fingerprint && (
+            <p className="text-sm italic text-muted-foreground mt-2">&ldquo;{fingerprint}&rdquo;</p>
+          )}
         </div>
 
         {/* Member Since */}
@@ -344,6 +364,13 @@ function UserProfileContent() {
           <Calendar className="w-4 h-4" />
           <span>Member since {memberSince}</span>
         </div>
+
+        {/* Error Banner */}
+        {actionError && (
+          <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2 w-full max-w-md">
+            {actionError}
+          </div>
+        )}
 
         {/* Friendship Action */}
         {relationship === "none" && (

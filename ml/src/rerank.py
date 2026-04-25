@@ -150,6 +150,7 @@ def _mmr_select(
     pool: list[tuple[int, float]],
     item_vectors: np.ndarray,
     tmdb_to_row: dict,
+    top_n: int = FINAL_RECS,
 ) -> list[int]:
     """
     Greedy Maximal Marginal Relevance selection.
@@ -167,7 +168,7 @@ def _mmr_select(
     selected: list[int]       = []
     selected_vecs: list[np.ndarray] = []
 
-    while len(selected) < FINAL_RECS and remaining:
+    while len(selected) < top_n and remaining:
         best_tid, best_mmr = None, -float("inf")
 
         for tid in remaining:
@@ -195,18 +196,19 @@ def _mmr_select(
 
 # ── Main reranking function ────────────────────────────────────────────────────
 
-def rerank(user_id: str, scored: list[tuple[int, float]]) -> list[int]:
+def rerank(user_id: str, scored: list[tuple[int, float]], top_n: int = FINAL_RECS) -> list[int]:
     """
-    Reshape scored candidates into a diverse, novel, recency-aware top-20 list.
+    Reshape scored candidates into a diverse, novel, recency-aware list.
 
     Parameters
     ----------
     user_id : Supabase user UUID string
     scored  : list of (tmdb_id, score) from score.py, sorted descending
+    top_n   : number of results to return (default FINAL_RECS)
 
     Returns
     -------
-    Ordered list of up to FINAL_RECS tmdb_id integers.
+    Ordered list of up to top_n tmdb_id integers.
     """
     art = _load_artifacts()
 
@@ -217,7 +219,7 @@ def rerank(user_id: str, scored: list[tuple[int, float]]) -> list[int]:
 
     if not pool:
         return []
-    if len(pool) <= FINAL_RECS:
+    if len(pool) <= top_n:
         return [tid for tid, _ in pool]
 
     # Steps 3 & 4: Apply novelty + recency boosts to pre-MMR scores
@@ -234,8 +236,8 @@ def rerank(user_id: str, scored: list[tuple[int, float]]) -> list[int]:
         adjusted.append((tid, s + boost))
     adjusted.sort(key=lambda x: x[1], reverse=True)
 
-    # Step 2: MMR diversity — greedily select FINAL_RECS items
-    return _mmr_select(adjusted, art["item_vectors"], art["tmdb_to_row"])
+    # Step 2: MMR diversity — greedily select top_n items
+    return _mmr_select(adjusted, art["item_vectors"], art["tmdb_to_row"], top_n=top_n)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { syncProfile } from "@/lib/sync-profile";
-import Link from "next/link";
 import {
   User,
   AtSign,
@@ -21,10 +20,12 @@ import {
   Camera,
   BookOpen,
   Clock,
-  Users,
   Loader2,
-  Disc3
+  Disc3,
+  Key,
+  Trash2
 } from "lucide-react";
+import { TasteDNACard } from "@/components/taste-dna-card";
 
 interface ProfileProps {
   profile: {
@@ -95,11 +96,16 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [success, setSuccess] = useState(false);
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [watchlistCount, setWatchlistCount] = useState(0);
-  const [friendsCount, setFriendsCount] = useState(0);
   const [statsLoading, setStatsLoading] = useState(true);
   const [spotifyConnected, setSpotifyConnected] = useState(profile.spotifyConnected);
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const spotifyStatus = searchParams.get("spotify");
+
+  const [aiKeyInput, setAiKeyInput] = useState("");
+  const [aiKeyInfo, setAiKeyInfo] = useState<{ hasKey: boolean; provider: string | null; maskedKey: string | null; source: string } | null>(null);
+  const [aiKeyLoading, setAiKeyLoading] = useState(true);
+  const [aiKeySaving, setAiKeySaving] = useState(false);
+  const [aiKeyError, setAiKeyError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchStats() {
@@ -112,15 +118,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         setWatchLogs(logsRes.data || []);
         setWatchlistCount(watchlistRes.count || 0);
 
-        // Count friends
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const [asReq, asAddr] = await Promise.all([
-            supabase.from("friendships").select("id", { count: "exact", head: true }).eq("requester_id", user.id).eq("status", "accepted"),
-            supabase.from("friendships").select("id", { count: "exact", head: true }).eq("addressee_id", user.id).eq("status", "accepted"),
-          ]);
-          setFriendsCount((asReq.count || 0) + (asAddr.count || 0));
-        }
       } catch {
         // silently fail
       } finally {
@@ -129,6 +126,57 @@ export function ProfileClient({ profile }: ProfileProps) {
     }
     fetchStats();
   }, []);
+
+  useEffect(() => {
+    fetch("/api/ai/settings")
+      .then((r) => r.json())
+      .then(setAiKeyInfo)
+      .catch(() => {})
+      .finally(() => setAiKeyLoading(false));
+  }, []);
+
+  const handleSaveAiKey = async () => {
+    setAiKeySaving(true);
+    setAiKeyError(null);
+    try {
+      const res = await fetch("/api/ai/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: aiKeyInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiKeyError(data.error);
+        return;
+      }
+      setAiKeyInfo(data);
+      setAiKeyInput("");
+    } catch {
+      setAiKeyError("Failed to save API key");
+    } finally {
+      setAiKeySaving(false);
+    }
+  };
+
+  const handleRemoveAiKey = async () => {
+    setAiKeySaving(true);
+    setAiKeyError(null);
+    try {
+      const res = await fetch("/api/ai/settings", { method: "DELETE" });
+      const data = await res.json();
+      setAiKeyInfo(data);
+    } catch {
+      setAiKeyError("Failed to remove API key");
+    } finally {
+      setAiKeySaving(false);
+    }
+  };
+
+  const detectedProvider = aiKeyInput.startsWith("sk-ant-")
+    ? "Anthropic"
+    : aiKeyInput.startsWith("sk-")
+      ? "OpenAI"
+      : null;
 
   const stats = {
     watched: watchLogs.length,
@@ -139,7 +187,6 @@ export function ProfileClient({ profile }: ProfileProps) {
       ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
       : "—",
     watchlist: watchlistCount,
-    friends: friendsCount,
   };
 
   const handleSpotifyDisconnect = async () => {
@@ -371,14 +418,11 @@ export function ProfileClient({ profile }: ProfileProps) {
               <p className="text-xs text-muted-foreground">Watchlist</p>
             </div>
           </div>
-          {/* Row 2: Friends */}
-          <Link href="/protected/friends" className="border-2 border-border p-5 flex items-center justify-center gap-4 hover:border-primary transition-colors">
-            <Users className="w-5 h-5 text-primary" />
-            <div className="text-2xl font-bold">{stats.friends}</div>
-            <p className="text-sm text-muted-foreground">{stats.friends === 1 ? "Friend" : "Friends"}</p>
-          </Link>
         </div>
       )}
+
+      {/* Taste DNA */}
+      <TasteDNACard />
 
       {/* Profile Details */}
       <div className="border-2 border-border p-6">
@@ -546,6 +590,108 @@ export function ProfileClient({ profile }: ProfileProps) {
             </a>
           )}
         </div>
+      </div>
+
+      {/* AI Settings */}
+      <div className="border-2 border-border p-6">
+        <h2 className="font-display text-xl font-semibold mb-4">AI Settings</h2>
+
+        {aiKeyLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Loading...</span>
+          </div>
+        ) : aiKeyInfo?.source === "env" ? (
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 flex items-center justify-center border-2 border-primary text-primary">
+              <Key className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-medium">Server Configured</p>
+              <p className="text-xs text-muted-foreground">
+                AI features are configured by the server ({aiKeyInfo.provider === "openai" ? "OpenAI" : "Anthropic"})
+              </p>
+            </div>
+          </div>
+        ) : aiKeyInfo?.hasKey ? (
+          <div>
+            {aiKeyError && (
+              <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
+                {aiKeyError}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 flex items-center justify-center border-2 border-green-500 text-green-500">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{aiKeyInfo.maskedKey}</p>
+                    <span className="text-xs px-2 py-0.5 border border-primary text-primary">
+                      {aiKeyInfo.provider === "anthropic" ? "Anthropic" : "OpenAI"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Powers Taste DNA, recommendations, and vibe search
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-2 text-destructive hover:text-destructive"
+                onClick={handleRemoveAiKey}
+                disabled={aiKeySaving}
+              >
+                {aiKeySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {aiKeyError && (
+              <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
+                {aiKeyError}
+              </div>
+            )}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-10 h-10 flex items-center justify-center border-2 border-muted-foreground text-muted-foreground">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-medium">No API Key</p>
+                <p className="text-xs text-muted-foreground">
+                  Add an Anthropic or OpenAI key to enable AI-powered features
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  value={aiKeyInput}
+                  onChange={(e) => setAiKeyInput(e.target.value)}
+                  placeholder="sk-ant-... or sk-..."
+                  className="bg-card border-2 border-border pr-24"
+                  type="password"
+                />
+                {detectedProvider && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-2 py-0.5 border border-primary text-primary">
+                    {detectedProvider}
+                  </span>
+                )}
+              </div>
+              <Button
+                size="default"
+                className="border-2"
+                onClick={handleSaveAiKey}
+                disabled={aiKeySaving || !aiKeyInput}
+              >
+                {aiKeySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Danger Zone */}

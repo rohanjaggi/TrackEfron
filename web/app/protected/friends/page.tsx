@@ -63,6 +63,7 @@ export default function FriendsPage() {
   const [searchResults, setSearchResults] = useState<SearchResultUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -125,8 +126,8 @@ export default function FriendsPage() {
       });
 
       setFriends(result);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("fetchFriends failed:", err);
     } finally {
       setFriendsLoading(false);
     }
@@ -188,8 +189,8 @@ export default function FriendsPage() {
           profile: sentMap.get(f.addressee_id) || { id: f.addressee_id, username: "unknown", full_name: null, avatar_url: null },
         }))
       );
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("fetchRequests failed:", err);
     } finally {
       setRequestsLoading(false);
     }
@@ -253,8 +254,8 @@ export default function FriendsPage() {
         });
 
         setSearchResults(results);
-      } catch {
-        // silently fail
+      } catch (err) {
+        console.error("Friend search failed:", err);
       } finally {
         setIsSearching(false);
       }
@@ -271,6 +272,7 @@ export default function FriendsPage() {
       const { error } = await supabase.from("friendships").insert({
         requester_id: currentUserId,
         addressee_id: targetId,
+        status: "pending",
       });
       if (error && error.code !== "23505") throw error;
 
@@ -282,8 +284,9 @@ export default function FriendsPage() {
       );
       // Refresh sent requests
       fetchRequests(currentUserId);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("handleSendRequest failed:", err);
+      setActionError("Failed to send friend request");
     } finally {
       setSendingTo(null);
     }
@@ -301,8 +304,9 @@ export default function FriendsPage() {
 
       fetchFriends(currentUserId);
       fetchRequests(currentUserId);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("handleAcceptRequest failed:", err);
+      setActionError("Failed to accept request");
     } finally {
       setActioningId(null);
     }
@@ -315,8 +319,9 @@ export default function FriendsPage() {
       const supabase = createClient();
       await supabase.from("friendships").delete().eq("id", friendshipId);
       fetchRequests(currentUserId);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("handleDeclineOrCancel failed:", err);
+      setActionError("Failed to cancel request");
     } finally {
       setActioningId(null);
     }
@@ -330,8 +335,9 @@ export default function FriendsPage() {
       await supabase.from("friendships").delete().eq("id", friendshipId);
       setFriends(friends.filter((f) => f.id !== friendshipId));
       setConfirmUnfriendId(null);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error("handleUnfriend failed:", err);
+      setActionError("Failed to unfriend");
     } finally {
       setUnfriendingId(null);
     }
@@ -393,6 +399,13 @@ export default function FriendsPage() {
           Find Friends
         </button>
       </div>
+
+      {actionError && (
+        <div className="p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm flex items-center justify-between">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="text-destructive hover:underline text-xs">Dismiss</button>
+        </div>
+      )}
 
       {/* ============ FRIENDS TAB ============ */}
       {activeTab === "friends" && (
