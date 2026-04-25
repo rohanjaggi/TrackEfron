@@ -9,6 +9,7 @@ import {
   buildFilmVerifyUserPrompt,
 } from "@/lib/ai/prompts";
 import { searchSpotify } from "@/lib/spotify/spotify";
+import { getMovieDetails, getTvDetails, getPoster } from "@/lib/tmdb/tmdb";
 import type { MusicRecommendation, FilmRecommendation } from "@/lib/ai/types";
 
 const CACHE_TTL_HOURS = 24;
@@ -199,14 +200,26 @@ async function handleFilmRecommendations(
   });
 
   if ("error" in result) {
-    // Fall back to ML recs without AI enrichment
-    return NextResponse.json(
-      mlCandidates.slice(0, 20).map((c) => ({
-        ...c,
-        explanation: "",
-        source: "ml",
-      }))
+    // Fall back to ML recs without AI enrichment — enrich posters
+    const fallback = await Promise.all(
+      mlCandidates.slice(0, 20).map(async (c) => {
+        if (c.poster_url) return { ...c, explanation: "", source: "ml" };
+        try {
+          const detail = c.media_type === "tv"
+            ? await getTvDetails(c.tmdb_id)
+            : await getMovieDetails(c.tmdb_id);
+          return {
+            ...c,
+            explanation: "",
+            source: "ml",
+            poster_url: detail.poster_path ? getPoster(detail.poster_path, "w342") : null,
+          };
+        } catch {
+          return { ...c, explanation: "", source: "ml" };
+        }
+      })
     );
+    return NextResponse.json(fallback);
   }
 
   const { verified } = result.data as { verified: FilmRecommendation[] };
@@ -240,7 +253,7 @@ async function handleFilmRecommendations(
               ...rec,
               tmdb_id: match.id,
               poster_url: match.poster_path
-                ? `https://image.tmdb.org/t/p/w185${match.poster_path}`
+                ? getPoster(match.poster_path, "w342")
                 : null,
             });
             continue;
@@ -253,6 +266,21 @@ async function handleFilmRecommendations(
       final.push(rec);
     }
   }
+
+  // Enrich any items missing poster_url by fetching from TMDB by ID
+  await Promise.all(
+    final.map(async (item) => {
+      if (item.poster_url || !item.tmdb_id) return;
+      try {
+        const detail = item.media_type === "tv"
+          ? await getTvDetails(item.tmdb_id)
+          : await getMovieDetails(item.tmdb_id);
+        if (detail.poster_path) {
+          item.poster_url = getPoster(detail.poster_path, "w342");
+        }
+      } catch {}
+    })
+  );
 
   const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000).toISOString();
   await supabase.from("ai_recommendation_cache").upsert(

@@ -108,6 +108,49 @@ const DEFAULT_GENRE_PILLS = [
 ];
 
 
+// ─── Explanation Tooltip ───
+
+function ExplanationTooltip({ explanation, children }: { explanation?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  if (!explanation) return <>{children}</>;
+
+  return (
+    <div ref={ref} className="relative">
+      {children}
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        className="absolute bottom-8 right-1.5 w-7 h-7 bg-primary text-primary-foreground flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform z-10"
+        title="Why this was recommended"
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-full left-0 right-0 mb-2 z-50 border-2 border-primary/30 bg-background p-3 shadow-lg"
+          style={{ minWidth: "220px", maxWidth: "320px", width: "max-content" }}
+        >
+          <div className="flex items-start gap-2 mb-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+            <span className="text-[10px] uppercase tracking-widest text-primary font-medium">Why this pick</span>
+          </div>
+          <p className="text-xs text-foreground leading-relaxed">{explanation}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── RecMediaCard — MediaCard variant with inline watchlist button ───
 
 function RecMediaCard({
@@ -133,6 +176,7 @@ function RecMediaCard({
             src={item.poster_url}
             alt={title}
             className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
           />
         ) : (
           <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
@@ -187,6 +231,7 @@ function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaIt
           src={item.poster_url}
           alt={title}
           className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
         />
       ) : (
         <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
@@ -1426,14 +1471,9 @@ export default function DiscoverPage() {
               ) : aiMusicRecs.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
                   {aiMusicRecs.map((item) => (
-                    <div key={item.id} className="group relative">
+                    <ExplanationTooltip key={item.id} explanation={item.explanation}>
                       <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
-                      {item.explanation && (
-                        <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
-                          <p className="text-xs text-white/90 line-clamp-4">{item.explanation}</p>
-                        </div>
-                      )}
-                    </div>
+                    </ExplanationTooltip>
                   ))}
                 </div>
               ) : !aiMusicLoading ? (
@@ -1683,7 +1723,7 @@ export default function DiscoverPage() {
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
                 {(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).map((item, idx) => (
-                  <div key={`rec-${item.id}-${idx}`} className="group relative">
+                  <ExplanationTooltip key={`rec-${item.id}-${idx}`} explanation={(item as any).explanation}>
                     <RecMediaCard
                       item={item}
                       onClick={handleItemClick}
@@ -1691,12 +1731,7 @@ export default function DiscoverPage() {
                       watchlisted={mlWatchlistedIds.has(item.id)}
                       rank={idx + 1}
                     />
-                    {(item as any).explanation && (
-                      <div className="absolute inset-0 bg-black/85 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none">
-                        <p className="text-[10px] text-white/90 line-clamp-5">{(item as any).explanation}</p>
-                      </div>
-                    )}
-                  </div>
+                  </ExplanationTooltip>
                 ))}
               </div>
             </div>
