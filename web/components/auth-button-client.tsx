@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { User, Users, LogOut, ChevronDown } from "lucide-react";
+import { User, LogOut, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,13 +47,6 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
         >
           <User className="w-4 h-4 mr-2" />
           Profile
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="cursor-pointer"
-          onSelect={() => router.push("/protected/friends")}
-        >
-          <Users className="w-4 h-4 mr-2" />
-          Friends
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

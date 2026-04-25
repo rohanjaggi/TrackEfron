@@ -1,0 +1,4 @@
+{
+  "python.analysis.extraPaths": ["ml/src"],
+  "python.defaultInterpreterPath": "ml/.venv/bin/python"
+}

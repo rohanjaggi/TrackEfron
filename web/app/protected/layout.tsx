@@ -1,8 +1,8 @@
 import { AuthButton } from "@/components/auth-button";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { NavAccentBar, NavLinks, NavModeToggle } from "@/components/nav-client";
+import { ModeProvider } from "@/lib/mode-context";
 import Link from "next/link";
 import { Suspense } from "react";
-import { Home, Library, BookOpen, Clock, BarChart3 } from "lucide-react";
 
 export default function ProtectedLayout({
   children,
@@ -10,70 +10,48 @@ export default function ProtectedLayout({
   children: React.ReactNode;
 }) {
   return (
-    <main className="min-h-screen flex flex-col bg-background">
-      {/* Subtle vintage paper texture */}
-      <div className="fixed inset-0 opacity-[0.015] pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,hsl(var(--foreground))_2px,hsl(var(--foreground))_4px)]" />
+    <ModeProvider>
+      <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
 
-      <div className="flex-1 w-full flex flex-col relative z-10">
-        {/* Top Navigation */}
-        <nav className="w-full flex justify-center border-b-2 border-border py-4 sticky top-0 z-50 bg-background">
-          <div className="w-full max-w-6xl flex justify-between items-center px-6">
+        {/* ── Mode accent bar ── */}
+        <NavAccentBar />
+
+        {/* ── Sticky nav ── */}
+        <nav
+          className="sticky top-0 z-50 border-b w-full"
+          style={{
+            background: "rgba(10, 10, 8, 0.92)",
+            backdropFilter: "blur(16px)",
+            borderColor: "var(--border-raw)",
+          }}
+        >
+          <div className="max-w-[1200px] mx-auto px-6 flex items-center justify-between h-[60px] gap-6">
+
             {/* Logo */}
-            <Link href="/protected" className="flex items-center gap-3 group">
-              <div className="h-12 w-12 flex items-center justify-center">
-                <img 
-                  src="/images/logo.png" 
-                  alt="TrackEfron" 
+            <Link href="/protected" className="flex items-center gap-2.5 flex-shrink-0 group">
+              <div className="h-9 w-9 flex items-center justify-center">
+                <img
+                  src="/images/logo.png"
+                  alt="TrackEfron"
                   className="h-full w-full object-contain"
                 />
               </div>
-              <span className="font-display text-2xl font-bold text-foreground hidden sm:block">
+              <span
+                className="font-display text-[22px] font-semibold tracking-[0.02em] hidden sm:block"
+                style={{ color: "var(--text)" }}
+              >
                 TrackEfron
               </span>
             </Link>
 
-            {/* Center Navigation */}
-            <div className="flex items-center gap-1">
-              <Link 
-                href="/protected" 
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
-              >
-                <Home className="w-4 h-4" />
-                <span className="hidden md:inline">Home</span>
-              </Link>
-              <Link 
-                href="/protected/library" 
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
-              >
-                <Library className="w-4 h-4" />
-                <span className="hidden md:inline">Library</span>
-              </Link>
-              <Link 
-                href="/protected/watchlist" 
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
-              >
-                <Clock className="w-4 h-4" />
-                <span className="hidden md:inline">Watchlist</span>
-              </Link>
-              <Link
-                href="/protected/discover"
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
-              >
-                <BookOpen className="w-4 h-4" />
-                <span className="hidden md:inline">Discover</span>
-              </Link>
-              <Link
-                href="/protected/analytics"
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium hover:text-primary transition-colors border-b-2 border-transparent hover:border-primary"
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span className="hidden md:inline">Analytics</span>
-              </Link>
+            {/* Center nav links */}
+            <div className="flex-1 flex justify-center">
+              <NavLinks />
             </div>
 
-            {/* Right Side */}
-            <div className="flex items-center gap-1">
-              <ThemeToggle />
+            {/* Right side */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <NavModeToggle />
               <Suspense>
                 <AuthButton />
               </Suspense>
@@ -81,40 +59,38 @@ export default function ProtectedLayout({
           </div>
         </nav>
 
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col w-full max-w-6xl mx-auto px-6 py-10">
+        {/* ── Page content ── */}
+        <main className="flex-1 w-full max-w-[1200px] mx-auto px-6 py-10">
           {children}
-        </div>
+        </main>
 
-        {/* Footer */}
-        <footer className="w-full border-t-2 border-border py-6 mt-auto">
-          <div className="max-w-6xl mx-auto px-6">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm">
+        {/* ── Footer ── */}
+        <footer
+          className="w-full border-t py-6 mt-auto"
+          style={{ borderColor: "var(--border-raw)" }}
+        >
+          <div className="max-w-[1200px] mx-auto px-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="flex items-center gap-3">
-                <img 
-                  src="/images/logo.png" 
-                  alt="TrackEfron" 
-                  className="h-7 w-auto object-contain"
-                />
+                <img src="/images/logo.png" alt="TrackEfron" className="h-6 w-auto object-contain" />
+                <span className="font-display text-lg font-semibold" style={{ color: "var(--text)" }}>
+                  TrackEfron
+                </span>
               </div>
-              
-              <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6">
-                {/* TMDB Attribution */}
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Data & images by</span>
-                  <img 
-                    src="/images/tmdb.svg" 
-                    alt="TMDB Logo" 
-                    className="h-3"
-                  />
+              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+                <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+                  <span className="text-xs tracking-wide">Data &amp; images by</span>
+                  <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
                 </div>
-                
-                <p className="text-muted-foreground">© 2026 TrackEfron. All rights reserved.</p>
+                <p className="text-xs tracking-wide" style={{ color: "var(--text-muted)" }}>
+                  © 2026 TrackEfron
+                </p>
               </div>
             </div>
           </div>
         </footer>
+
       </div>
-    </main>
+    </ModeProvider>
   );
 }

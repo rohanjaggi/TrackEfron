@@ -14,6 +14,10 @@ import {
   Radar,
   Clock,
   Clapperboard,
+  Disc3,
+  Music2,
+  Headphones,
+  Mic2,
 } from "lucide-react";
 import {
   BarChart,
@@ -37,6 +41,7 @@ import {
   ZAxis,
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
+import { useMode } from "@/lib/mode-context";
 
 type WatchLog = {
   rating: number;
@@ -57,6 +62,27 @@ type WatchLog = {
   times_watched: string | null;
   poster_url: string | null;
   review: string | null;
+};
+
+type ListenLog = {
+  id: string;
+  media_type: "album" | "track";
+  title: string;
+  artist: string | null;
+  album_name: string | null;
+  image_url: string | null;
+  rating: number;
+  review: string | null;
+  listened_date: string | null;
+  created_at: string;
+  lyrics_rating: number | null;
+  production_rating: number | null;
+  vocals_rating: number | null;
+  melody_rating: number | null;
+  replay_rating: number | null;
+  energy_rating: number | null;
+  listened_on: string | null;
+  listening_context: string | null;
 };
 
 type ControversialPick = {
@@ -112,7 +138,9 @@ function formatRuntime(minutes: number): string {
 }
 
 export default function AnalyticsPage() {
+  const { mode } = useMode();
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
+  const [listenLogs, setListenLogs] = useState<ListenLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalRuntime, setTotalRuntime] = useState<number | null>(null);
   const [totalSeasons, setTotalSeasons] = useState<number | null>(null);
@@ -124,15 +152,23 @@ export default function AnalyticsPage() {
     async function fetchData() {
       try {
         const supabase = createClient();
-        const { data, error } = await supabase
-          .from("watch_logs")
-          .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
-          .order("watched_date", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false });
+        const [filmResult, musicResult] = await Promise.all([
+          supabase
+            .from("watch_logs")
+            .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
+            .order("watched_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("listen_logs")
+            .select("id, media_type, title, artist, album_name, image_url, rating, review, listened_date, created_at, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating, listened_on, listening_context")
+            .order("listened_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false }),
+        ]);
 
-        if (error) throw error;
-        const logs = data || [];
+        if (filmResult.error) throw filmResult.error;
+        const logs = filmResult.data || [];
         setWatchLogs(logs);
+        setListenLogs((musicResult.data as ListenLog[]) || []);
 
         // Fetch TMDB details for runtime/seasons/episodes
         const uniqueIds = new Map<number, "movie" | "tv">();
@@ -230,25 +266,31 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (watchLogs.length === 0) {
+  const isEmpty = mode === "music" ? listenLogs.length === 0 : watchLogs.length === 0;
+
+  if (isEmpty) {
     return (
       <div className="flex flex-col gap-8">
         <div>
           <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Analytics</h1>
-          <p className="text-muted-foreground">Insights into your watching habits and taste profile</p>
+          <p className="text-muted-foreground">
+            {mode === "music" ? "Insights into your listening habits and taste profile" : "Insights into your watching habits and taste profile"}
+          </p>
         </div>
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 border-2 border-muted flex items-center justify-center mx-auto mb-6">
-            <BarChart3 className="w-10 h-10 text-muted-foreground" />
+            {mode === "music" ? <Headphones className="w-10 h-10 text-muted-foreground" /> : <BarChart3 className="w-10 h-10 text-muted-foreground" />}
           </div>
           <h2 className="text-xl font-semibold mb-2">No data yet</h2>
           <p className="text-muted-foreground mb-6 max-w-md">
-            Start logging movies and TV shows to see your analytics come to life.
+            {mode === "music"
+              ? "Start logging albums and tracks to see your music analytics come to life."
+              : "Start logging movies and TV shows to see your analytics come to life."}
           </p>
           <Button className="group font-semibold border-2" size="lg" asChild>
             <Link href="/protected/log">
               <Plus className="w-4 h-4 mr-2 transition-transform group-hover:rotate-90" />
-              Log Your First Watch
+              {mode === "music" ? "Log Your First Listen" : "Log Your First Watch"}
             </Link>
           </Button>
         </div>
@@ -473,6 +515,73 @@ export default function AnalyticsPage() {
   const hiddenGem = controversialPicks.gem;
   const unpopularOpinion = controversialPicks.unpopular;
 
+  // ── Music analytics computations ──────────────────────────────
+  const musicAlbumCount = listenLogs.filter((l) => l.media_type === "album").length;
+  const musicTrackCount = listenLogs.filter((l) => l.media_type === "track").length;
+  const musicAvgRating = listenLogs.length > 0
+    ? (listenLogs.reduce((acc, l) => acc + Number(l.rating), 0) / listenLogs.length).toFixed(1)
+    : "—";
+
+  const artistCounts: Record<string, number> = {};
+  listenLogs.forEach((l) => {
+    if (l.artist) artistCounts[l.artist] = (artistCounts[l.artist] || 0) + 1;
+  });
+  const topArtists = Object.entries(artistCounts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+  const topArtist = topArtists[0]?.name || "—";
+
+  const musicMonthlyData = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("default", { month: "short" });
+    return { key, label, albums: 0, tracks: 0 };
+  });
+  listenLogs.forEach((l) => {
+    const date = l.listened_date || l.created_at;
+    const ym = date.slice(0, 7);
+    const bucket = musicMonthlyData.find((m) => m.key === ym);
+    if (bucket) {
+      if (l.media_type === "album") bucket.albums++;
+      else bucket.tracks++;
+    }
+  });
+
+  const topAlbums = listenLogs
+    .filter((l) => l.media_type === "album")
+    .sort((a, b) => Number(b.rating) - Number(a.rating))
+    .slice(0, 5);
+  const topTracks = listenLogs
+    .filter((l) => l.media_type === "track")
+    .sort((a, b) => Number(b.rating) - Number(a.rating))
+    .slice(0, 5);
+
+  const listeningContextCounts: Record<string, number> = {};
+  listenLogs.forEach((l) => {
+    if (l.listening_context) {
+      listeningContextCounts[l.listening_context] = (listeningContextCounts[l.listening_context] || 0) + 1;
+    }
+  });
+  const listeningContextData = Object.entries(listeningContextCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  const musicCategories = [
+    { key: "lyrics_rating" as const, label: "Lyrics" },
+    { key: "production_rating" as const, label: "Production" },
+    { key: "vocals_rating" as const, label: "Vocals" },
+    { key: "melody_rating" as const, label: "Melody" },
+    { key: "replay_rating" as const, label: "Replay" },
+    { key: "energy_rating" as const, label: "Energy" },
+  ];
+  const musicCategoryData = musicCategories.map(({ key, label }) => {
+    const values = listenLogs.map((l) => l[key]).filter((v): v is number => v !== null && v > 0);
+    const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    return { label, avg: Math.round(avg * 10) / 10, count: values.length };
+  });
+  const hasMusicCategoryData = musicCategoryData.some((c) => c.count > 0);
+
   const PIE_COLOURS = [colours.primary, colours.accent, colours.secondary, colours.muted, "#9CA3AF", "#6B7280"];
 
   const tooltipStyle = {
@@ -516,9 +625,172 @@ export default function AnalyticsPage() {
       <div>
         <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Analytics</h1>
         <p className="text-muted-foreground">
-          Insights into your watching habits and taste profile
+          {mode === "music" ? "Insights into your listening habits and taste profile" : "Insights into your watching habits and taste profile"}
         </p>
       </div>
+
+      {/* ─── MUSIC MODE ─── */}
+      {mode === "music" && (<>
+        {/* Music Overview */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="text-center">
+            <Headphones className="w-4 h-4 text-primary mx-auto mb-2" />
+            <div className="font-display text-2xl md:text-3xl font-bold mb-0.5">{listenLogs.length}</div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Total Logged</p>
+          </Card>
+          <Card className="text-center">
+            <Star className="w-4 h-4 text-primary mx-auto mb-2" />
+            <div className="font-display text-2xl md:text-3xl font-bold mb-0.5">{musicAvgRating}</div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Avg Rating</p>
+          </Card>
+          <Card className="text-center">
+            <Disc3 className="w-4 h-4 text-primary mx-auto mb-2" />
+            <div className="font-display text-2xl md:text-3xl font-bold mb-0.5">{musicAlbumCount}</div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Albums</p>
+          </Card>
+          <Card className="text-center">
+            <Music2 className="w-4 h-4 text-primary mx-auto mb-2" />
+            <div className="font-display text-2xl md:text-3xl font-bold mb-0.5">{musicTrackCount}</div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Tracks</p>
+          </Card>
+        </div>
+
+        {/* Monthly listening activity */}
+        <SectionHeader icon={TrendingUp} title="Listening Activity" subtitle="Albums and tracks logged per month" />
+        <Card>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={musicMonthlyData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+              <Tooltip {...tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="albums" name="Albums" fill={colours.primary} stackId="a" />
+              <Bar dataKey="tracks" name="Tracks" fill={colours.accent} stackId="a" />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        {/* Top Artists */}
+        {topArtists.length > 0 && (<>
+          <SectionHeader icon={Mic2} title="Top Artists" subtitle="Artists you've logged the most" />
+          <Card>
+            <div className="space-y-3">
+              {topArtists.map(({ name, count }, i) => (
+                <div key={name} className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-5 text-right">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium truncate">{name}</span>
+                      <span className="text-xs text-muted-foreground ml-2 shrink-0">{count}</span>
+                    </div>
+                    <div className="h-1 bg-border rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${(count / topArtists[0].count) * 100}%`, background: colours.primary }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>)}
+
+        {/* Listening context */}
+        {listeningContextData.length > 0 && (<>
+          <SectionHeader icon={Headphones} title="Listening Contexts" subtitle="When and where you tune in" />
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={listeningContextData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`} labelLine={false} fontSize={11}>
+                    {listeningContextData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLOURS[index % PIE_COLOURS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip {...tooltipStyle} />
+                </PieChart>
+              </ResponsiveContainer>
+            </Card>
+            <Card>
+              <div className="space-y-3">
+                {listeningContextData.map(({ name, value }, i) => (
+                  <div key={name} className="flex items-center gap-3">
+                    <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: PIE_COLOURS[i % PIE_COLOURS.length] }} />
+                    <span className="flex-1 text-sm truncate">{name}</span>
+                    <span className="text-sm font-medium">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        </>)}
+
+        {/* Music Category Radar */}
+        {hasMusicCategoryData && (<>
+          <SectionHeader icon={Radar} title="Taste Profile" subtitle="Average ratings across music dimensions" />
+          <Card>
+            <ResponsiveContainer width="100%" height={280}>
+              <RadarChart data={musicCategoryData.map((c) => ({ subject: c.label, value: c.avg }))}>
+                <PolarGrid stroke="hsl(var(--border))" />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
+                <PolarRadiusAxis domain={[0, 5]} tick={{ fontSize: 10 }} tickCount={4} />
+                <RechartsRadar name="Avg" dataKey="value" stroke={colours.primary} fill={colours.primary} fillOpacity={0.3} />
+                <Tooltip {...tooltipStyle} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </Card>
+        </>)}
+
+        {/* Top Albums & Tracks */}
+        <SectionHeader icon={Star} title="Highest Rated" subtitle="Your top albums and tracks" />
+        <div className="grid md:grid-cols-2 gap-4">
+          {topAlbums.length > 0 && (
+            <Card>
+              <CardTitle icon={Disc3} title="Top Albums" />
+              <div className="space-y-3">
+                {topAlbums.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
+                    {item.image_url && (
+                      <img src={item.image_url} alt={item.title} className="w-9 h-9 object-cover shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.title}</p>
+                      {item.artist && <p className="text-xs text-muted-foreground truncate">{item.artist}</p>}
+                    </div>
+                    <span className="text-sm font-bold text-primary shrink-0">{item.rating}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+          {topTracks.length > 0 && (
+            <Card>
+              <CardTitle icon={Music2} title="Top Tracks" />
+              <div className="space-y-3">
+                {topTracks.map((item, i) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
+                    {item.image_url && (
+                      <img src={item.image_url} alt={item.title} className="w-9 h-9 object-cover shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.title}</p>
+                      {item.artist && <p className="text-xs text-muted-foreground truncate">{item.artist}</p>}
+                    </div>
+                    <span className="text-sm font-bold text-primary shrink-0">{item.rating}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      </>)}
+
+      {/* ─── FILM MODE ─── */}
+      {mode !== "music" && (<>
 
       {/* ─── OVERVIEW ─── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -955,6 +1227,8 @@ export default function AnalyticsPage() {
           </div>
         </>
       )}
+
+      </>)}
     </div>
   );
 }

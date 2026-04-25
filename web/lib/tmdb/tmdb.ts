@@ -1,5 +1,5 @@
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const TMDB_ACCESS_TOKEN = process.env.TMDB_READ_ACCESS_TOKEN;
+const TMDB_ACCESS_TOKEN = process.env.TMDB_BEARER_TOKEN;
 
 const baseUrl = "https://api.themoviedb.org/3";
 

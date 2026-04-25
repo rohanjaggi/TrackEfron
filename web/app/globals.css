@@ -3,117 +3,243 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─── TrackEfron Design System ──────────────────────────────── */
+  /* Dark ink-black aesthetic with film gold + music teal accents  */
   :root {
-    /* Light theme - Newspaper aesthetic */
-    --background: 30 8% 94%;
-    --foreground: 30 10% 15%;
-    --card: 40 25% 98%;
-    --card-foreground: 30 10% 15%;
-    --popover: 40 25% 98%;
-    --popover-foreground: 30 10% 15%;
-    --primary: 25 50% 35%;
-    --primary-foreground: 45 20% 96%;
-    --secondary: 30 30% 45%;
-    --secondary-foreground: 45 20% 96%;
-    --muted: 40 15% 88%;
-    --muted-foreground: 30 8% 40%;
-    --accent: 35 45% 50%;
-    --accent-foreground: 45 20% 96%;
+    /* Tailwind-compatible HSL tokens */
+    --background: 60 14% 4%;           /* #0A0A08  ink-black */
+    --foreground: 40 30% 88%;          /* #E8E4DA  warm off-white */
+    --card: 60 11% 7%;                 /* #131310  surface */
+    --card-foreground: 40 30% 88%;
+    --popover: 60 9% 10%;              /* #1C1C18  surface-2 */
+    --popover-foreground: 40 30% 88%;
+    --primary: 38 52% 60%;             /* #C8A86A  film gold */
+    --primary-foreground: 60 14% 4%;
+    --secondary: 60 9% 10%;
+    --secondary-foreground: 40 30% 88%;
+    --muted: 60 10% 15%;               /* #2A2A22  border */
+    --muted-foreground: 48 12% 38%;    /* #6B6957  text-muted */
+    --accent: 38 52% 60%;              /* film gold — same as primary; teal only in music mode */
+    --accent-foreground: 60 14% 4%;
     --destructive: 0 65% 50%;
-    --destructive-foreground: 45 20% 96%;
-    --border: 35 15% 80%;
-    --input: 35 15% 85%;
-    --ring: 25 50% 35%;
-    --chart-1: 25 50% 35%;
-    --chart-2: 30 30% 45%;
-    --chart-3: 35 45% 50%;
-    --chart-4: 20 40% 40%;
-    --chart-5: 40 35% 55%;
-    --radius: 0.25rem;
+    --destructive-foreground: 40 30% 88%;
+    --border: 60 10% 15%;              /* #2A2A22 */
+    --input: 60 9% 10%;
+    --ring: 38 52% 60%;
+    --radius: 2px;
+
+    /* ── Raw design tokens (used in custom CSS below) ── */
+    --bg: #0A0A08;
+    --surface: #131310;
+    --surface-2: #1C1C18;
+    --border-raw: #2A2A22;
+    --border-hover: #3D3D32;
+    --text: #E8E4DA;
+    --text-muted: #6B6957;
+    --text-dim: #3D3D32;
+
+    /* ── Mode-specific colors ── */
+    --film: #C8A86A;
+    --film-dim: rgba(200, 168, 106, 0.12);
+    --film-glow: rgba(200, 168, 106, 0.25);
+    --music: #6EC8C2;
+    --music-dim: rgba(110, 200, 194, 0.12);
+    --music-glow: rgba(110, 200, 194, 0.25);
+
+    /* ── Mode accent (swapped via data-mode="music" on <html>) ── */
+    --mode-accent: var(--film);
+    --mode-accent-dim: var(--film-dim);
+    --mode-accent-glow: var(--film-glow);
+    --mode-primary-hsl: 38 52% 60%;    /* mirrors primary for film */
   }
+
+  /* .dark === same tokens (app is dark-only) */
   .dark {
-    --background: 30 15% 12%;
-    --foreground: 45 20% 92%;
-    --card: 30 12% 16%;
-    --card-foreground: 45 20% 92%;
-    --popover: 30 12% 16%;
-    --popover-foreground: 45 20% 92%;
-    --primary: 35 45% 55%;
-    --primary-foreground: 30 15% 12%;
-    --secondary: 30 30% 50%;
-    --secondary-foreground: 30 15% 12%;
-    --muted: 30 10% 25%;
-    --muted-foreground: 40 10% 65%;
-    --accent: 40 40% 60%;
-    --accent-foreground: 30 15% 12%;
-    --destructive: 0 60% 50%;
-    --destructive-foreground: 45 20% 92%;
-    --border: 30 10% 22%;
-    --input: 30 10% 20%;
-    --ring: 35 45% 55%;
-    --chart-1: 35 45% 55%;
-    --chart-2: 30 30% 50%;
-    --chart-3: 40 40% 60%;
-    --chart-4: 25 35% 45%;
-    --chart-5: 45 35% 65%;
+    --background: 60 14% 4%;
+    --foreground: 40 30% 88%;
+    --card: 60 11% 7%;
+    --card-foreground: 40 30% 88%;
+    --popover: 60 9% 10%;
+    --popover-foreground: 40 30% 88%;
+    --primary: 38 52% 60%;
+    --primary-foreground: 60 14% 4%;
+    --secondary: 60 9% 10%;
+    --secondary-foreground: 40 30% 88%;
+    --muted: 60 10% 15%;
+    --muted-foreground: 48 12% 38%;
+    --accent: 38 52% 60%;              /* gold in film mode, overridden to teal in music mode */
+    --accent-foreground: 60 14% 4%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 40 30% 88%;
+    --border: 60 10% 15%;
+    --input: 60 9% 10%;
+    --ring: 38 52% 60%;
+  }
+
+  /* Music mode — swap primary & accent to teal, update mode vars */
+  [data-mode="music"] {
+    --primary: 177 45% 61%;            /* music teal becomes primary */
+    --primary-foreground: 60 14% 4%;
+    --accent: 177 45% 61%;             /* accent also = teal in music mode */
+    --accent-foreground: 60 14% 4%;
+    --ring: 177 45% 61%;
+    --mode-accent: var(--music);
+    --mode-accent-dim: var(--music-dim);
+    --mode-accent-glow: var(--music-glow);
+    --mode-primary-hsl: 177 45% 61%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-mono), 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
   }
 }
 
-/* Typography utilities */
+/* ─── Grain overlay ──────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.55;
+}
+
+/* ─── Typography utilities ───────────────────────────────────── */
 .font-display {
-  font-family: var(--font-display);
+  font-family: var(--font-display), 'Georgia', serif;
 }
 
-.font-serif {
-  font-family: var(--font-serif);
+.font-mono-ui {
+  font-family: var(--font-mono), 'Courier New', monospace;
 }
 
-/* Newspaper decorative elements */
-.newspaper-border {
-  border-style: double;
-  border-width: 3px;
-}
-
-.ornamental-line {
-  border-top: 1px solid hsl(var(--border));
+/* ─── Mode accent bar ────────────────────────────────────────── */
+.mode-accent-bar {
+  height: 2px;
+  background: var(--mode-accent);
+  transition: background 0.4s ease;
   position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.ornamental-line::before {
-  content: "✦";
+.mode-accent-bar::after {
+  content: '';
   position: absolute;
-  left: 50%;
-  top: -0.6em;
-  transform: translateX(-50%);
-  background: hsl(var(--background));
-  padding: 0 1rem;
-  color: hsl(var(--muted-foreground));
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  animation: accentShimmer 3s ease infinite;
 }
 
-/* Smooth scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* ─── Nav link active state ──────────────────────────────────── */
+.nav-link-active {
+  color: var(--mode-accent) !important;
+  border-color: var(--mode-accent-dim) !important;
+  background: var(--mode-accent-dim) !important;
 }
 
-::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
+/* ─── Card styles ────────────────────────────────────────────── */
+.card-surface {
+  background: var(--surface);
+  border: 1px solid var(--border-raw);
 }
 
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary));
-  border-radius: 2px;
+.card-surface-2 {
+  background: var(--surface-2);
+  border: 1px solid var(--border-raw);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--secondary));
+/* ─── Activity item ──────────────────────────────────────────── */
+.activity-item {
+  border-bottom: 1px solid var(--border-raw);
+  transition: background 0.15s;
 }
+
+.activity-item:hover {
+  background: var(--surface);
+}
+
+/* ─── Label / eyebrow text ───────────────────────────────────── */
+.label-upper {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ─── Film/music badge ───────────────────────────────────────── */
+.badge-film {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--film);
+  color: var(--film);
+  background: var(--film-dim);
+}
+
+.badge-music {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--music);
+  color: var(--music);
+  background: var(--music-dim);
+}
+
+/* ─── Waveform animation (dashboard music card) ──────────────── */
+.wave-bar {
+  width: 2px;
+  border-radius: 1px;
+  animation: wave 1.2s ease infinite;
+  opacity: 0.75;
+}
+.wave-bar:nth-child(2) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; }
+.wave-bar:nth-child(4) { animation-delay: 0.15s; }
+.wave-bar:nth-child(5) { animation-delay: 0.05s; }
+.wave-bar:nth-child(6) { animation-delay: 0.25s; }
+.wave-bar:nth-child(7) { animation-delay: 0.1s; }
+.wave-bar:nth-child(8) { animation-delay: 0.3s; }
+
+/* ─── Animations ─────────────────────────────────────────────── */
+@keyframes accentShimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes wave {
+  0%, 100% { height: 4px; }
+  50%       { height: 20px; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-raw); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }

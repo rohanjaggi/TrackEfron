@@ -17,7 +17,22 @@ export async function GET(request: NextRequest) {
       token_hash,
     });
     if (!error) {
-      // redirect user to specified redirect URL or root of app
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.user_metadata?.ai_api_key) {
+        const { error: upsertErr } = await supabase.from("user_ai_settings").upsert(
+          {
+            user_id: user.id,
+            ai_api_key: user.user_metadata.ai_api_key,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+        if (!upsertErr) {
+          await supabase.auth.updateUser({
+            data: { ai_api_key: null },
+          });
+        }
+      }
       redirect(next);
     } else {
       // redirect the user to an error page with some instructions
