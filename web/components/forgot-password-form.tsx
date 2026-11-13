@@ -1,25 +1,15 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
 
-export function ForgotPasswordForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+import { AuthLink, AuthShell, authErrorMessage } from "@/components/auth-shell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field, Notice } from "@/components/ui/page";
+import { createClient } from "@/lib/supabase/client";
+
+export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -27,87 +17,90 @@ export function ForgotPasswordForm({
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    const supabase = createClient();
+    const fallback = "We couldn't send the reset email. Try again in a moment.";
     setIsLoading(true);
     setError(null);
 
     try {
+      const supabase = createClient();
       // The url which will be included in the email. This URL needs to be configured in your redirect URLs in the Supabase dashboard at https://supabase.com/dashboard/project/_/auth/url-configuration
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/update-password`,
       });
-      if (error) throw error;
+      if (error) {
+        setError(authErrorMessage(error, fallback));
+        return;
+      }
       setSuccess(true);
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+    } catch (err: unknown) {
+      setError(authErrorMessage(err, fallback));
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Link
-        href="/auth/login"
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+  if (success) {
+    return (
+      <AuthShell
+        title="Check your inbox"
+        description="A reset link is on its way."
+        footer={
+          <>
+            Wrong address?{" "}
+            <Button
+              variant="link"
+              className="text-[12px] underline hover:text-foreground"
+              onClick={() => setSuccess(false)}
+            >
+              Try another email
+            </Button>
+          </>
+        }
       >
-        <ArrowLeft size={16} />
-        Back
-      </Link>
-      {success ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Check Your Email</CardTitle>
-            <CardDescription>Password reset instructions sent</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              If you registered using your email and password, you will receive
-              a password reset email.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Reset Your Password</CardTitle>
-            <CardDescription>
-              Type in your email and we&apos;ll send you a link to reset your
-              password
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleForgotPassword}>
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="m@example.com"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Sending..." : "Send reset email"}
-                </Button>
-              </div>
-              <div className="mt-4 text-center text-sm">
-                Already have an account?{" "}
-                <Link
-                  href="/auth/login"
-                  className="underline underline-offset-4"
-                >
-                  Login
-                </Link>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+        <div className="flex flex-col gap-6">
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            If an account exists for <span className="break-all text-foreground">{email}</span>,
+            we&apos;ve sent it a link to choose a new password. It can take a minute to arrive;
+            check your spam folder if it doesn&apos;t.
+          </p>
+          <Button asChild size="lg" className="w-full">
+            <Link href="/auth/login">Back to sign in</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  return (
+    <AuthShell
+      title="Reset your password"
+      description="Tell us your email and we'll send a link to choose a new one."
+      footer={
+        <>
+          Remembered it? <AuthLink href="/auth/login">Sign in</AuthLink>
+        </>
+      }
+    >
+      <form onSubmit={handleForgotPassword} className="flex flex-col gap-5">
+        <Field label="Email" htmlFor="email">
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+          {isLoading ? "Sending…" : "Send reset link"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

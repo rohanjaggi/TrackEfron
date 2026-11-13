@@ -13,6 +13,12 @@ export interface SegmentOption<T extends string> {
   count?: number;
   /** Hide the text label visually (icon-only); the label still names the control. */
   iconOnly?: boolean;
+  /** Greys the option out and skips it for keyboard users. */
+  disabled?: boolean;
+  /** Tooltip, e.g. why the option is disabled. */
+  hint?: string;
+  /** `alert` draws the count in the accent so pending items get noticed. */
+  countTone?: "default" | "alert";
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -41,7 +47,12 @@ export function SegmentedControl<T extends string>({
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
 
   const move = (from: number, delta: number) => {
-    const next = (from + delta + options.length) % options.length;
+    let next = from;
+    for (let step = 0; step < options.length; step++) {
+      next = (next + delta + options.length) % options.length;
+      if (!options[next].disabled) break;
+    }
+    if (options[next].disabled) return;
     onChange(options[next].value);
     refs.current[next]?.focus();
   };
@@ -65,9 +76,10 @@ export function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             aria-label={opt.iconOnly ? opt.label : undefined}
-            title={opt.iconOnly ? opt.label : undefined}
+            title={opt.hint ?? (opt.iconOnly ? opt.label : undefined)}
             tabIndex={active ? 0 : -1}
             data-active={active}
+            disabled={opt.disabled}
             onClick={() => onChange(opt.value)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight" || e.key === "ArrowDown") {
@@ -79,7 +91,7 @@ export function SegmentedControl<T extends string>({
               }
             }}
             className={cn(
-              "seg flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium uppercase tracking-[0.08em]",
+              "seg flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-40",
               size === "sm" ? "h-7 px-2.5 text-[10px]" : "h-8 px-3 text-[11px]",
             )}
           >
@@ -162,7 +174,16 @@ export function TabBar<T extends string>({
             {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
             <span>{tab.label}</span>
             {typeof tab.count === "number" && (
-              <span className="text-[10px] text-muted-foreground">{tab.count}</span>
+              <span
+                className={cn(
+                  "text-[10px]",
+                  tab.countTone === "alert" && tab.count > 0
+                    ? "border border-primary/50 bg-primary/10 px-1 text-primary"
+                    : "text-muted-foreground",
+                )}
+              >
+                {tab.count}
+              </span>
             )}
           </button>
         );

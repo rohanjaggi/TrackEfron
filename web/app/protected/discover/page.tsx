@@ -1,36 +1,33 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
+import Link from "next/link";
 import {
-  Search,
-  Star,
-  Film,
-  Tv,
-  TrendingUp,
-  Loader2,
-  ChevronRight,
-  ChevronLeft,
-  Clapperboard,
-  Calendar,
-  Crown,
-  Heart,
-  Megaphone,
-  Sparkles,
-  X,
-  Zap,
-  RefreshCw,
-  Compass,
   Bookmark,
   BookmarkCheck,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
   Disc3,
-  Music2,
-  Headphones,
+  Film,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  X,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { LoadingLine, MediaGridSkeleton, Skeleton } from "@/components/ui/loading";
+import { MediaCard, MediaGrid } from "@/components/ui/media-card";
+import { EmptyState, Field, Notice, PageHeader, SectionHeader } from "@/components/ui/page";
+import { TabBar } from "@/components/ui/segmented-control";
+import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { FilmRecommendation, MusicRecommendation, VibeSearchResult } from "@/lib/ai/types";
 import type { SpotifyArtistResult } from "@/app/api/spotify/me/route";
 
 // ─── Types ───
@@ -76,9 +73,20 @@ type MusicMediaItem = {
   type: "album" | "track";
 };
 
+type FilmRec = MediaItem & { explanation?: string; source?: string };
+type MusicRec = MusicMediaItem & { explanation?: string };
+
+type Tab = "for-you" | "browse";
+
 // ─── Constants ───
 
-const MOOD_PILLS = [
+const PROFILE_HREF = "/protected/profile";
+const LOG_HREF = "/protected/log";
+const SEARCH_RESULT_LIMIT = 10;
+/** Postgres unique-violation: the row is already there. */
+const DUPLICATE_ROW = "23505";
+
+const MOODS = [
   { label: "Chill", query: "chill vibes" },
   { label: "Workout", query: "workout motivation" },
   { label: "Study", query: "study focus lofi" },
@@ -88,15 +96,15 @@ const MOOD_PILLS = [
 ];
 
 const MUSIC_GENRE_QUERIES = [
-  { title: "Hot in Pop", subtitle: "Chart-topping pop releases", query: "pop hits 2024" },
-  { title: "Hip-Hop Now", subtitle: "Latest rap and hip-hop", query: "hip hop rap 2024" },
-  { title: "R&B & Soul", subtitle: "Smooth soul and R&B", query: "r&b soul neo soul" },
-  { title: "Electronic & Dance", subtitle: "Electronic beats and dance", query: "electronic dance edm" },
-  { title: "Indie Picks", subtitle: "Independent and alternative", query: "indie alternative indie pop" },
-  { title: "Jazz & Blues", subtitle: "Classic and contemporary", query: "jazz blues piano" },
+  { title: "Hot in pop", subtitle: "Chart-topping pop releases", query: "pop hits 2024" },
+  { title: "Hip-hop now", subtitle: "Latest rap and hip-hop", query: "hip hop rap 2024" },
+  { title: "R&B and soul", subtitle: "Smooth soul and R&B", query: "r&b soul neo soul" },
+  { title: "Electronic and dance", subtitle: "Electronic beats and dance", query: "electronic dance edm" },
+  { title: "Indie picks", subtitle: "Independent and alternative", query: "indie alternative indie pop" },
+  { title: "Jazz and blues", subtitle: "Classic and contemporary", query: "jazz blues piano" },
 ];
 
-const DEFAULT_GENRE_PILLS = [
+const FILM_GENRES = [
   { id: 28, name: "Action" },
   { id: 35, name: "Comedy" },
   { id: 18, name: "Drama" },
@@ -107,178 +115,124 @@ const DEFAULT_GENRE_PILLS = [
   { id: 99, name: "Documentary" },
 ];
 
+const MOOD_OPTIONS = MOODS.map((m) => ({ key: m.label, label: m.label }));
+const FILM_GENRE_OPTIONS = FILM_GENRES.map((g) => ({ key: String(g.id), label: g.name }));
 
-// ─── Explanation Tooltip ───
+const TABS = [
+  { value: "for-you", label: "For you", icon: Sparkles },
+  { value: "browse", label: "Browse", icon: Compass },
+] as const;
 
-function ExplanationTooltip({ explanation, children }: { explanation?: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+// ─── Helpers ───
 
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  if (!explanation) return <>{children}</>;
-
-  return (
-    <div ref={ref} className="relative">
-      {children}
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="absolute bottom-8 right-1.5 w-7 h-7 bg-primary text-primary-foreground flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform z-10"
-        title="Why this was recommended"
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-      </button>
-      {open && (
-        <div
-          className="absolute bottom-full left-0 right-0 mb-2 z-50 border-2 border-primary/30 bg-background p-3 shadow-lg"
-          style={{ minWidth: "220px", maxWidth: "320px", width: "max-content" }}
-        >
-          <div className="flex items-start gap-2 mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-            <span className="text-[10px] uppercase tracking-widest text-primary font-medium">Why this pick</span>
-          </div>
-          <p className="text-xs text-foreground leading-relaxed">{explanation}</p>
-        </div>
-      )}
-    </div>
-  );
+/** True when a query reads like a description ("something slow for a rainy night") rather than a title. */
+function detectVibeQuery(q: string): boolean {
+  const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
+  const lower = q.toLowerCase();
+  return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
 }
 
-// ─── RecMediaCard — MediaCard variant with inline watchlist button ───
+function mediaHref(type: "movie" | "tv", id: number) {
+  return `/protected/media/${type}/${id}`;
+}
 
-function RecMediaCard({
-  item,
-  onClick,
-  onWatchlist,
-  watchlisted,
-  rank,
+/** "Film · 2021 · 7.8/10": optional lead, release year and audience score, whichever exist. */
+function filmMeta(
+  item: { release_date?: string; first_air_date?: string; vote_average?: number },
+  lead?: string,
+) {
+  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+  const score =
+    item.vote_average != null && item.vote_average > 0 ? `${item.vote_average.toFixed(1)}/10` : "";
+  return [lead, year, score].filter(Boolean).join(" · ");
+}
+
+function toMusicRec(r: MusicRecommendation): MusicRec {
+  return {
+    id: r.spotify_id || r.title,
+    name: r.title,
+    artist: r.artist,
+    album_name: r.album_name || "",
+    image_url: r.image_url || null,
+    release_date: "",
+    type: r.type || "album",
+    explanation: r.explanation,
+  };
+}
+
+function toFilmRec(r: FilmRecommendation): FilmRec {
+  return {
+    id: r.tmdb_id,
+    title: r.title,
+    media_type: r.media_type,
+    poster_url: r.poster_url,
+    explanation: r.explanation,
+    source: r.source,
+  };
+}
+
+// ─── Shared pieces ───
+
+/** The one chip pattern on this page: square toggle buttons, one active at a time, press again to clear. */
+function ToggleGroup({
+  label,
+  options,
+  activeKey,
+  onToggle,
 }: {
-  item: MediaItem;
-  onClick: (item: MediaItem) => void;
-  onWatchlist: (item: MediaItem) => void;
-  watchlisted: boolean;
-  rank?: number;
+  label: string;
+  options: { key: string; label: string }[];
+  activeKey: string | null;
+  onToggle: (key: string) => void;
 }) {
-  const title = item.title || item.name || "Untitled";
-  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+  const labelId = useId();
   return (
-    <div className="w-full group">
-      <div className="relative cursor-pointer" onClick={() => onClick(item)}>
-        {item.poster_url ? (
-          <img
-            src={item.poster_url}
-            alt={title}
-            className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
-          />
-        ) : (
-          <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
-            <Film className="w-6 h-6 text-muted-foreground/50" />
-          </div>
-        )}
-        {rank != null && (
-          <span className="absolute bottom-0 left-0 bg-background/90 border-t-2 border-r-2 border-border px-1.5 py-0.5 text-xs font-bold text-primary font-display leading-none">
-            #{rank}
-          </span>
-        )}
-        <button
-          onClick={(e) => { e.stopPropagation(); onWatchlist(item); }}
-          disabled={watchlisted}
-          className="absolute top-1.5 right-1.5 w-6 h-6 bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors disabled:text-primary"
-          title={watchlisted ? "On watchlist" : "Add to watchlist"}
-        >
-          {watchlisted
-            ? <BookmarkCheck className="w-3 h-3 text-primary" />
-            : <Bookmark className="w-3 h-3" />}
-        </button>
-      </div>
-      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-primary transition-colors cursor-pointer" onClick={() => onClick(item)}>
-        {title}
-      </p>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        {year && <span>{year}</span>}
-        {year && item.vote_average != null && item.vote_average > 0 && <span>·</span>}
-        {item.vote_average != null && item.vote_average > 0 && (
-          <span className="flex items-center gap-0.5">
-            <Star className="w-2.5 h-2.5 text-accent fill-accent" />
-            {item.vote_average.toFixed(1)}
-          </span>
-        )}
-      </div>
+    <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-2">
+      <span id={labelId} className="label-upper mr-1">
+        {label}
+      </span>
+      {options.map((opt) => {
+        const active = opt.key === activeKey;
+        return (
+          <Button
+            key={opt.key}
+            variant="outline"
+            size="sm"
+            aria-pressed={active}
+            className={active ? "border-primary bg-primary/10 text-primary" : undefined}
+            onClick={() => onToggle(opt.key)}
+          >
+            {opt.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }
 
-// ─── Shared Components ───
-
-function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaItem) => void }) {
-  const title = item.title || item.name || "Untitled";
-  const year = (item.release_date || item.first_air_date || "").slice(0, 4);
+function ClearButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <div
-      onClick={() => onClick(item)}
-      className="shrink-0 w-[130px] md:w-[150px] cursor-pointer group"
-    >
-      {item.poster_url ? (
-        <img
-          src={item.poster_url}
-          alt={title}
-          className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
-        />
-      ) : (
-        <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
-          <Film className="w-6 h-6 text-muted-foreground/50" />
-        </div>
-      )}
-      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-primary transition-colors">
-        {title}
-      </p>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        {year && <span>{year}</span>}
-        {year && item.vote_average != null && item.vote_average > 0 && <span>·</span>}
-        {item.vote_average != null && item.vote_average > 0 && (
-          <span className="flex items-center gap-0.5">
-            <Star className="w-2.5 h-2.5 text-accent fill-accent" />
-            {item.vote_average.toFixed(1)}
-          </span>
-        )}
-      </div>
-    </div>
+    <Button variant="ghost" size="sm" onClick={onClick} aria-label={label}>
+      <X aria-hidden="true" /> Clear
+    </Button>
   );
 }
 
-function SkeletonCard({ className }: { className?: string } = {}) {
-  return (
-    <div className={className ?? "shrink-0 w-[130px] md:w-[150px]"}>
-      <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border animate-pulse" />
-      <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
-      <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
-    </div>
-  );
-}
-
-function MediaRow({
+/** A titled row of cards that scrolls sideways inside its own container. */
+function Shelf({
   title,
   subtitle,
-  icon: Icon,
-  items,
   loading,
-  onItemClick,
+  aspect,
+  itemCount,
+  children,
 }: {
   title: string;
   subtitle?: string;
-  icon?: React.ElementType;
-  items: MediaItem[];
   loading?: boolean;
-  onItemClick: (item: MediaItem) => void;
+  aspect: "poster" | "square";
+  itemCount: number;
+  children: React.ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -294,11 +248,14 @@ function MediaRow({
   useEffect(() => {
     checkScroll();
     const el = scrollRef.current;
-    if (el) {
-      el.addEventListener("scroll", checkScroll, { passive: true });
-      return () => el.removeEventListener("scroll", checkScroll);
-    }
-  }, [checkScroll, items]);
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", checkScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, [checkScroll, itemCount, loading]);
 
   const scroll = (dir: "left" | "right") => {
     const el = scrollRef.current;
@@ -307,123 +264,176 @@ function MediaRow({
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   };
 
-  if (!loading && items.length === 0) return null;
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {Icon && <Icon className="w-4 h-4 text-primary shrink-0" />}
-          <div className="min-w-0">
-            <h2 className="font-display text-base md:text-lg font-bold truncate">{title}</h2>
-            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+    <section>
+      <SectionHeader
+        title={title}
+        className={subtitle ? "mb-3" : undefined}
+        action={
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label={`Scroll ${title} back`}
+              disabled={!canScrollLeft}
+              onClick={() => scroll("left")}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label={`Scroll ${title} forward`}
+              disabled={!canScrollRight}
+              onClick={() => scroll("right")}
+            >
+              <ChevronRight aria-hidden="true" />
+            </Button>
           </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {canScrollLeft && (
-            <button onClick={() => scroll("left")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-          {canScrollRight && (
-            <button onClick={() => scroll("right")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
+        }
+      />
+      {subtitle && <p className="t-meta mb-5">{subtitle}</p>}
       <div
         ref={scrollRef}
-        className="flex gap-3 overflow-x-auto pb-1"
-        style={{ scrollbarWidth: "none" }}
+        role={loading ? "status" : undefined}
+        aria-label={loading ? `Loading ${title}` : undefined}
+        className="-mx-1 flex gap-5 overflow-x-auto px-1 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:w-[140px] [&>*]:shrink-0 sm:[&>*]:w-[160px]"
       >
         {loading
-          ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
-          : items.map((item) => (
-              <MediaCard
-                key={`${item.media_type}-${item.id}`}
-                item={item}
-                onClick={onItemClick}
-              />
-            ))}
+          ? Array.from({ length: 8 }, (_, i) => (
+              <div key={i}>
+                <Skeleton className={aspect === "square" ? "aspect-square" : "aspect-[2/3]"} />
+                <Skeleton className="mt-3 h-3 w-3/4" />
+                <Skeleton className="mt-2 h-2.5 w-1/2" />
+              </div>
+            ))
+          : children}
       </div>
-    </div>
+    </section>
   );
 }
 
-function SectionDivider({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle?: string }) {
+// ─── Film pieces ───
+
+function FilmCard({
+  item,
+  rank,
+  onWatchlist,
+  watchlisted,
+}: {
+  item: FilmRec;
+  rank?: number;
+  onWatchlist?: (item: MediaItem) => void;
+  watchlisted?: boolean;
+}) {
+  const title = item.title || item.name || "Untitled";
   return (
-    <div className="flex items-center gap-3 pt-4 pb-1">
-      <div className="w-8 h-8 border-2 border-border flex items-center justify-center shrink-0">
-        <Icon className="w-3.5 h-3.5 text-primary" />
-      </div>
-      <div>
-        <h2 className="font-display text-sm font-bold uppercase tracking-wider">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </div>
-      <div className="flex-1 border-t border-border ml-2" />
-    </div>
+    <MediaCard
+      title={title}
+      subtitle={filmMeta(item) || undefined}
+      image={item.poster_url}
+      aspect="poster"
+      href={mediaHref(item.media_type, item.id)}
+      fallbackIcon={Film}
+      badge={rank != null ? <Badge variant="secondary">No. {rank}</Badge> : undefined}
+      footer={item.explanation ? <p className="line-clamp-4">{item.explanation}</p> : undefined}
+      actions={
+        onWatchlist ? (
+          <Button
+            size="icon"
+            variant="secondary"
+            className="h-8 w-8 disabled:text-primary disabled:opacity-100"
+            aria-label={watchlisted ? `${title} is on your watchlist` : `Add ${title} to watchlist`}
+            disabled={watchlisted}
+            onClick={() => onWatchlist(item)}
+          >
+            {watchlisted ? <BookmarkCheck aria-hidden="true" /> : <Bookmark aria-hidden="true" />}
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
 
-// ─── Music Components ───
+function FilmShelf({
+  title,
+  subtitle,
+  items,
+  loading,
+}: {
+  title: string;
+  subtitle?: string;
+  items: MediaItem[];
+  loading?: boolean;
+}) {
+  if (!loading && items.length === 0) return null;
+  return (
+    <Shelf title={title} subtitle={subtitle} loading={loading} aspect="poster" itemCount={items.length}>
+      {items.map((item) => (
+        <FilmCard key={`${item.media_type}-${item.id}`} item={item} />
+      ))}
+    </Shelf>
+  );
+}
+
+// ─── Music pieces ───
 
 function MusicCard({
   item,
   onQueue,
   queued,
+  explanation,
+  showType,
 }: {
   item: MusicMediaItem;
-  onQueue: (item: MusicMediaItem) => void;
-  queued: boolean;
+  /** Leave out for things that cannot be queued (an artist). */
+  onQueue?: (item: MusicMediaItem) => void;
+  queued?: boolean;
+  explanation?: string;
+  /** Add "Album" or "Track" and the year to the second line. */
+  showType?: boolean;
 }) {
+  const subtitle = showType
+    ? [item.artist, item.type === "album" ? "Album" : "Track", item.release_date.slice(0, 4)]
+        .filter(Boolean)
+        .join(" · ")
+    : item.artist;
   return (
-    <div className="shrink-0 w-[130px] md:w-[150px] group">
-      <div className="relative">
-        {item.image_url ? (
-          <img
-            src={item.image_url}
-            alt={item.name}
-            className="w-full aspect-square object-cover border-2 border-border group-hover:border-[var(--music)] transition-colors duration-200"
-          />
-        ) : (
-          <div className="w-full aspect-square bg-muted/20 border-2 border-border flex items-center justify-center">
-            <Disc3 className="w-6 h-6 text-muted-foreground/50" />
-          </div>
-        )}
-        <button
-          onClick={() => onQueue(item)}
-          disabled={queued}
-          className="absolute top-1.5 right-1.5 w-6 h-6 bg-background/80 border border-border flex items-center justify-center hover:bg-background transition-colors disabled:text-[var(--music)]"
-          title={queued ? "In queue" : "Add to queue"}
-        >
-          {queued
-            ? <BookmarkCheck className="w-3 h-3 text-[var(--music)]" />
-            : <Bookmark className="w-3 h-3" />}
-        </button>
-      </div>
-      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-[var(--music)] transition-colors">
-        {item.name}
-      </p>
-      <p className="text-xs text-muted-foreground truncate">{item.artist}</p>
-    </div>
+    <MediaCard
+      title={item.name}
+      subtitle={subtitle || undefined}
+      image={item.image_url}
+      aspect="square"
+      fallbackIcon={Disc3}
+      footer={
+        explanation || onQueue ? (
+          <>
+            {explanation && <p className="line-clamp-4">{explanation}</p>}
+            {onQueue && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full disabled:text-primary disabled:opacity-100"
+                aria-label={queued ? `${item.name} is in your queue` : `Add ${item.name} to queue`}
+                disabled={queued}
+                onClick={() => onQueue(item)}
+              >
+                {queued ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                {queued ? "In queue" : "Queue"}
+              </Button>
+            )}
+          </>
+        ) : undefined
+      }
+    />
   );
 }
 
-function SkeletonMusicCard() {
-  return (
-    <div className="shrink-0 w-[130px] md:w-[150px]">
-      <div className="w-full aspect-square bg-muted/20 border-2 border-border animate-pulse" />
-      <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
-      <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
-    </div>
-  );
-}
-
-function MusicRow({
+function MusicShelf({
   title,
   subtitle,
-  icon: Icon,
   items,
   loading,
   onQueue,
@@ -431,82 +441,35 @@ function MusicRow({
 }: {
   title: string;
   subtitle?: string;
-  icon?: React.ElementType;
   items: MusicMediaItem[];
   loading?: boolean;
-  onQueue: (item: MusicMediaItem) => void;
+  onQueue?: (item: MusicMediaItem) => void;
   queuedIds: Set<string>;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    checkScroll();
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener("scroll", checkScroll, { passive: true });
-      return () => el.removeEventListener("scroll", checkScroll);
-    }
-  }, [checkScroll, items]);
-
-  const scroll = (dir: "left" | "right") => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir === "left" ? -el.clientWidth * 0.75 : el.clientWidth * 0.75, behavior: "smooth" });
-  };
-
   if (!loading && items.length === 0) return null;
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {Icon && <Icon className="w-4 h-4 text-[var(--music)] shrink-0" />}
-          <div className="min-w-0">
-            <h2 className="font-display text-base md:text-lg font-bold truncate">{title}</h2>
-            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {canScrollLeft && (
-            <button onClick={() => scroll("left")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-          {canScrollRight && (
-            <button onClick={() => scroll("right")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-        {loading
-          ? Array.from({ length: 8 }).map((_, i) => <SkeletonMusicCard key={i} />)
-          : items.map((item) => (
-              <MusicCard key={item.id} item={item} onQueue={onQueue} queued={queuedIds.has(item.id)} />
-            ))}
-      </div>
-    </div>
+    <Shelf title={title} subtitle={subtitle} loading={loading} aspect="square" itemCount={items.length}>
+      {items.map((item) => (
+        <MusicCard key={item.id} item={item} onQueue={onQueue} queued={queuedIds.has(item.id)} />
+      ))}
+    </Shelf>
+  );
+}
+
+/** The way forward wherever an AI feature has no key to run on. */
+function AiKeyLink() {
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link href={PROFILE_HREF}>Add a key in your profile</Link>
+    </Button>
   );
 }
 
 // ─── Page ───
 
-type Tab = "for-you" | "browse";
-
 export default function DiscoverPage() {
-  const router = useRouter();
   const { mode } = useMode();
-  const searchRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("for-you");
 
   // Music state
@@ -515,9 +478,10 @@ export default function DiscoverPage() {
   const [musicFetched, setMusicFetched] = useState(false);
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const [musicSearchResults, setMusicSearchResults] = useState<MusicMediaItem[]>([]);
-  const [activeMoodPill, setActiveMoodPill] = useState<string | null>(null);
+  const [activeMood, setActiveMood] = useState<string | null>(null);
   const [moodResults, setMoodResults] = useState<MusicMediaItem[]>([]);
   const [moodLoading, setMoodLoading] = useState(false);
+  const [moodError, setMoodError] = useState(false);
   const [musicGenreRows, setMusicGenreRows] = useState<{ title: string; subtitle: string; items: MusicMediaItem[] }[]>([]);
   const [musicGenreLoading, setMusicGenreLoading] = useState(false);
   const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
@@ -529,11 +493,14 @@ export default function DiscoverPage() {
   const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(false);
   const [spotifyOAuthFetched, setSpotifyOAuthFetched] = useState(false);
 
-  // Search (shared across tabs)
+  // Search (shared across modes). `searchQuery` is what is typed; `activeQuery` is what results are for.
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
+  const [searchRun, setSearchRun] = useState(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchNeedsKey, setSearchNeedsKey] = useState(false);
 
   // Browse tab state
   const [trending, setTrending] = useState<MediaItem[]>([]);
@@ -544,8 +511,9 @@ export default function DiscoverPage() {
   const [selectedGenre, setSelectedGenre] = useState<{ id: number; name: string } | null>(null);
   const [genreResults, setGenreResults] = useState<MediaItem[]>([]);
   const [genreLoading, setGenreLoading] = useState(false);
+  const [genreError, setGenreError] = useState(false);
 
-  // Personalized rows (browse tab, "Picked For You" section)
+  // Personalised rows (browse tab)
   const [forYouRows, setForYouRows] = useState<ForYouRow[]>([]);
   const [personalLoading, setPersonalLoading] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
@@ -553,29 +521,35 @@ export default function DiscoverPage() {
   // Browse data fetched flag
   const [browseFetched, setBrowseFetched] = useState(false);
 
-  // ML recommendations (For You tab)
-  const [mlRecs, setMlRecs] = useState<MediaItem[]>([]);
+  // Picks from the recommendation service (For you tab)
+  const [mlRecs, setMlRecs] = useState<FilmRec[]>([]);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlFetched, setMlFetched] = useState(false);
   const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
 
   // AI recommendations
-  const [aiMusicRecs, setAiMusicRecs] = useState<(MusicMediaItem & { explanation?: string })[]>([]);
+  const [aiMusicRecs, setAiMusicRecs] = useState<MusicRec[]>([]);
   const [aiMusicLoading, setAiMusicLoading] = useState(false);
   const [aiMusicFetched, setAiMusicFetched] = useState(false);
-  const [aiFilmRecs, setAiFilmRecs] = useState<(MediaItem & { explanation?: string; source?: string })[]>([]);
+  const [aiMusicError, setAiMusicError] = useState(false);
+  const [aiFilmRecs, setAiFilmRecs] = useState<FilmRec[]>([]);
   const [aiFilmLoading, setAiFilmLoading] = useState(false);
   const [aiFilmFetched, setAiFilmFetched] = useState(false);
+  const [aiFilmError, setAiFilmError] = useState(false);
 
-  // Vibe search
-  const [vibeResults, setVibeResults] = useState<any[]>([]);
+  // Search by description
+  const [vibeResults, setVibeResults] = useState<VibeSearchResult[]>([]);
   const [vibeInterpretation, setVibeInterpretation] = useState<string>("");
-  const [vibeLoading, setVibeLoading] = useState(false);
   const [isVibeQuery, setIsVibeQuery] = useState(false);
 
   // AI key status
   const [aiNotConfigured, setAiNotConfigured] = useState(false);
+
+  // Guards: ignore a slow response once a newer request has been made; ignore a second press while saving.
+  const moodRequest = useRef(0);
+  const genreRequest = useRef(0);
+  const savingIds = useRef(new Set<string>());
 
   // ─── Fetch music browse data (lazy — only when mode is music) ───
   useEffect(() => {
@@ -589,7 +563,7 @@ export default function DiscoverPage() {
         const data = await res.json();
         if (Array.isArray(data)) setNewReleases(data);
       } catch {
-        // silently fail
+        // The shelf simply stays hidden.
       } finally {
         setMusicLoading(false);
       }
@@ -606,7 +580,7 @@ export default function DiscoverPage() {
           .eq("user_id", user.id);
         if (data) setQueuedIds(new Set(data.map((i: { spotify_id: string }) => i.spotify_id).filter(Boolean)));
       } catch {
-        // silently fail
+        // Queue buttons fall back to "Queue"; adding a duplicate is handled on save.
       }
     }
 
@@ -678,7 +652,7 @@ export default function DiscoverPage() {
         );
         setPersonalMusicRows(rows.filter((r) => r.items.length > 0));
       } catch {
-        // silently fail
+        // These shelves simply stay hidden.
       } finally {
         setPersonalMusicLoading(false);
       }
@@ -719,7 +693,7 @@ export default function DiscoverPage() {
     fetchSpotifyOAuth();
   }, [mode, spotifyOAuthFetched]);
 
-  // ─── Fetch ML recommendations (lazy — only when For You tab is first opened) ───
+  // ─── Fetch picks from the recommendation service (lazy — only when the For you tab is first opened) ───
   useEffect(() => {
     if (activeTab !== "for-you" || mlFetched) return;
     setMlFetched(true);
@@ -734,7 +708,7 @@ export default function DiscoverPage() {
         const data = await res.json();
         if (Array.isArray(data)) setMlRecs(data);
       } catch {
-        // silently fail — ML backend may not be running
+        // The recommendation service may not be running; AI picks or the empty state take over.
       } finally {
         setMlLoading(false);
       }
@@ -756,19 +730,12 @@ export default function DiscoverPage() {
         if (data?.code === "NO_API_KEY") {
           setAiNotConfigured(true);
         } else if (Array.isArray(data)) {
-          setAiMusicRecs(data.map((r: any) => ({
-            id: r.spotify_id || r.title,
-            name: r.title,
-            artist: r.artist,
-            album_name: r.album_name || "",
-            image_url: r.image_url || null,
-            release_date: "",
-            type: r.type || "album",
-            explanation: r.explanation,
-          })));
+          setAiMusicRecs((data as MusicRecommendation[]).map(toMusicRec));
+        } else {
+          setAiMusicError(true);
         }
       } catch {
-        // AI endpoint may not be configured
+        setAiMusicError(true);
       } finally {
         setAiMusicLoading(false);
       }
@@ -777,7 +744,7 @@ export default function DiscoverPage() {
     fetchAiMusicRecs();
   }, [mode, aiMusicFetched]);
 
-  // ─── Fetch AI film recommendations (lazy — only when For You tab + film mode) ───
+  // ─── Fetch AI film recommendations (lazy — only when For you tab + film mode) ───
   useEffect(() => {
     if (mode === "music" || activeTab !== "for-you" || aiFilmFetched) return;
     setAiFilmFetched(true);
@@ -788,17 +755,12 @@ export default function DiscoverPage() {
         const res = await fetch("/api/ai/recommend?mode=film");
         const data = await res.json();
         if (Array.isArray(data)) {
-          setAiFilmRecs(data.map((r: any) => ({
-            id: r.tmdb_id,
-            title: r.title,
-            media_type: r.media_type,
-            poster_url: r.poster_url,
-            explanation: r.explanation,
-            source: r.source,
-          })));
+          setAiFilmRecs((data as FilmRecommendation[]).map(toFilmRec));
+        } else if (data?.code !== "NO_API_KEY") {
+          setAiFilmError(true);
         }
       } catch {
-        // AI endpoint may not be configured
+        setAiFilmError(true);
       } finally {
         setAiFilmLoading(false);
       }
@@ -825,7 +787,7 @@ export default function DiscoverPage() {
         if (Array.isArray(upcomingRes)) setUpcoming(upcomingRes);
         if (Array.isArray(topRatedRes)) setTopRated(topRatedRes);
       } catch {
-        // silently fail
+        // Handled below: if every shelf is empty the tab says so.
       } finally {
         setBrowseLoading(false);
       }
@@ -918,7 +880,7 @@ export default function DiscoverPage() {
           .sort((a, b) => b.rating - a.rating)
           .slice(0, 2);
 
-        // Fetch all personalized rows in parallel
+        // Fetch all personalised rows in parallel
         const rowPromises: Promise<ForYouRow | null>[] = [];
 
         topGenres.forEach((genre) => {
@@ -931,7 +893,7 @@ export default function DiscoverPage() {
                 if (filtered.length === 0) return null;
                 return {
                   id: `genre-${genre.id}`,
-                  title: `Because You Love ${genre.name}`,
+                  title: `Because you love ${genre.name}`,
                   subtitle: `Highly rated ${genre.name.toLowerCase()} picks`,
                   items: filtered.slice(0, 20),
                 };
@@ -981,7 +943,7 @@ export default function DiscoverPage() {
         const rows = (await Promise.all(rowPromises)).filter((r): r is ForYouRow => r !== null);
         setForYouRows(rows);
       } catch {
-        // silently fail
+        // These shelves simply stay hidden.
       } finally {
         setPersonalLoading(false);
       }
@@ -991,109 +953,181 @@ export default function DiscoverPage() {
     fetchPersonalized();
   }, [activeTab, browseFetched]);
 
-  // ─── Vibe query detection ───
-  function detectVibeQuery(q: string): boolean {
-    const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
-    const lower = q.toLowerCase();
-    return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
-  }
-
-  // ─── Search ───
+  // ─── Search: typing settles into `activeQuery` after a pause; submitting does it at once ───
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
-      setSearchResults([]);
-      setMusicSearchResults([]);
-      setVibeResults([]);
-      setVibeInterpretation("");
+      setActiveQuery("");
+      return;
+    }
+    const t = setTimeout(() => setActiveQuery(q), detectVibeQuery(q) ? 800 : 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // ─── Search: run whenever the settled query, the mode, or a manual submit changes ───
+  useEffect(() => {
+    const q = activeQuery;
+    setSearchResults([]);
+    setMusicSearchResults([]);
+    setVibeResults([]);
+    setVibeInterpretation("");
+    setSearchError(false);
+    setSearchNeedsKey(false);
+
+    if (!q) {
       setIsVibeQuery(false);
-      setShowDropdown(false);
+      setSearchLoading(false);
       return;
     }
 
+    let cancelled = false;
     const isVibe = detectVibeQuery(q);
     setIsVibeQuery(isVibe);
+    setSearchLoading(true);
 
-    if (isVibe) {
-      const t = setTimeout(async () => {
-        try {
-          setVibeLoading(true);
-          setShowDropdown(true);
+    async function run() {
+      try {
+        if (isVibe) {
           const res = await fetch("/api/ai/search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
           });
           const data = await res.json();
+          if (cancelled) return;
           if (data?.code === "NO_API_KEY") {
             setAiNotConfigured(true);
-          } else if (data.results) {
-            setVibeResults(data.results);
+            setSearchNeedsKey(true);
+          } else if (Array.isArray(data?.results)) {
+            setVibeResults(data.results as VibeSearchResult[]);
             setVibeInterpretation(data.interpretation || "");
+          } else {
+            setSearchError(true);
           }
-        } catch {
-          // silently fail
-        } finally {
-          setVibeLoading(false);
-        }
-      }, 800);
-      return () => clearTimeout(t);
-    }
-
-    const t = setTimeout(async () => {
-      try {
-        setIsSearching(true);
-        if (mode === "music") {
+        } else if (mode === "music") {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
           const data = await res.json();
-          if (Array.isArray(data)) {
-            setMusicSearchResults(data);
-            setShowDropdown(true);
-          }
+          if (cancelled) return;
+          if (Array.isArray(data)) setMusicSearchResults(data);
+          else setSearchError(true);
         } else {
           const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
           const data = await res.json();
-          if (Array.isArray(data)) {
-            setSearchResults(data);
-            setShowDropdown(true);
-          }
+          if (cancelled) return;
+          if (Array.isArray(data)) setSearchResults(data);
+          else setSearchError(true);
         }
       } catch {
-        // silently fail
+        if (!cancelled) setSearchError(true);
       } finally {
-        setIsSearching(false);
-      }
-    }, 350);
-    return () => clearTimeout(t);
-  }, [searchQuery, mode]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
+        if (!cancelled) setSearchLoading(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeQuery, mode, searchRun]);
 
   // ─── Handlers ───
 
-  async function handleAddMlToWatchlist(item: MediaItem) {
+  function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    setActiveQuery(q);
+    setSearchRun((n) => n + 1);
+  }
+
+  function clearSearch() {
+    setSearchQuery("");
+    setActiveQuery("");
+  }
+
+  async function handleAddToWatchlist(item: MediaItem) {
+    const title = item.title || item.name || "Untitled";
+    const key = `watch-${item.id}`;
+    if (savingIds.current.has(key)) return;
+    savingIds.current.add(key);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      await supabase.from("watchlist").insert({
+      if (!user) {
+        toast({ mark: "Failed", tone: "error", title: "Sign in to add to your watchlist" });
+        return;
+      }
+      const { error } = await supabase.from("watchlist").insert({
         user_id: user.id,
         tmdb_id: item.id,
-        title: item.title || item.name || "Untitled",
+        title,
         media_type: item.media_type,
         poster_url: item.poster_url || null,
       });
+      if (error && error.code !== DUPLICATE_ROW) {
+        toast({
+          mark: "Failed",
+          tone: "error",
+          title: `Couldn't add ${title} to your watchlist`,
+          description: "Try again in a moment.",
+        });
+        return;
+      }
       setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
+      if (error) toast({ tone: "info", title: `${title} is already on your watchlist` });
+      else toast({ mark: "Added", title: `${title} added to your watchlist` });
     } catch {
-      // silently fail (e.g. duplicate)
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't add ${title} to your watchlist`,
+        description: "Check your connection and try again.",
+      });
+    } finally {
+      savingIds.current.delete(key);
+    }
+  }
+
+  async function handleAddToQueue(item: MusicMediaItem) {
+    const key = `queue-${item.id}`;
+    if (savingIds.current.has(key)) return;
+    savingIds.current.add(key);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ mark: "Failed", tone: "error", title: "Sign in to add to your queue" });
+        return;
+      }
+      const { error } = await supabase.from("music_queue").insert({
+        user_id: user.id,
+        spotify_id: item.id,
+        media_type: item.type,
+        title: item.name,
+        artist: item.artist,
+        image_url: item.image_url,
+      });
+      if (error && error.code !== DUPLICATE_ROW) {
+        toast({
+          mark: "Failed",
+          tone: "error",
+          title: `Couldn't add ${item.name} to your queue`,
+          description: "Try again in a moment.",
+        });
+        return;
+      }
+      setQueuedIds((prev) => new Set([...prev, item.id]));
+      if (error) toast({ tone: "info", title: `${item.name} is already in your queue` });
+      else toast({ mark: "Added", title: `${item.name} added to your queue` });
+    } catch {
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't add ${item.name} to your queue`,
+        description: "Check your connection and try again.",
+      });
+    } finally {
+      savingIds.current.delete(key);
     }
   }
 
@@ -1113,23 +1147,25 @@ export default function DiscoverPage() {
 
   async function handleRefreshAiMusicRecs() {
     setAiMusicLoading(true);
+    setAiMusicError(false);
     try {
       const res = await fetch("/api/ai/recommend?mode=music&refresh=true");
       const data = await res.json();
       if (Array.isArray(data)) {
-        setAiMusicRecs(data.map((r: any) => ({
-          id: r.spotify_id || r.title,
-          name: r.title,
-          artist: r.artist,
-          album_name: r.album_name || "",
-          image_url: r.image_url || null,
-          release_date: "",
-          type: r.type || "album",
-          explanation: r.explanation,
-        })));
+        setAiMusicRecs((data as MusicRecommendation[]).map(toMusicRec));
+        toast({ mark: "Updated", title: "Your recommendations are fresh" });
+      } else if (data?.code === "NO_API_KEY") {
+        setAiNotConfigured(true);
+      } else {
+        throw new Error("refresh failed");
       }
     } catch {
-      // silently fail
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: "Couldn't refresh your recommendations",
+        description: "Try again in a moment.",
+      });
     } finally {
       setAiMusicLoading(false);
     }
@@ -1137,387 +1173,415 @@ export default function DiscoverPage() {
 
   async function handleRefreshAiFilmRecs() {
     setAiFilmLoading(true);
+    setAiFilmError(false);
     try {
       const res = await fetch("/api/ai/recommend?mode=film&refresh=true");
       const data = await res.json();
       if (Array.isArray(data)) {
-        setAiFilmRecs(data.map((r: any) => ({
-          id: r.tmdb_id,
-          title: r.title,
-          media_type: r.media_type,
-          poster_url: r.poster_url,
-          explanation: r.explanation,
-          source: r.source,
-        })));
+        setAiFilmRecs((data as FilmRecommendation[]).map(toFilmRec));
+      } else if (data?.code !== "NO_API_KEY") {
+        setAiFilmError(true);
       }
     } catch {
-      // silently fail
+      setAiFilmError(true);
     } finally {
       setAiFilmLoading(false);
     }
   }
 
-  async function handleGenreClick(genre: { id: number; name: string }) {
-    if (selectedGenre?.id === genre.id) {
-      setSelectedGenre(null);
-      setGenreResults([]);
+  function handleRefreshFilmRecs() {
+    handleRefreshMlRecs();
+    handleRefreshAiFilmRecs();
+  }
+
+  function clearGenre() {
+    genreRequest.current++;
+    setSelectedGenre(null);
+    setGenreResults([]);
+    setGenreError(false);
+    setGenreLoading(false);
+  }
+
+  async function handleGenreToggle(key: string) {
+    const genre = FILM_GENRES.find((g) => String(g.id) === key);
+    if (!genre || selectedGenre?.id === genre.id) {
+      clearGenre();
       return;
     }
+    const request = ++genreRequest.current;
     setSelectedGenre(genre);
+    setGenreResults([]);
+    setGenreError(false);
     setGenreLoading(true);
     try {
       const res = await fetch(`/api?action=discover&type=movie&genres=${genre.id}`);
       const data = await res.json();
+      if (request !== genreRequest.current) return;
       if (Array.isArray(data)) setGenreResults(data);
+      else setGenreError(true);
     } catch {
-      setGenreResults([]);
+      if (request === genreRequest.current) setGenreError(true);
     } finally {
-      setGenreLoading(false);
+      if (request === genreRequest.current) setGenreLoading(false);
     }
   }
 
-  function handleItemClick(item: MediaItem) {
-    router.push(`/protected/media/${item.media_type}/${item.id}`);
+  function clearMood() {
+    moodRequest.current++;
+    setActiveMood(null);
+    setMoodResults([]);
+    setMoodError(false);
+    setMoodLoading(false);
   }
 
-  function handleResultClick(result: SearchResult) {
-    setShowDropdown(false);
-    setSearchQuery("");
-    router.push(`/protected/media/${result.media_type}/${result.id}`);
-  }
-
-  async function handleAddToQueue(item: MusicMediaItem) {
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      await supabase.from("music_queue").insert({
-        user_id: user.id,
-        spotify_id: item.id,
-        media_type: item.type,
-        title: item.name,
-        artist: item.artist,
-        image_url: item.image_url,
-      });
-      setQueuedIds((prev) => new Set([...prev, item.id]));
-    } catch {
-      // silently fail (e.g. duplicate)
-    }
-  }
-
-  async function handleMoodClick(pill: { label: string; query: string }) {
-    if (activeMoodPill === pill.label) {
-      setActiveMoodPill(null);
-      setMoodResults([]);
+  async function handleMoodToggle(key: string) {
+    const mood = MOODS.find((m) => m.label === key);
+    if (!mood || activeMood === mood.label) {
+      clearMood();
       return;
     }
-    setActiveMoodPill(pill.label);
+    const request = ++moodRequest.current;
+    setActiveMood(mood.label);
+    setMoodResults([]);
+    setMoodError(false);
     setMoodLoading(true);
     try {
-      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(pill.query)}&type=album,track`);
+      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(mood.query)}&type=album,track`);
       const data = await res.json();
+      if (request !== moodRequest.current) return;
       if (Array.isArray(data)) setMoodResults(data);
+      else setMoodError(true);
     } catch {
-      setMoodResults([]);
+      if (request === moodRequest.current) setMoodError(true);
     } finally {
-      setMoodLoading(false);
+      if (request === moodRequest.current) setMoodLoading(false);
     }
   }
 
   const filterWatched = (items: MediaItem[]) =>
     watchedIds.size > 0 ? items.filter((i) => !watchedIds.has(i.id)) : items;
 
+  // ─── Derived ───
+
+  const isMusic = mode === "music";
+
+  const filmRecs = aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs;
+  const filmRecsLoading = mlLoading || aiFilmLoading;
+
+  const filmVibeResults = vibeResults.filter((r) => r.tmdb_id != null);
+  const musicVibeResults = vibeResults.filter((r) => r.spotify_id);
+  const searchCount = isVibeQuery
+    ? (isMusic ? musicVibeResults : filmVibeResults).length
+    : Math.min((isMusic ? musicSearchResults : searchResults).length, SEARCH_RESULT_LIMIT);
+
+  const browseFailed =
+    !browseLoading &&
+    trending.length === 0 &&
+    nowPlaying.length === 0 &&
+    upcoming.length === 0 &&
+    topRated.length === 0;
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* ─── Header ─── */}
-      <div>
-        <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Discover</h1>
-        <p className="text-muted-foreground">
-          {mode === "music"
-            ? "Find your next favourite album or track"
-            : "Find your next favourite movie or show"}
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title={
+          <>
+            Discover <em>{isMusic ? "your next listen" : "your next watch"}</em>
+          </>
+        }
+        description={
+          isMusic
+            ? "Find your next favourite album or track."
+            : "Find your next favourite film or show."
+        }
+      />
 
-      {/* ─── Search ─── */}
-      <div className="max-w-xl w-full" ref={searchRef}>
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder={mode === "music" ? "Search albums and tracks..." : "Search movies and TV shows..."}
-            className="pl-11 py-5 text-base bg-card border-2 border-border"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => {
-              if (mode === "music" && musicSearchResults.length > 0) setShowDropdown(true);
-              if (mode !== "music" && searchResults.length > 0) setShowDropdown(true);
-            }}
-          />
-          {(isSearching || vibeLoading) && (
-            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
-          )}
-          {isVibeQuery && <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-primary flex items-center gap-1"><Sparkles className="w-3 h-3" />Vibe</span>}
-          {/* Vibe search dropdown */}
-          {showDropdown && isVibeQuery && (vibeResults.length > 0 || vibeLoading) && (
-            <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-96 overflow-auto shadow-lg">
-              {vibeInterpretation && (
-                <div className="px-4 py-2 border-b border-border bg-primary/5">
-                  <p className="text-xs text-primary flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3" />
-                    {vibeInterpretation}
+      <div className="flex flex-col gap-16">
+        {/* ─── Search ─── */}
+        <section>
+          <form role="search" onSubmit={handleSearchSubmit} className="max-w-xl">
+            <Field
+              label={isMusic ? "Search albums and tracks" : "Search films and TV"}
+              htmlFor="discover-search"
+              hint={
+                isMusic
+                  ? "Type a title or an artist, or describe what you are in the mood for."
+                  : "Type a title, or describe what you are in the mood for."
+              }
+            >
+              <div className="flex gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="discover-search"
+                    type="text"
+                    enterKeyHint="search"
+                    autoComplete="off"
+                    placeholder={isMusic ? "Blonde, or something calm for late at night" : "Aftersun, or something tense and slow"}
+                    className="pl-9"
+                    aria-describedby="discover-search-hint"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Button type="submit">Search</Button>
+              </div>
+            </Field>
+          </form>
+
+          {activeQuery && (
+            <div className="mt-10">
+              <SectionHeader
+                title={`Results for “${activeQuery}”`}
+                meta={
+                  !searchLoading && searchCount > 0
+                    ? `${searchCount} ${searchCount === 1 ? "match" : "matches"}`
+                    : undefined
+                }
+                action={<ClearButton label="Clear search" onClick={clearSearch} />}
+              />
+
+              {searchLoading ? (
+                <>
+                  <LoadingLine label={isVibeQuery ? "Finding matches" : "Searching"} className="mb-5" />
+                  <MediaGridSkeleton count={5} aspect={isMusic ? "square" : "poster"} />
+                </>
+              ) : searchNeedsKey ? (
+                <Notice tone="info" title="This kind of search needs an AI key">
+                  <p>
+                    Describing what you are in the mood for uses your own AI key, and none is saved yet.
+                    Add one in your profile, or search by title instead.
                   </p>
-                </div>
-              )}
-              {vibeLoading ? (
-                <div className="px-4 py-6 text-center">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">Finding the perfect match...</p>
-                </div>
-              ) : (
-                vibeResults.map((result: any, i: number) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => {
-                      setShowDropdown(false);
-                      setSearchQuery("");
-                      if (result.tmdb_id) {
-                        router.push(`/protected/media/${result.type === "tv" ? "tv" : "movie"}/${result.tmdb_id}`);
-                      } else if (result.spotify_id) {
-                        handleAddToQueue({
-                          id: result.spotify_id,
-                          name: result.title,
-                          artist: result.artist || "",
-                          album_name: "",
-                          image_url: result.image_url || null,
-                          release_date: "",
-                          type: result.type || "album",
-                        });
-                      }
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-muted/50 flex gap-3 items-center transition-colors"
-                  >
-                    {(result.image_url || result.poster_url) ? (
-                      <img
-                        src={result.image_url || result.poster_url}
-                        alt={result.title}
-                        className={`${mode === "music" ? "w-10 h-10" : "w-8 h-12"} object-cover shrink-0 border border-border`}
-                      />
-                    ) : (
-                      <div className={`${mode === "music" ? "w-10 h-10" : "w-8 h-12"} bg-muted/30 flex items-center justify-center shrink-0 border border-border`}>
-                        {mode === "music" ? <Disc3 className="w-4 h-4 text-muted-foreground" /> : <Film className="w-4 h-4 text-muted-foreground" />}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate">{result.title}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {result.artist && <span>{result.artist} · </span>}
-                        {result.year && <span>{result.year} · </span>}
-                        {result.why}
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-          {/* Film search dropdown */}
-          {mode !== "music" && showDropdown && searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
-              {searchResults.slice(0, 8).map((result) => {
-                const label = result.title || result.name || "Untitled";
-                const year = (result.release_date || result.first_air_date || "").slice(0, 4);
-                return (
-                  <button
-                    key={`${result.media_type}-${result.id}`}
-                    type="button"
-                    onClick={() => handleResultClick(result)}
-                    className="w-full text-left px-4 py-3 hover:bg-muted/50 flex gap-3 items-center transition-colors"
-                  >
-                    {result.poster_url ? (
-                      <img src={result.poster_url} alt={label} className="w-8 h-12 object-cover shrink-0 border border-border" />
-                    ) : (
-                      <div className="w-8 h-12 bg-muted/30 flex items-center justify-center shrink-0 border border-border">
-                        {result.media_type === "movie" ? <Film className="w-4 h-4 text-muted-foreground" /> : <Tv className="w-4 h-4 text-muted-foreground" />}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate">{label}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span>{result.media_type === "movie" ? "Movie" : "TV Show"}</span>
-                        {year && <><span>·</span><span>{year}</span></>}
-                        {result.vote_average != null && result.vote_average > 0 && (
-                          <><span>·</span><span className="flex items-center gap-0.5"><Star className="w-2.5 h-2.5 text-accent fill-accent" />{result.vote_average.toFixed(1)}</span></>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {/* Music search dropdown */}
-          {mode === "music" && showDropdown && musicSearchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
-              {musicSearchResults.slice(0, 8).map((result) => (
-                <button
-                  key={result.id}
-                  type="button"
-                  onClick={() => {
-                    setShowDropdown(false);
-                    setSearchQuery("");
-                    handleAddToQueue(result);
-                  }}
-                  className="w-full text-left px-4 py-3 hover:bg-muted/50 flex gap-3 items-center transition-colors"
-                >
-                  {result.image_url ? (
-                    <img src={result.image_url} alt={result.name} className="w-10 h-10 object-cover shrink-0 border border-border" />
-                  ) : (
-                    <div className="w-10 h-10 bg-muted/30 flex items-center justify-center shrink-0 border border-border">
-                      <Disc3 className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{result.name}</div>
-                    <div className="text-xs flex items-center gap-2">
-                      <span className="text-[var(--music)] truncate">{result.artist}</span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">{result.type === "album" ? "Album" : "Track"}</span>
-                      {result.release_date && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{result.release_date.slice(0, 4)}</span></>}
-                    </div>
+                  <div className="mt-3">
+                    <AiKeyLink />
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">+ Queue</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ─── MUSIC MODE ─── */}
-      {mode === "music" && (
-        <div className="flex flex-col gap-6">
-          {/* Mood pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-            <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0 mr-1">Mood</span>
-            {MOOD_PILLS.map((pill) => (
-              <button
-                key={pill.label}
-                onClick={() => handleMoodClick(pill)}
-                className={`shrink-0 px-3 py-1.5 text-xs font-medium border-2 transition-colors ${
-                  activeMoodPill === pill.label
-                    ? "border-[var(--music)] bg-[var(--music)] text-background"
-                    : "border-border hover:border-[var(--music)]/50"
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Mood results */}
-          {activeMoodPill && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="font-display text-lg font-bold">{activeMoodPill} Music</h2>
-                  <p className="text-xs text-muted-foreground">Albums and tracks for {activeMoodPill.toLowerCase()} vibes</p>
-                </div>
-                <button
-                  onClick={() => { setActiveMoodPill(null); setMoodResults([]); }}
-                  className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {moodLoading ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
+                </Notice>
+              ) : searchError ? (
+                <Notice tone="error" title="Search didn't go through">
+                  <p>Check your connection and try again.</p>
+                  <div className="mt-3">
+                    <Button variant="outline" size="sm" onClick={() => setSearchRun((n) => n + 1)}>
+                      Try again
+                    </Button>
+                  </div>
+                </Notice>
+              ) : searchCount === 0 ? (
+                <div className="frame">
+                  <EmptyState
+                    icon={Search}
+                    title={`Nothing matched “${activeQuery}”.`}
+                    description={
+                      isVibeQuery
+                        ? "Try describing it another way, or search by title."
+                        : "Check the spelling, or try a shorter title."
+                    }
+                  />
                 </div>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {moodResults.map((item) => (
-                    <MusicCard key={item.id} item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
-                  ))}
-                </div>
+                <>
+                  {isVibeQuery && vibeInterpretation && (
+                    <p className="t-meta mb-5 max-w-[62ch]">{vibeInterpretation}</p>
+                  )}
+                  <MediaGrid>
+                    {isVibeQuery && isMusic &&
+                      musicVibeResults.map((r) => (
+                        <MusicCard
+                          key={r.spotify_id}
+                          item={{
+                            id: r.spotify_id ?? "",
+                            name: r.title,
+                            artist: r.artist || "",
+                            album_name: "",
+                            image_url: r.image_url || null,
+                            release_date: "",
+                            type: r.type === "track" ? "track" : "album",
+                          }}
+                          explanation={r.why}
+                          onQueue={handleAddToQueue}
+                          queued={queuedIds.has(r.spotify_id ?? "")}
+                        />
+                      ))}
+                    {isVibeQuery && !isMusic &&
+                      filmVibeResults.map((r) => {
+                        const type = r.type === "tv" ? "tv" : "movie";
+                        return (
+                          <MediaCard
+                            key={`${type}-${r.tmdb_id}`}
+                            title={r.title}
+                            subtitle={[type === "tv" ? "TV" : "Film", r.year].filter(Boolean).join(" · ")}
+                            image={r.poster_url}
+                            aspect="poster"
+                            href={mediaHref(type, r.tmdb_id ?? 0)}
+                            fallbackIcon={Film}
+                            footer={r.why ? <p className="line-clamp-4">{r.why}</p> : undefined}
+                          />
+                        );
+                      })}
+                    {!isVibeQuery && isMusic &&
+                      musicSearchResults.slice(0, SEARCH_RESULT_LIMIT).map((item) => (
+                        <MusicCard
+                          key={item.id}
+                          item={item}
+                          showType
+                          onQueue={handleAddToQueue}
+                          queued={queuedIds.has(item.id)}
+                        />
+                      ))}
+                    {!isVibeQuery && !isMusic &&
+                      searchResults.slice(0, SEARCH_RESULT_LIMIT).map((result) => (
+                        <MediaCard
+                          key={`${result.media_type}-${result.id}`}
+                          title={result.title || result.name || "Untitled"}
+                          subtitle={filmMeta(result, result.media_type === "movie" ? "Film" : "TV")}
+                          image={result.poster_url}
+                          aspect="poster"
+                          href={mediaHref(result.media_type, result.id)}
+                          fallbackIcon={Film}
+                        />
+                      ))}
+                  </MediaGrid>
+                </>
               )}
             </div>
           )}
+        </section>
 
-          {/* AI Music Recommendations — For You */}
-          {!activeMoodPill && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[var(--music)]" />
-                  <h2 className="text-xl font-semibold">For You</h2>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={handleRefreshAiMusicRecs}
-                  disabled={aiMusicLoading}
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${aiMusicLoading ? "animate-spin" : ""}`} />
-                  Refresh
-                </Button>
-              </div>
+        {/* ─── MUSIC MODE ─── */}
+        {isMusic && (
+          <>
+            {/* Mood */}
+            <section>
+              <SectionHeader
+                title={activeMood ? `${activeMood} music` : "Pick a mood"}
+                action={activeMood ? <ClearButton label="Clear mood" onClick={clearMood} /> : undefined}
+              />
+              <ToggleGroup label="Mood" options={MOOD_OPTIONS} activeKey={activeMood} onToggle={handleMoodToggle} />
 
-              {aiMusicLoading ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
+              {activeMood && (
+                <div className="mt-8">
+                  {moodLoading ? (
+                    <MediaGridSkeleton count={10} aspect="square" />
+                  ) : moodError ? (
+                    <Notice tone="error" title="Couldn't load that mood">
+                      Check your connection, then pick the mood again.
+                    </Notice>
+                  ) : moodResults.length === 0 ? (
+                    <div className="frame">
+                      <EmptyState
+                        icon={Disc3}
+                        title="Nothing turned up for that mood."
+                        description="Try another one."
+                      />
+                    </div>
+                  ) : (
+                    <MediaGrid>
+                      {moodResults.map((item) => (
+                        <MusicCard
+                          key={item.id}
+                          item={item}
+                          onQueue={handleAddToQueue}
+                          queued={queuedIds.has(item.id)}
+                        />
+                      ))}
+                    </MediaGrid>
+                  )}
                 </div>
-              ) : aiMusicRecs.length > 0 ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {aiMusicRecs.map((item) => (
-                    <ExplanationTooltip key={item.id} explanation={item.explanation}>
-                      <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
-                    </ExplanationTooltip>
-                  ))}
-                </div>
-              ) : !aiMusicLoading ? (
-                <div className="border-2 border-dashed border-border p-8 text-center">
-                  <Sparkles className="w-6 h-6 text-muted-foreground/40 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">
-                    {aiNotConfigured
-                      ? "Add an AI API key in your profile settings to unlock personalized recommendations."
-                      : "Log some music to get AI-powered recommendations"}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          )}
+              )}
+            </section>
 
-          {/* Spotify OAuth — top tracks & artists */}
-          {!activeMoodPill && spotifyOAuthLoading && (
-            <MusicRow
-              title="Your Top Tracks"
-              subtitle="Loading from Spotify..."
-              icon={TrendingUp}
-              items={[]}
-              loading
-              onQueue={handleAddToQueue}
-              queuedIds={queuedIds}
-            />
-          )}
-          {!activeMoodPill && spotifyOAuthConnected === true && (
-            <>
-              {spotifyTopTracks.length > 0 && (
-                <MusicRow
-                  title="Your Top Tracks"
+            {/* For you */}
+            {!activeMood && (
+              <section>
+                <SectionHeader
+                  title="For you"
+                  className="mb-3"
+                  meta={!aiMusicLoading && aiMusicRecs.length > 0 ? `${aiMusicRecs.length} picks` : undefined}
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshAiMusicRecs}
+                      disabled={aiMusicLoading}
+                    >
+                      <RefreshCw aria-hidden="true" />
+                      {aiMusicLoading ? "Refreshing" : "Refresh"}
+                    </Button>
+                  }
+                />
+                <p className="t-meta mb-5">Based on what you have logged and rated highly.</p>
+
+                {aiMusicLoading ? (
+                  <>
+                    <LoadingLine label="Finding picks for you" className="mb-5" />
+                    <MediaGridSkeleton count={10} aspect="square" />
+                  </>
+                ) : aiMusicRecs.length > 0 ? (
+                  <MediaGrid>
+                    {aiMusicRecs.map((item) => (
+                      <MusicCard
+                        key={item.id}
+                        item={item}
+                        explanation={item.explanation}
+                        onQueue={handleAddToQueue}
+                        queued={queuedIds.has(item.id)}
+                      />
+                    ))}
+                  </MediaGrid>
+                ) : aiNotConfigured ? (
+                  <div className="frame">
+                    <EmptyState
+                      icon={Sparkles}
+                      title="Recommendations need an AI key."
+                      description="These picks are written using your own AI key, and none is saved yet. Add one in your profile and they will appear here."
+                      action={<AiKeyLink />}
+                    />
+                  </div>
+                ) : aiMusicError ? (
+                  <Notice tone="error" title="Couldn't load your recommendations">
+                    Something went wrong on our side. Press Refresh to try again.
+                  </Notice>
+                ) : (
+                  <div className="frame">
+                    <EmptyState
+                      icon={Sparkles}
+                      title="Nothing to go on yet."
+                      description="Log some music and recommendations will appear here."
+                      action={
+                        <Button asChild variant="outline">
+                          <Link href={LOG_HREF}>Log a listen</Link>
+                        </Button>
+                      }
+                    />
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Spotify — top tracks and artists */}
+            {!activeMood && spotifyOAuthLoading && (
+              <MusicShelf
+                title="Your top tracks"
+                subtitle="Loading from Spotify"
+                items={[]}
+                loading
+                queuedIds={queuedIds}
+              />
+            )}
+            {!activeMood && spotifyOAuthConnected === true && (
+              <>
+                <MusicShelf
+                  title="Your top tracks"
                   subtitle="Your most-played tracks on Spotify"
-                  icon={TrendingUp}
                   items={spotifyTopTracks}
                   onQueue={handleAddToQueue}
                   queuedIds={queuedIds}
                 />
-              )}
-              {spotifyTopArtists.length > 0 && (
-                <MusicRow
-                  title="Your Top Artists"
+                <MusicShelf
+                  title="Your top artists"
                   subtitle="Artists you listen to most"
-                  icon={TrendingUp}
                   items={spotifyTopArtists.map((a) => ({
                     id: a.id,
                     name: a.name,
@@ -1527,339 +1591,279 @@ export default function DiscoverPage() {
                     release_date: "",
                     type: "album" as const,
                   }))}
-                  onQueue={handleAddToQueue}
                   queuedIds={queuedIds}
                 />
-              )}
-            </>
-          )}
-          {!activeMoodPill && spotifyOAuthConnected === false && (
-            <div
-              className="border-2 p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4"
-              style={{ borderColor: "var(--border-raw)", background: "var(--surface)" }}
-            >
-              <div
-                className="w-10 h-10 flex items-center justify-center border-2 shrink-0"
-                style={{ borderColor: "#1DB954", color: "#1DB954" }}
-              >
-                <Disc3 className="w-5 h-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium mb-0.5">Connect Spotify for personalised picks</p>
-                <p className="text-xs text-muted-foreground">
-                  See your top tracks and artists right here once you connect your account.
-                </p>
-              </div>
-              <a href="/api/spotify/connect" className="shrink-0">
-                <button
-                  className="px-4 py-2 text-sm font-medium border-2"
-                  style={{ backgroundColor: "#1DB954", color: "#000", borderColor: "#1DB954" }}
+              </>
+            )}
+            {!activeMood && spotifyOAuthConnected === false && (
+              <section className="frame flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h2 className="t-card">Connect Spotify for personalised picks</h2>
+                  <p className="t-meta mt-1">
+                    See your top tracks and artists right here once you connect your account.
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="shrink-0 border-[#1DB954] bg-[#1DB954] text-black hover:border-[#1DB954] hover:bg-[#1DB954]/85 hover:text-black"
                 >
-                  Connect Spotify
-                </button>
-              </a>
-            </div>
-          )}
+                  <a href="/api/spotify/connect">Connect Spotify</a>
+                </Button>
+              </section>
+            )}
 
-          {/* New Releases row */}
-          {!activeMoodPill && (
-            <MusicRow
-              title="New Releases"
-              subtitle="Fresh drops from Spotify"
-              icon={Disc3}
-              items={newReleases}
-              loading={musicLoading}
-              onQueue={handleAddToQueue}
-              queuedIds={queuedIds}
-            />
-          )}
+            {/* New releases */}
+            {!activeMood && (
+              <MusicShelf
+                title="New releases"
+                subtitle="New this week on Spotify"
+                items={newReleases}
+                loading={musicLoading}
+                onQueue={handleAddToQueue}
+                queuedIds={queuedIds}
+              />
+            )}
 
-          {/* Personalised rows — based on top artists in listen_logs */}
-          {!activeMoodPill && (
-            <>
-              {personalMusicLoading
-                ? (
-                  <MusicRow
-                    title="From Your Library"
-                    subtitle="Based on artists you've logged"
-                    icon={Headphones}
-                    items={[]}
-                    loading
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                )
-                : personalMusicRows.map((row) => (
-                  <MusicRow
+            {/* Personalised shelves — based on the artists logged most */}
+            {!activeMood &&
+              (personalMusicLoading ? (
+                <MusicShelf
+                  title="From your library"
+                  subtitle="Based on artists you've logged"
+                  items={[]}
+                  loading
+                  queuedIds={queuedIds}
+                />
+              ) : (
+                personalMusicRows.map((row) => (
+                  <MusicShelf
                     key={row.title}
                     title={row.title}
-                    icon={Headphones}
                     items={row.items}
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))}
-            </>
-          )}
-
-          {/* Genre rows */}
-          {!activeMoodPill && (
-            <>
-              {musicGenreLoading
-                ? MUSIC_GENRE_QUERIES.slice(0, 3).map((g) => (
-                  <MusicRow
-                    key={g.title}
-                    title={g.title}
-                    subtitle={g.subtitle}
-                    icon={Music2}
-                    items={[]}
-                    loading
                     onQueue={handleAddToQueue}
                     queuedIds={queuedIds}
                   />
                 ))
-                : musicGenreRows.map((row) => (
-                  <MusicRow
-                    key={row.title}
-                    title={row.title}
-                    subtitle={row.subtitle}
-                    icon={Music2}
-                    items={row.items}
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))}
-            </>
-          )}
-        </div>
-      )}
+              ))}
 
-      {/* ─── FILM MODE — Tabs ─── */}
-      {mode !== "music" && (
-      <div className="flex items-center gap-1 border-b-2 border-border">
-        <button
-          onClick={() => setActiveTab("for-you")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "for-you"
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-          For You
-          {activeTab === "for-you" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("browse")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "browse"
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Compass className="w-4 h-4" />
-          Browse
-          {activeTab === "browse" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-          )}
-        </button>
-      </div>
-      )}
-
-      {/* ─── FOR YOU TAB ─── */}
-      {mode !== "music" && activeTab === "for-you" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-semibold">Recommended For You</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              {refreshStatus === "ok" && !mlLoading && !aiFilmLoading && (
-                <span className="text-xs text-green-500">Updated</span>
-              )}
-              {refreshStatus === "error" && !mlLoading && (
-                <span className="text-xs text-destructive">Refresh failed — ML server may be down</span>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => { handleRefreshMlRecs(); handleRefreshAiFilmRecs(); }}
-                disabled={mlLoading || aiFilmLoading}
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${(mlLoading || aiFilmLoading) ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {(mlLoading || aiFilmLoading) && aiFilmRecs.length === 0 && mlRecs.length === 0 ? (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
-              </div>
-            </div>
-          ) : (aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length === 0 ? (
-            <div className="border-2 border-dashed border-border p-12 text-center">
-              <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
-              <p className="text-sm font-medium mb-1">Log 5 or more watches to unlock personalised picks</p>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                The ML engine needs enough signal to build your taste profile. Keep logging!
-              </p>
-            </div>
-          ) : (
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-4 h-4 text-primary shrink-0" />
-                <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length} picks</span>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).map((item, idx) => (
-                  <ExplanationTooltip key={`rec-${item.id}-${idx}`} explanation={(item as any).explanation}>
-                    <RecMediaCard
-                      item={item}
-                      onClick={handleItemClick}
-                      onWatchlist={handleAddMlToWatchlist}
-                      watchlisted={mlWatchlistedIds.has(item.id)}
-                      rank={idx + 1}
+            {/* Genre shelves */}
+            {!activeMood &&
+              (musicGenreLoading
+                ? MUSIC_GENRE_QUERIES.slice(0, 3).map((g) => (
+                    <MusicShelf
+                      key={g.title}
+                      title={g.title}
+                      subtitle={g.subtitle}
+                      items={[]}
+                      loading
+                      queuedIds={queuedIds}
                     />
-                  </ExplanationTooltip>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+                  ))
+                : musicGenreRows.map((row) => (
+                    <MusicShelf
+                      key={row.title}
+                      title={row.title}
+                      subtitle={row.subtitle}
+                      items={row.items}
+                      onQueue={handleAddToQueue}
+                      queuedIds={queuedIds}
+                    />
+                  )))}
+          </>
+        )}
 
-      {/* ─── BROWSE TAB ─── */}
-      {mode !== "music" && activeTab === "browse" && (
-        <div className="flex flex-col gap-6">
-          {/* Genre Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-            <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0 mr-1">Genre</span>
-            {DEFAULT_GENRE_PILLS.map((genre) => (
-              <button
-                key={genre.id}
-                onClick={() => handleGenreClick(genre)}
-                className={`shrink-0 px-3 py-1.5 text-xs font-medium border-2 transition-colors ${
-                  selectedGenre?.id === genre.id
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border hover:border-primary/50"
-                }`}
+        {/* ─── FILM MODE ─── */}
+        {!isMusic && (
+          <div>
+            <TabBar
+              className="mb-10"
+              label="Discover sections"
+              idBase="discover"
+              value={activeTab}
+              onChange={setActiveTab}
+              tabs={TABS}
+            />
+
+            {/* ─── For you ─── */}
+            {activeTab === "for-you" && (
+              <section
+                role="tabpanel"
+                id="discover-panel-for-you"
+                aria-labelledby="discover-tab-for-you"
               >
-                {genre.name}
-              </button>
-            ))}
-          </div>
+                <SectionHeader
+                  title="Recommended for you"
+                  className="mb-3"
+                  meta={
+                    filmRecsLoading
+                      ? undefined
+                      : refreshStatus === "ok"
+                        ? "Updated"
+                        : filmRecs.length > 0
+                          ? `${filmRecs.length} picks`
+                          : undefined
+                  }
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshFilmRecs}
+                      disabled={filmRecsLoading}
+                    >
+                      <RefreshCw aria-hidden="true" />
+                      {filmRecsLoading ? "Refreshing" : "Refresh"}
+                    </Button>
+                  }
+                />
+                <p className="t-meta mb-5">Based on what you have rated highly.</p>
 
-          {/* Genre Browse Results */}
-          {selectedGenre && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="font-display text-lg font-bold">{selectedGenre.name} Movies</h2>
-                  <p className="text-xs text-muted-foreground">Top rated by audience score</p>
-                </div>
-                <button
-                  onClick={() => { setSelectedGenre(null); setGenreResults([]); }}
-                  className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {genreLoading ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonCard key={i} />)}
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {genreResults.map((item) => (
-                    <MediaCard key={`${item.media_type}-${item.id}`} item={item} onClick={handleItemClick} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                {refreshStatus === "error" && !mlLoading && (
+                  <Notice tone="error" title="Couldn't refresh your picks" className="mb-6">
+                    The recommendation service didn&apos;t respond, so these may be out of date. Try again
+                    in a few minutes.
+                  </Notice>
+                )}
 
-          {/* Browse Rows */}
-          {!selectedGenre && (
-            <>
-              <MediaRow
-                title="Trending Now"
-                icon={TrendingUp}
-                items={trending}
-                loading={browseLoading}
-                onItemClick={handleItemClick}
-              />
-
-              <MediaRow
-                title="Now in Theatres"
-                icon={Clapperboard}
-                items={filterWatched(nowPlaying)}
-                loading={browseLoading}
-                onItemClick={handleItemClick}
-              />
-
-              <MediaRow
-                title="Coming Soon"
-                subtitle="Upcoming releases"
-                icon={Calendar}
-                items={filterWatched(upcoming)}
-                loading={browseLoading}
-                onItemClick={handleItemClick}
-              />
-
-              {/* Picked For You */}
-              {(personalLoading || forYouRows.length > 0) && (
-                <>
-                  <SectionDivider icon={Sparkles} title="Picked For You" subtitle="Based on your watch history" />
-
-                  {personalLoading ? (
-                    <div className="space-y-6">
-                      <MediaRow title="Loading recommendations..." items={[]} loading={true} onItemClick={handleItemClick} />
-                      <MediaRow title="" items={[]} loading={true} onItemClick={handleItemClick} />
-                    </div>
-                  ) : (
-                    forYouRows.map((row) => (
-                      <MediaRow
-                        key={row.id}
-                        title={row.title}
-                        subtitle={row.subtitle}
-                        icon={
-                          row.id.startsWith("genre-") ? Heart :
-                          row.id.startsWith("director-") ? Megaphone :
-                          Star
-                        }
-                        items={row.items}
-                        onItemClick={handleItemClick}
+                {filmRecsLoading && filmRecs.length === 0 ? (
+                  <>
+                    <LoadingLine label="Finding picks for you" className="mb-5" />
+                    <MediaGridSkeleton count={10} />
+                  </>
+                ) : filmRecs.length > 0 ? (
+                  <MediaGrid>
+                    {filmRecs.map((item, idx) => (
+                      <FilmCard
+                        key={`rec-${item.id}-${idx}`}
+                        item={item}
+                        rank={idx + 1}
+                        onWatchlist={handleAddToWatchlist}
+                        watchlisted={mlWatchlistedIds.has(item.id)}
                       />
-                    ))
+                    ))}
+                  </MediaGrid>
+                ) : aiFilmError ? (
+                  <Notice tone="error" title="Couldn't load your picks">
+                    Something went wrong on our side. Press Refresh to try again.
+                  </Notice>
+                ) : (
+                  <div className="frame">
+                    <EmptyState
+                      icon={Sparkles}
+                      title="Log 5 or more watches to unlock personalised picks."
+                      description="We need a few more ratings to learn your taste. Keep logging."
+                      action={
+                        <Button asChild variant="outline">
+                          <Link href={LOG_HREF}>Log a watch</Link>
+                        </Button>
+                      }
+                    />
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* ─── Browse ─── */}
+            {activeTab === "browse" && (
+              <div
+                role="tabpanel"
+                id="discover-panel-browse"
+                aria-labelledby="discover-tab-browse"
+                className="flex flex-col gap-16"
+              >
+                <section>
+                  <SectionHeader
+                    title={selectedGenre ? `${selectedGenre.name} films` : "Pick a genre"}
+                    className={selectedGenre ? "mb-3" : undefined}
+                    action={
+                      selectedGenre ? <ClearButton label="Clear genre" onClick={clearGenre} /> : undefined
+                    }
+                  />
+                  {selectedGenre && <p className="t-meta mb-5">Top rated by audience score</p>}
+                  <ToggleGroup
+                    label="Genre"
+                    options={FILM_GENRE_OPTIONS}
+                    activeKey={selectedGenre ? String(selectedGenre.id) : null}
+                    onToggle={handleGenreToggle}
+                  />
+
+                  {selectedGenre && (
+                    <div className="mt-8">
+                      {genreLoading ? (
+                        <MediaGridSkeleton count={10} />
+                      ) : genreError ? (
+                        <Notice tone="error" title={`Couldn't load ${selectedGenre.name} films`}>
+                          Check your connection, then pick the genre again.
+                        </Notice>
+                      ) : genreResults.length === 0 ? (
+                        <div className="frame">
+                          <EmptyState
+                            icon={Film}
+                            title="Nothing turned up for that genre."
+                            description="Try another one."
+                          />
+                        </div>
+                      ) : (
+                        <MediaGrid>
+                          {genreResults.map((item) => (
+                            <FilmCard key={`${item.media_type}-${item.id}`} item={item} />
+                          ))}
+                        </MediaGrid>
+                      )}
+                    </div>
                   )}
-                </>
-              )}
+                </section>
 
-              {/* All-Time Greats */}
-              <SectionDivider icon={Crown} title="All-Time Greats" subtitle="The highest rated of all time" />
+                {!selectedGenre && (
+                  <>
+                    {browseFailed && (
+                      <Notice tone="error" title="Couldn't load films to browse">
+                        Check your connection and reload the page.
+                      </Notice>
+                    )}
 
-              <MediaRow
-                title="Top Rated Movies"
-                icon={Film}
-                items={filterWatched(topRated)}
-                loading={browseLoading}
-                onItemClick={handleItemClick}
-              />
-            </>
-          )}
-        </div>
-      )}
+                    <FilmShelf title="Trending now" items={trending} loading={browseLoading} />
+
+                    <FilmShelf
+                      title="In cinemas now"
+                      items={filterWatched(nowPlaying)}
+                      loading={browseLoading}
+                    />
+
+                    <FilmShelf
+                      title="Coming soon"
+                      subtitle="Upcoming releases"
+                      items={filterWatched(upcoming)}
+                      loading={browseLoading}
+                    />
+
+                    {/* Picked from the watch history */}
+                    {personalLoading ? (
+                      <FilmShelf
+                        title="Picked for you"
+                        subtitle="Based on your watch history"
+                        items={[]}
+                        loading
+                      />
+                    ) : (
+                      forYouRows.map((row) => (
+                        <FilmShelf key={row.id} title={row.title} subtitle={row.subtitle} items={row.items} />
+                      ))
+                    )}
+
+                    <FilmShelf
+                      title="All-time greats"
+                      subtitle="The highest rated films of all time"
+                      items={filterWatched(topRated)}
+                      loading={browseLoading}
+                    />
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

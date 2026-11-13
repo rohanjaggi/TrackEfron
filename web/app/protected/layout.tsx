@@ -77,7 +77,7 @@ export default function ProtectedLayout({
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" className="h-6 w-auto object-contain" />
-              <span className="font-display text-lg font-semibold text-[var(--text)]">
+              <span className="font-display text-[18px] font-semibold text-[var(--text)]">
                 TrackEfron
               </span>
             </div>

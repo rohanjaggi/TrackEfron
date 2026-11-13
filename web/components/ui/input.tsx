@@ -1,5 +1,7 @@
+"use client";
+
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -53,4 +55,38 @@ const Select = React.forwardRef<
 ));
 Select.displayName = "Select";
 
-export { Input, Textarea, Select };
+/**
+ * Secret entry (passwords, API keys) with a show/hide toggle inside the field.
+ * `noun` names the secret for the toggle's accessible label.
+ */
+const PasswordInput = React.forwardRef<
+  HTMLInputElement,
+  Omit<React.ComponentProps<"input">, "type"> & { noun?: string; wrapperClassName?: string }
+>(({ className, wrapperClassName, noun = "password", ...props }, ref) => {
+  const [shown, setShown] = React.useState(false);
+  return (
+    <div className={cn("relative", wrapperClassName)}>
+      <input
+        type={shown ? "text" : "password"}
+        className={cn(controlClass, "h-10 pr-11", className)}
+        ref={ref}
+        {...props}
+      />
+      <button
+        type="button"
+        aria-label={shown ? `Hide ${noun}` : `Show ${noun}`}
+        onClick={() => setShown((v) => !v)}
+        className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground transition-colors duration-cut ease-mech hover:text-foreground"
+      >
+        {shown ? (
+          <EyeOff className="size-3.5" aria-hidden="true" />
+        ) : (
+          <Eye className="size-3.5" aria-hidden="true" />
+        )}
+      </button>
+    </div>
+  );
+});
+PasswordInput.displayName = "PasswordInput";
+
+export { Input, Textarea, Select, PasswordInput };

@@ -109,6 +109,28 @@
     --rule-style: solid;
   }
 
+  /* Pin a subtree to one world regardless of the live mode (side-by-side comparisons). */
+  .mode-film {
+    --mode-accent: var(--film);
+    --mode-accent-dim: color-mix(in srgb, var(--film) 13%, transparent);
+    --mode-accent-glow: color-mix(in srgb, var(--film) 26%, transparent);
+    --fill-timing: var(--ease-mech);
+    --frame-fill: var(--surface);
+    --frame-bevel: 0 0 0 0 transparent;
+    --tick-opacity: 1;
+    --rule-style: double;
+  }
+  .mode-music {
+    --mode-accent: var(--music);
+    --mode-accent-dim: color-mix(in srgb, var(--music) 13%, transparent);
+    --mode-accent-glow: color-mix(in srgb, var(--music) 26%, transparent);
+    --fill-timing: steps(4, end);
+    --frame-fill: linear-gradient(180deg, #1a1a16 0%, #141411 100%);
+    --frame-bevel: inset 0 1px 0 rgba(232, 228, 218, 0.07), inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+    --tick-opacity: 0;
+    --rule-style: solid;
+  }
+
   * {
     @apply border-border;
   }
@@ -193,6 +215,7 @@ body::before {
     color: var(--text);
     font-variant-numeric: lining-nums;
   }
+  .t-title em { font-style: italic; font-weight: 400; color: var(--mode-accent); }
   .t-display strong { font-weight: 600; }
   .t-display em { font-style: italic; color: var(--mode-accent); }
 
@@ -358,10 +381,12 @@ body::before {
     border-bottom: 3px var(--rule-style) var(--border-raw);
     position: relative;
   }
-  [data-mode="music"] .rule {
+  [data-mode="music"] .rule:not(.mode-film *),
+  .mode-music .rule {
     border-bottom-width: 1px;
   }
-  [data-mode="music"] .rule::after {
+  [data-mode="music"] .rule:not(.mode-film *)::after,
+  .mode-music .rule::after {
     content: "";
     position: absolute;
     left: 0;
@@ -393,6 +418,11 @@ body::before {
     background: var(--surface);
   }
 
+  /* Same hairline, no hover wash: for lists that are not interactive. */
+  .row-static {
+    border-bottom: 1px solid var(--border-raw);
+  }
+
   /* ═══ Posters and covers ═════════════════════════════════════ */
   /* Artwork rests slightly drained so it comes up to full colour under the cursor. */
   .artwork {
@@ -401,6 +431,8 @@ body::before {
   }
   .media-card:hover .artwork,
   .media-card:focus-within .artwork,
+  .group:hover .artwork,
+  .group:focus-within .artwork,
   .artwork-live {
     filter: none;
   }

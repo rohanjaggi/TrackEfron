@@ -1,72 +1,83 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, User, AtSign, Key } from "lucide-react";
 
-export function SignUpForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+import { AuthLink, AuthShell, PasswordInput, authErrorMessage } from "@/components/auth-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Field, Notice } from "@/components/ui/page";
+import { createClient } from "@/lib/supabase/client";
+
+const USERNAME_MIN = 3;
+const PASSWORD_MIN = 6;
+
+// Only lowercase letters, numbers and underscores.
+const validateUsername = (value: string) => /^[a-z0-9_]+$/.test(value);
+
+/** The rule the submit handler enforces, as a message. Null when the username passes. */
+function usernameProblem(value: string, checkLength: boolean): string | null {
+  if (value && !validateUsername(value)) {
+    return "Use lowercase letters, numbers and underscores only.";
+  }
+  if (checkLength && value.trim().length < USERNAME_MIN) {
+    return `Username must be at least ${USERNAME_MIN} characters.`;
+  }
+  return null;
+}
+
+function keyProvider(key: string): string {
+  if (key.startsWith("sk-ant-")) return "Anthropic";
+  if (key.startsWith("AIza")) return "Gemini";
+  if (key.startsWith("sk-")) return "OpenAI";
+  return "Unknown";
+}
+
+export function SignUpForm() {
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
   const [aiApiKey, setAiApiKey] = useState("");
+  const [usernameTouched, setUsernameTouched] = useState(false);
+  const [repeatTouched, setRepeatTouched] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const validateUsername = (value: string) => {
-    // Only allow lowercase letters, numbers, and underscores
-    return /^[a-z0-9_]+$/.test(value);
-  };
+  const nameError = submitted && !fullName.trim() ? "Enter your name." : null;
+  const usernameError = usernameProblem(username, usernameTouched || submitted);
+  const repeatError =
+    (repeatTouched || submitted) && repeatPassword && password !== repeatPassword
+      ? "These passwords don't match."
+      : null;
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const supabase = createClient();
-    setIsLoading(true);
+    setSubmitted(true);
     setError(null);
 
-    if (!fullName.trim()) {
-      setError("Please enter your name");
-      setIsLoading(false);
+    // Field-level problems are shown at the field; send focus to the first one.
+    const firstInvalid = !fullName.trim()
+      ? "fullName"
+      : usernameProblem(username, true)
+        ? "username"
+        : password !== repeatPassword
+          ? "repeat-password"
+          : null;
+    if (firstInvalid) {
+      document.getElementById(firstInvalid)?.focus();
       return;
     }
 
-    if (!username.trim() || username.length < 3) {
-      setError("Username must be at least 3 characters");
-      setIsLoading(false);
-      return;
-    }
-
-    if (!validateUsername(username)) {
-      setError("Username can only contain lowercase letters, numbers, and underscores");
-      setIsLoading(false);
-      return;
-    }
-
-    if (password !== repeatPassword) {
-      setError("Passwords do not match");
-      setIsLoading(false);
-      return;
-    }
+    const fallback = "We couldn't create your account. Try again in a moment.";
+    setIsLoading(true);
 
     try {
+      const supabase = createClient();
       const metadata: Record<string, string> = {
         full_name: fullName.trim(),
         username: username.toLowerCase().trim(),
@@ -82,136 +93,136 @@ export function SignUpForm({
           data: metadata,
         },
       });
-      if (error) throw error;
+      if (error) {
+        setError(authErrorMessage(error, fallback));
+        return;
+      }
       router.push("/auth/sign-up-success");
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+    } catch (err: unknown) {
+      setError(authErrorMessage(err, fallback));
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Link
-        href="/"
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft size={16} />
-        Back
-      </Link>
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-display text-2xl font-bold">Sign up</CardTitle>
-          <CardDescription>Create your TrackEfron account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignUp}>
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="fullName"
-                    type="text"
-                    placeholder="John Doe"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="username">Username</Label>
-                <div className="relative">
-                  <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="username"
-                    type="text"
-                    placeholder="johndoe"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                    className="pl-10"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Lowercase letters, numbers, and underscores only
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="repeat-password">Repeat Password</Label>
-                </div>
-                <Input
-                  id="repeat-password"
-                  type="password"
-                  required
-                  value={repeatPassword}
-                  onChange={(e) => setRepeatPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="ai-api-key">AI API Key (Optional)</Label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="ai-api-key"
-                    type="password"
-                    placeholder="sk-ant-... / sk-... / AIza..."
-                    value={aiApiKey}
-                    onChange={(e) => setAiApiKey(e.target.value)}
-                    className="pl-10"
-                  />
-                  {aiApiKey && (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 border border-primary text-primary">
-                      {aiApiKey.startsWith("sk-ant-") ? "Anthropic" : aiApiKey.startsWith("AIza") ? "Gemini" : aiApiKey.startsWith("sk-") ? "OpenAI" : "?"}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Paste an Anthropic or OpenAI key to enable AI features. You can add this later in profile settings.
-                </p>
-              </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Creating an account..." : "Sign up"}
-              </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Already have an account?{" "}
-              <Link href="/auth/login" className="underline underline-offset-4">
-                Login
-              </Link>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell
+      title="Sign up"
+      description="Start a diary of the films, shows and music you love."
+      footer={
+        <>
+          Already have an account? <AuthLink href="/auth/login">Sign in</AuthLink>
+        </>
+      }
+    >
+      <form onSubmit={handleSignUp} className="flex flex-col gap-5">
+        <Field label="Name" htmlFor="fullName" error={nameError}>
+          <Input
+            id="fullName"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            aria-invalid={nameError ? true : undefined}
+            aria-describedby={nameError ? "fullName-error" : undefined}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </Field>
+        <Field
+          label="Username"
+          htmlFor="username"
+          hint="At least 3 characters: lowercase letters, numbers and underscores."
+          error={usernameError}
+        >
+          <Input
+            id="username"
+            name="username"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            required
+            aria-invalid={usernameError ? true : undefined}
+            aria-describedby={usernameError ? "username-error" : "username-hint"}
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            onBlur={() => setUsernameTouched(true)}
+          />
+        </Field>
+        <Field label="Email" htmlFor="email">
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
+        <Field
+          label="Password"
+          htmlFor="password"
+          hint={`At least ${PASSWORD_MIN} characters.`}
+        >
+          <PasswordInput
+            id="password"
+            name="password"
+            autoComplete="new-password"
+            required
+            minLength={PASSWORD_MIN}
+            aria-describedby="password-hint"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <Field label="Repeat password" htmlFor="repeat-password" error={repeatError}>
+          <PasswordInput
+            id="repeat-password"
+            name="repeat-password"
+            autoComplete="new-password"
+            required
+            aria-invalid={repeatError ? true : undefined}
+            aria-describedby={repeatError ? "repeat-password-error" : undefined}
+            value={repeatPassword}
+            onChange={(e) => setRepeatPassword(e.target.value)}
+            onBlur={() => setRepeatTouched(true)}
+          />
+        </Field>
+        <Field
+          label="AI API key (optional)"
+          htmlFor="ai-api-key"
+          hint="Paste an Anthropic, OpenAI or Gemini key to turn on AI features. You can add it later in your profile settings."
+        >
+          <div className="relative">
+            <Input
+              id="ai-api-key"
+              name="ai-api-key"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              aria-describedby="ai-api-key-hint"
+              className={aiApiKey ? "pr-28" : undefined}
+              value={aiApiKey}
+              onChange={(e) => setAiApiKey(e.target.value)}
+            />
+            {aiApiKey && (
+              <Badge className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                {keyProvider(aiApiKey)}
+              </Badge>
+            )}
+          </div>
+        </Field>
+        {error && <Notice tone="error">{error}</Notice>}
+        <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+          {isLoading ? "Creating your account…" : "Sign up"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

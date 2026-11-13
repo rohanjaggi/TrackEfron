@@ -41,10 +41,13 @@ export function PageLoading({
 export function MediaGridSkeleton({
   count = 10,
   aspect = "poster",
+  dense = false,
   className,
 }: {
   count?: number;
   aspect?: "poster" | "square";
+  /** Match `MediaGrid dense` (six columns on wide screens). */
+  dense?: boolean;
   className?: string;
 }) {
   return (
@@ -52,7 +55,8 @@ export function MediaGridSkeleton({
       role="status"
       aria-label="Loading"
       className={cn(
-        "grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5",
+        "grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 md:grid-cols-4",
+        dense ? "lg:grid-cols-6" : "lg:grid-cols-5",
         className,
       )}
     >
@@ -68,12 +72,21 @@ export function MediaGridSkeleton({
 }
 
 /** Loading placeholder for a list of rows. */
-export function RowListSkeleton({ count = 4, className }: { count?: number; className?: string }) {
+export function RowListSkeleton({
+  count = 4,
+  aspect = "poster",
+  className,
+}: {
+  count?: number;
+  /** Thumbnail shape: posters for film and TV, squares for music. */
+  aspect?: "poster" | "square";
+  className?: string;
+}) {
   return (
     <div role="status" aria-label="Loading" className={className}>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="hairline flex items-center gap-4 py-4">
-          <Skeleton className="h-14 w-10 shrink-0" />
+          <Skeleton className={cn("w-10 shrink-0", aspect === "square" ? "h-10" : "h-14")} />
           <div className="flex flex-1 flex-col gap-2">
             <Skeleton className="h-3 w-[55%]" />
             <Skeleton className="h-2.5 w-[30%]" />

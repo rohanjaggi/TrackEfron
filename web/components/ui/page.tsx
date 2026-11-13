@@ -7,25 +7,31 @@ import { cn } from "@/lib/utils";
  * Page title block. One per page.
  * `title` may contain <strong> (a name) and <em> (the italic accent clause):
  *   <PageHeader title={<>Your <em>library</em></>} />
+ * `media` puts artwork or an avatar to the left of the title.
  */
 export function PageHeader({
   title,
   description,
   actions,
+  media,
   className,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
+  media?: React.ReactNode;
   className?: string;
 }) {
   return (
     <header
       className={cn("mb-10 flex flex-wrap items-end justify-between gap-x-8 gap-y-5", className)}
     >
-      <div className="min-w-0">
-        <h1 className="t-display">{title}</h1>
-        {description && <p className="t-meta mt-3 max-w-[62ch]">{description}</p>}
+      <div className="flex min-w-0 items-end gap-5">
+        {media && <div className="shrink-0">{media}</div>}
+        <div className="min-w-0">
+          <h1 className="t-display">{title}</h1>
+          {description && <div className="t-meta mt-3 max-w-[62ch]">{description}</div>}
+        </div>
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2.5">{actions}</div>}
     </header>
@@ -37,25 +43,41 @@ export function SectionHeader({
   title,
   meta,
   action,
+  description,
   as: Heading = "h2",
+  size = "md",
+  flush = false,
   className,
 }: {
   title: React.ReactNode;
   /** Short right-hand note, e.g. a count. */
   meta?: React.ReactNode;
   action?: React.ReactNode;
+  /** One plain line under the rule explaining the section. */
+  description?: React.ReactNode;
   as?: "h2" | "h3";
+  /** `lg` is for marketing pages only. */
+  size?: "md" | "lg";
+  /** No space below, so a ruled list can sit directly on the rule. */
+  flush?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cn("rule mb-5 flex items-baseline justify-between gap-4 pb-3", className)}>
-      <Heading className="t-title min-w-0">{title}</Heading>
-      {(meta || action) && (
-        <div className="flex shrink-0 items-baseline gap-4">
-          {meta && <span className="label-upper">{meta}</span>}
-          {action}
-        </div>
-      )}
+    <div className={cn(!flush && "mb-5", className)}>
+      <div className="rule flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-3">
+        <Heading
+          className={cn("t-title min-w-0", size === "lg" && "text-[clamp(28px,3.4vw,40px)] font-normal")}
+        >
+          {title}
+        </Heading>
+        {(meta || action) && (
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
+            {meta && <span className="label-upper">{meta}</span>}
+            {action}
+          </div>
+        )}
+      </div>
+      {description && <p className="t-meta mt-3.5 max-w-[68ch]">{description}</p>}
     </div>
   );
 }
@@ -95,17 +117,20 @@ export function StatBlock({
 export function LeaderRow({
   label,
   value,
+  truncate = false,
   className,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
+  /** Keep the row on one line and cut a long label with an ellipsis. */
+  truncate?: boolean;
   className?: string;
 }) {
   return (
     <div className={cn("flex items-baseline py-1.5 text-[12px]", className)}>
-      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("text-muted-foreground", truncate && "min-w-0 truncate")}>{label}</span>
       <i className="leader" aria-hidden="true" />
-      <span className="text-foreground">{value}</span>
+      <span className={cn("text-foreground", truncate ? "shrink-0" : "text-right")}>{value}</span>
     </div>
   );
 }
@@ -116,22 +141,27 @@ export function EmptyState({
   title,
   description,
   action,
+  titleAs: Title = "p",
   className,
 }: {
   icon?: LucideIcon;
   title: React.ReactNode;
   description?: React.ReactNode;
   action?: React.ReactNode;
+  /** Use "h1" when the empty state is the whole page (not found, error). */
+  titleAs?: "p" | "h1" | "h2";
   className?: string;
 }) {
   return (
     <div className={cn("flex flex-col items-center px-4 py-16 text-center", className)}>
       {Icon && (
-        <div className="frame mb-5 flex h-14 w-14 items-center justify-center">
+        <div className="mb-5 flex h-14 w-14 items-center justify-center border border-border bg-surface-2">
           <Icon className="size-6 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
-      <p className="font-display text-[22px] italic leading-snug text-foreground">{title}</p>
+      <Title className="font-display text-[22px] font-normal italic leading-snug text-foreground">
+        {title}
+      </Title>
       {description && <p className="t-meta mx-auto mt-2 max-w-[46ch]">{description}</p>}
       {action && <div className="mt-6 flex flex-wrap justify-center gap-2.5">{action}</div>}
     </div>
@@ -143,11 +173,14 @@ export function Notice({
   tone = "info",
   title,
   children,
+  action,
   className,
 }: {
   tone?: "error" | "success" | "warning" | "info";
   title?: React.ReactNode;
   children?: React.ReactNode;
+  /** A button or link offering the way out, e.g. "Try again". */
+  action?: React.ReactNode;
   className?: string;
 }) {
   const tones = {
@@ -159,20 +192,33 @@ export function Notice({
   return (
     <div
       role={tone === "error" ? "alert" : "status"}
-      className={cn("border px-3.5 py-3 text-[12px] leading-relaxed", tones[tone], className)}
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border px-3.5 py-3 text-[12px] leading-relaxed",
+        tones[tone],
+        className,
+      )}
     >
-      {title && <p className="mb-0.5 font-medium uppercase tracking-[0.08em]">{title}</p>}
-      {children && <div className={title ? "text-foreground" : undefined}>{children}</div>}
+      <div className="min-w-0">
+        {title && <p className="mb-0.5 font-medium uppercase tracking-[0.08em]">{title}</p>}
+        {children && <div className={title ? "text-foreground" : undefined}>{children}</div>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }
 
-/** A labelled form row with hint and error wired to the control via aria. */
+/**
+ * A labelled form row. Give it the control's id as `htmlFor` and it wires the
+ * hint and error to the control (aria-describedby, aria-invalid) for you.
+ */
 export function Field({
   label,
   htmlFor,
   hint,
   error,
+  optional = false,
+  hideLabel = false,
+  labelAction,
   children,
   className,
 }: {
@@ -180,15 +226,39 @@ export function Field({
   htmlFor?: string;
   hint?: React.ReactNode;
   error?: React.ReactNode;
+  /** Appends "optional" to the label. */
+  optional?: boolean;
+  /** Keep the label for assistive tech but hide it visually (toolbars). */
+  hideLabel?: boolean;
+  /** A small link or button on the label's line, e.g. "Forgot your password?". */
+  labelAction?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
+  const describedBy = htmlFor ? (error ? `${htmlFor}-error` : hint ? `${htmlFor}-hint` : undefined) : undefined;
+
+  // Wire aria onto a single control child without overriding what the caller set.
+  let control = children;
+  if (htmlFor && React.isValidElement<Record<string, unknown>>(children)) {
+    const props = children.props;
+    if (props.id === htmlFor) {
+      control = React.cloneElement(children, {
+        "aria-describedby": props["aria-describedby"] ?? describedBy,
+        "aria-invalid": props["aria-invalid"] ?? (error ? true : undefined),
+      });
+    }
+  }
+
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <label htmlFor={htmlFor} className="label-upper">
-        {label}
-      </label>
-      {children}
+      <div className={cn("flex items-baseline justify-between gap-3", hideLabel && "sr-only")}>
+        <label htmlFor={htmlFor} className="label-upper">
+          {label}
+          {optional && <span className="ml-1.5 normal-case tracking-normal text-dim">optional</span>}
+        </label>
+        {labelAction}
+      </div>
+      {control}
       {error ? (
         <p id={htmlFor ? `${htmlFor}-error` : undefined} role="alert" className="text-[12px] text-danger">
           {error}

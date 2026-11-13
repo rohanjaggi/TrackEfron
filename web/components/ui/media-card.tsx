@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import Link from "next/link";
 import { Film, type LucideIcon } from "lucide-react";
@@ -47,6 +49,7 @@ export function MediaCard({
   fallbackIcon: Fallback = Film,
   className,
 }: MediaCardProps) {
+  const [broken, setBroken] = React.useState(false);
   const stretched =
     "after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:outline-none";
 
@@ -60,13 +63,14 @@ export function MediaCard({
           aspect === "square" ? "aspect-square" : "aspect-[2/3]",
         )}
       >
-        {image ? (
+        {image && !broken ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={image}
             alt=""
             loading="lazy"
             decoding="async"
+            onError={() => setBroken(true)}
             className="artwork h-full w-full object-cover"
           />
         ) : (

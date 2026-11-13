@@ -1,21 +1,24 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Check, Mail, Search, UserPlus, Users, UserX, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
+import { LoadingLine, RowListSkeleton } from "@/components/ui/loading";
 import {
-  Users,
-  Search,
-  UserPlus,
-  UserCheck,
-  UserX,
-  Clock,
-  Check,
-  X,
-  Loader2,
-  Mail,
-} from "lucide-react";
+  Avatar,
+  EmptyState,
+  Field,
+  Notice,
+  PageHeader,
+  SectionHeader,
+} from "@/components/ui/page";
+import { TabBar } from "@/components/ui/segmented-control";
+import { useToast } from "@/components/ui/toast";
+import { useMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
 
 type ActiveTab = "friends" | "requests" | "find";
@@ -41,29 +44,54 @@ type SearchResultUser = Profile & {
   friendshipId?: string;
 };
 
+const TAB_ID_BASE = "friends";
+
+const displayName = (profile: Profile) => profile.full_name || profile.username;
+
+/** One person in a ruled list: square avatar, name linking to their page, then the row's action. */
+function PersonRow({ profile, children }: { profile: Profile; children?: React.ReactNode }) {
+  const name = displayName(profile);
+  return (
+    <li className="row-item flex flex-wrap items-center gap-x-4 gap-y-2 px-1 py-3.5">
+      <Avatar src={profile.avatar_url} name={name} size={44} />
+      <div className="min-w-0 flex-1 basis-40">
+        <Link
+          href={`/protected/user/${profile.username}`}
+          className="t-card block truncate transition-colors duration-cut ease-mech hover:text-primary focus-visible:text-primary"
+        >
+          {name}
+        </Link>
+        <p className="t-meta truncate">@{profile.username}</p>
+      </div>
+      {children && <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>}
+    </li>
+  );
+}
+
 export default function FriendsPage() {
-  const router = useRouter();
+  const { mode } = useMode();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<ActiveTab>("friends");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Friends state
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
-  const [unfriendingId, setUnfriendingId] = useState<string | null>(null);
-  const [confirmUnfriendId, setConfirmUnfriendId] = useState<string | null>(null);
+  const [friendsError, setFriendsError] = useState(false);
 
   // Requests state
   const [incoming, setIncoming] = useState<Friendship[]>([]);
   const [sent, setSent] = useState<Friendship[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [sendingTo, setSendingTo] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function init() {
@@ -73,6 +101,11 @@ export default function FriendsPage() {
         setCurrentUserId(user.id);
         fetchFriends(user.id);
         fetchRequests(user.id);
+      } else {
+        setFriendsLoading(false);
+        setRequestsLoading(false);
+        setFriendsError(true);
+        setRequestsError(true);
       }
     }
     init();
@@ -81,21 +114,24 @@ export default function FriendsPage() {
   async function fetchFriends(userId: string) {
     try {
       setFriendsLoading(true);
+      setFriendsError(false);
       const supabase = createClient();
 
       // Get accepted friendships where I'm requester
-      const { data: asRequester } = await supabase
+      const { data: asRequester, error: requesterError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", userId)
         .eq("status", "accepted");
+      if (requesterError) throw requesterError;
 
       // Get accepted friendships where I'm addressee
-      const { data: asAddressee } = await supabase
+      const { data: asAddressee, error: addresseeError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", userId)
         .eq("status", "accepted");
+      if (addresseeError) throw addresseeError;
 
       const allFriendships = [...(asRequester || []), ...(asAddressee || [])];
 
@@ -106,14 +142,14 @@ export default function FriendsPage() {
 
       if (friendIds.length === 0) {
         setFriends([]);
-        setFriendsLoading(false);
         return;
       }
 
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id, username, full_name, avatar_url")
         .in("id", friendIds);
+      if (profilesError) throw profilesError;
 
       const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
@@ -128,6 +164,7 @@ export default function FriendsPage() {
       setFriends(result);
     } catch (err) {
       console.error("fetchFriends failed:", err);
+      setFriendsError(true);
     } finally {
       setFriendsLoading(false);
     }
@@ -136,23 +173,26 @@ export default function FriendsPage() {
   async function fetchRequests(userId: string) {
     try {
       setRequestsLoading(true);
+      setRequestsError(false);
       const supabase = createClient();
 
       // Incoming
-      const { data: incomingData } = await supabase
+      const { data: incomingData, error: incomingError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", userId)
         .eq("status", "pending");
+      if (incomingError) throw incomingError;
 
       const incomingIds = (incomingData || []).map((f) => f.requester_id);
 
       let incomingProfiles: Profile[] = [];
       if (incomingIds.length > 0) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .in("id", incomingIds);
+        if (error) throw error;
         incomingProfiles = data || [];
       }
 
@@ -165,20 +205,22 @@ export default function FriendsPage() {
       );
 
       // Sent
-      const { data: sentData } = await supabase
+      const { data: sentData, error: sentError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", userId)
         .eq("status", "pending");
+      if (sentError) throw sentError;
 
       const sentIds = (sentData || []).map((f) => f.addressee_id);
 
       let sentProfiles: Profile[] = [];
       if (sentIds.length > 0) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .in("id", sentIds);
+        if (error) throw error;
         sentProfiles = data || [];
       }
 
@@ -191,6 +233,7 @@ export default function FriendsPage() {
       );
     } catch (err) {
       console.error("fetchRequests failed:", err);
+      setRequestsError(true);
     } finally {
       setRequestsLoading(false);
     }
@@ -201,20 +244,23 @@ export default function FriendsPage() {
     const q = searchQuery.trim();
     if (!q || !currentUserId) {
       setSearchResults([]);
+      setSearchError(false);
       return;
     }
 
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
+        setSearchError(false);
         const supabase = createClient();
 
-        const { data: profiles } = await supabase
+        const { data: profiles, error: profilesError } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
           .neq("id", currentUserId)
           .limit(20);
+        if (profilesError) throw profilesError;
 
         if (!profiles || profiles.length === 0) {
           setSearchResults([]);
@@ -224,12 +270,13 @@ export default function FriendsPage() {
         // Check relationship status for each result
         const resultIds = profiles.map((p) => p.id);
 
-        const { data: friendships } = await supabase
+        const { data: friendships, error: friendshipsError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
           .or(
             `and(requester_id.eq.${currentUserId},addressee_id.in.(${resultIds.join(",")})),and(addressee_id.eq.${currentUserId},requester_id.in.(${resultIds.join(",")}))`
           );
+        if (friendshipsError) throw friendshipsError;
 
         const friendshipMap = new Map<string, { status: string; friendshipId: string; direction: "sent" | "received" }>();
         for (const f of friendships || []) {
@@ -256,6 +303,8 @@ export default function FriendsPage() {
         setSearchResults(results);
       } catch (err) {
         console.error("Friend search failed:", err);
+        setSearchResults([]);
+        setSearchError(true);
       } finally {
         setIsSearching(false);
       }
@@ -264,465 +313,378 @@ export default function FriendsPage() {
     return () => clearTimeout(t);
   }, [searchQuery, currentUserId]);
 
-  async function handleSendRequest(targetId: string) {
+  async function handleSendRequest(target: Profile) {
     if (!currentUserId) return;
-    setSendingTo(targetId);
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.from("friendships").insert({
-        requester_id: currentUserId,
-        addressee_id: targetId,
-        status: "pending",
+    setSendingTo(target.id);
+    const supabase = createClient();
+    const { error } = await supabase.from("friendships").insert({
+      requester_id: currentUserId,
+      addressee_id: target.id,
+      status: "pending",
+    });
+    setSendingTo(null);
+
+    // 23505: a request between these two people already exists, which is the outcome we wanted.
+    if (error && error.code !== "23505") {
+      console.error("handleSendRequest failed:", error);
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't send a request to ${displayName(target)}`,
+        description: "Check your connection and try again.",
       });
-      if (error && error.code !== "23505") throw error;
-
-      // Update search results
-      setSearchResults((prev) =>
-        prev.map((r) =>
-          r.id === targetId ? { ...r, relationshipStatus: "pending_sent" } : r
-        )
-      );
-      // Refresh sent requests
-      fetchRequests(currentUserId);
-    } catch (err) {
-      console.error("handleSendRequest failed:", err);
-      setActionError("Failed to send friend request");
-    } finally {
-      setSendingTo(null);
+      return;
     }
+
+    setSearchResults((prev) =>
+      prev.map((r) => (r.id === target.id ? { ...r, relationshipStatus: "pending_sent" } : r))
+    );
+    fetchRequests(currentUserId);
+    toast({ mark: "Sent", title: `Friend request sent to ${displayName(target)}` });
   }
 
-  async function handleAcceptRequest(friendshipId: string) {
+  async function handleAcceptRequest(friendshipId: string, from: Profile) {
     if (!currentUserId) return;
     setActioningId(friendshipId);
-    try {
-      const supabase = createClient();
-      await supabase
-        .from("friendships")
-        .update({ status: "accepted" })
-        .eq("id", friendshipId);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("friendships")
+      .update({ status: "accepted" })
+      .eq("id", friendshipId);
+    setActioningId(null);
 
-      fetchFriends(currentUserId);
-      fetchRequests(currentUserId);
-    } catch (err) {
-      console.error("handleAcceptRequest failed:", err);
-      setActionError("Failed to accept request");
-    } finally {
-      setActioningId(null);
+    if (error) {
+      console.error("handleAcceptRequest failed:", error);
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't accept the request from ${displayName(from)}`,
+        description: "Check your connection and try again.",
+      });
+      return;
     }
+
+    setSearchResults((prev) =>
+      prev.map((r) => (r.friendshipId === friendshipId ? { ...r, relationshipStatus: "friends" } : r))
+    );
+    fetchFriends(currentUserId);
+    fetchRequests(currentUserId);
+    toast({ mark: "Accepted", title: `You and ${displayName(from)} are now friends` });
   }
 
-  async function handleDeclineOrCancel(friendshipId: string) {
+  async function handleDeclineOrCancel(friendshipId: string, other: Profile, kind: "decline" | "cancel") {
     if (!currentUserId) return;
-    setActioningId(friendshipId);
-    try {
-      const supabase = createClient();
-      await supabase.from("friendships").delete().eq("id", friendshipId);
-      fetchRequests(currentUserId);
-    } catch (err) {
-      console.error("handleDeclineOrCancel failed:", err);
-      setActionError("Failed to cancel request");
-    } finally {
-      setActioningId(null);
+    const supabase = createClient();
+    const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+
+    if (error) {
+      console.error("handleDeclineOrCancel failed:", error);
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title:
+          kind === "decline"
+            ? `Couldn't decline the request from ${displayName(other)}`
+            : `Couldn't cancel your request to ${displayName(other)}`,
+        description: "Check your connection and try again.",
+      });
+      return;
     }
+
+    fetchRequests(currentUserId);
+    toast(
+      kind === "decline"
+        ? { mark: "Declined", tone: "info", title: `Request from ${displayName(other)} declined` }
+        : { mark: "Cancelled", tone: "info", title: `Request to ${displayName(other)} cancelled` }
+    );
   }
 
-  async function handleUnfriend(friendshipId: string) {
+  async function handleUnfriend(friendshipId: string, friend: Profile) {
     if (!currentUserId) return;
-    setUnfriendingId(friendshipId);
-    try {
-      const supabase = createClient();
-      await supabase.from("friendships").delete().eq("id", friendshipId);
-      setFriends(friends.filter((f) => f.id !== friendshipId));
-      setConfirmUnfriendId(null);
-    } catch (err) {
-      console.error("handleUnfriend failed:", err);
-      setActionError("Failed to unfriend");
-    } finally {
-      setUnfriendingId(null);
+    const supabase = createClient();
+    const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+
+    if (error) {
+      console.error("handleUnfriend failed:", error);
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't remove ${displayName(friend)}`,
+        description: "Check your connection and try again.",
+      });
+      return;
     }
+
+    setFriends((prev) => prev.filter((f) => f.id !== friendshipId));
+    toast({ mark: "Removed", tone: "info", title: `${displayName(friend)} removed from your friends` });
   }
 
   const pendingCount = incoming.length;
+  const trimmedQuery = searchQuery.trim();
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <div>
-        <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Friends</h1>
-        <p className="text-muted-foreground">
-          Connect with other movie lovers
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="Friends"
+        description={
+          mode === "music" ? "Connect with other music lovers" : "Connect with other film lovers"
+        }
+      />
 
-      {/* Tab Bar */}
-      <div className="flex items-center gap-1 border-2 border-border p-1 w-fit">
-        <button
-          onClick={() => setActiveTab("friends")}
-          className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === "friends"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Friends
-          {friends.length > 0 && (
-            <span className="ml-1 text-xs opacity-70">({friends.length})</span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("requests")}
-          className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "requests"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Mail className="w-4 h-4" />
-          Requests
-          {pendingCount > 0 && (
-            <span className="ml-1 min-w-[20px] h-5 flex items-center justify-center text-xs font-bold bg-destructive text-destructive-foreground rounded-full px-1.5">
-              {pendingCount}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("find")}
-          className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === "find"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Search className="w-4 h-4" />
-          Find Friends
-        </button>
-      </div>
-
-      {actionError && (
-        <div className="p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm flex items-center justify-between">
-          <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} className="text-destructive hover:underline text-xs">Dismiss</button>
-        </div>
-      )}
+      <TabBar
+        label="Friends sections"
+        idBase={TAB_ID_BASE}
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { value: "friends", label: "Friends", icon: Users, count: friends.length > 0 ? friends.length : undefined },
+          { value: "requests", label: "Requests", icon: Mail, count: pendingCount > 0 ? pendingCount : undefined },
+          { value: "find", label: "Find friends", icon: Search },
+        ]}
+      />
 
       {/* ============ FRIENDS TAB ============ */}
       {activeTab === "friends" && (
-        <>
+        <div
+          role="tabpanel"
+          id={`${TAB_ID_BASE}-panel-friends`}
+          aria-labelledby={`${TAB_ID_BASE}-tab-friends`}
+          className="mt-8"
+        >
           {friendsLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : friends.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                <Users className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">No friends yet</h2>
-              <p className="text-muted-foreground mb-6 max-w-md">
-                Search for people by username to start connecting.
-              </p>
-              <Button onClick={() => setActiveTab("find")}>
-                <Search className="w-4 h-4 mr-2" /> Find Friends
-              </Button>
-            </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {friends.map((f) => (
-                <div
-                  key={f.id}
-                  className="group border-2 border-border p-5 hover:border-primary transition-all duration-300 cursor-pointer relative"
-                  onClick={() => router.push(`/protected/user/${f.profile.username}`)}
+            <RowListSkeleton count={4} />
+          ) : friendsError ? (
+            <Notice tone="error" title="Couldn't load your friends">
+              <p>Check your connection and try again.</p>
+              {currentUserId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => fetchFriends(currentUserId)}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
-                      {f.profile.avatar_url ? (
-                        <img src={f.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="font-display text-xl font-bold text-primary">
-                          {(f.profile.full_name || f.profile.username).charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate group-hover:text-primary transition-colors">
-                        {f.profile.full_name || f.profile.username}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">@{f.profile.username}</p>
-                    </div>
-                  </div>
-
-                  {/* Unfriend button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirmUnfriendId === f.id) {
-                        handleUnfriend(f.id);
-                      } else {
-                        setConfirmUnfriendId(f.id);
-                        setTimeout(() => setConfirmUnfriendId(null), 3000);
-                      }
-                    }}
-                    className={`absolute top-3 right-3 p-2 rounded-lg transition-colors ${
-                      confirmUnfriendId === f.id
-                        ? "bg-destructive text-destructive-foreground"
-                        : "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                    }`}
-                    title={confirmUnfriendId === f.id ? "Click to confirm" : "Unfriend"}
-                  >
-                    {unfriendingId === f.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <UserX className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+                  Try again
+                </Button>
+              )}
+            </Notice>
+          ) : friends.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No friends yet"
+              description="Search for people by username to start connecting."
+              action={
+                <Button onClick={() => setActiveTab("find")}>
+                  <Search aria-hidden="true" /> Find friends
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="advance">
+              {friends.map((f) => (
+                <PersonRow key={f.id} profile={f.profile}>
+                  <ConfirmButton
+                    label="Remove"
+                    confirmLabel="Confirm remove"
+                    icon={UserX}
+                    onConfirm={() => handleUnfriend(f.id, f.profile)}
+                  />
+                </PersonRow>
               ))}
-            </div>
+            </ul>
           )}
-        </>
+        </div>
       )}
 
       {/* ============ REQUESTS TAB ============ */}
       {activeTab === "requests" && (
-        <>
+        <div
+          role="tabpanel"
+          id={`${TAB_ID_BASE}-panel-requests`}
+          aria-labelledby={`${TAB_ID_BASE}-tab-requests`}
+          className="mt-8"
+        >
           {requestsLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
+            <RowListSkeleton count={3} />
+          ) : requestsError ? (
+            <Notice tone="error" title="Couldn't load your requests">
+              <p>Check your connection and try again.</p>
+              {currentUserId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => fetchRequests(currentUserId)}
+                >
+                  Try again
+                </Button>
+              )}
+            </Notice>
           ) : (
-            <div className="space-y-8">
+            <div className="flex flex-col gap-16">
               {/* Incoming */}
-              <div>
-                <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <UserPlus className="w-5 h-5 text-primary" />
-                  Incoming Requests
-                  {incoming.length > 0 && (
-                    <span className="text-sm font-normal text-muted-foreground">({incoming.length})</span>
-                  )}
-                </h2>
+              <section>
+                <SectionHeader
+                  title="Incoming requests"
+                  meta={incoming.length > 0 ? incoming.length : undefined}
+                />
                 {incoming.length === 0 ? (
-                  <div className="border-2 border-border p-6 text-center">
-                    <p className="text-muted-foreground text-sm">No pending requests</p>
-                  </div>
+                  <EmptyState
+                    className="py-10"
+                    title="No pending requests"
+                    description="When someone asks to be your friend, it will show up here."
+                  />
                 ) : (
-                  <div className="space-y-3">
+                  <ul className="advance">
                     {incoming.map((req) => (
-                      <div
-                        key={req.id}
-                        className="border-2 border-border p-4 flex items-center gap-4"
-                      >
-                        <div
-                          className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 cursor-pointer"
-                          onClick={() => router.push(`/protected/user/${req.profile.username}`)}
+                      <PersonRow key={req.id} profile={req.profile}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAcceptRequest(req.id, req.profile)}
+                          disabled={actioningId === req.id}
                         >
-                          {req.profile.avatar_url ? (
-                            <img src={req.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="font-display text-lg font-bold text-primary">
-                              {(req.profile.full_name || req.profile.username).charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold truncate">
-                            {req.profile.full_name || req.profile.username}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">@{req.profile.username}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleAcceptRequest(req.id)}
-                            disabled={actioningId === req.id}
-                          >
-                            {actioningId === req.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <><Check className="w-4 h-4 mr-1" /> Accept</>
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-2"
-                            onClick={() => handleDeclineOrCancel(req.id)}
-                            disabled={actioningId === req.id}
-                          >
-                            <X className="w-4 h-4 mr-1" /> Decline
-                          </Button>
-                        </div>
-                      </div>
+                          <Check aria-hidden="true" />
+                          {actioningId === req.id ? "Accepting…" : "Accept"}
+                        </Button>
+                        <ConfirmButton
+                          label="Decline"
+                          confirmLabel="Confirm decline"
+                          icon={X}
+                          disabled={actioningId === req.id}
+                          onConfirm={() => handleDeclineOrCancel(req.id, req.profile, "decline")}
+                        />
+                      </PersonRow>
                     ))}
-                  </div>
+                  </ul>
                 )}
-              </div>
+              </section>
 
               {/* Sent */}
-              <div>
-                <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-muted-foreground" />
-                  Sent Requests
-                  {sent.length > 0 && (
-                    <span className="text-sm font-normal text-muted-foreground">({sent.length})</span>
-                  )}
-                </h2>
+              <section>
+                <SectionHeader
+                  title="Sent requests"
+                  meta={sent.length > 0 ? sent.length : undefined}
+                />
                 {sent.length === 0 ? (
-                  <div className="border-2 border-border p-6 text-center">
-                    <p className="text-muted-foreground text-sm">No sent requests</p>
-                  </div>
+                  <EmptyState
+                    className="py-10"
+                    title="No sent requests"
+                    description="Requests you send wait here until they are answered."
+                    action={
+                      <Button variant="outline" onClick={() => setActiveTab("find")}>
+                        <Search aria-hidden="true" /> Find friends
+                      </Button>
+                    }
+                  />
                 ) : (
-                  <div className="space-y-3">
+                  <ul className="advance">
                     {sent.map((req) => (
-                      <div
-                        key={req.id}
-                        className="border-2 border-border p-4 flex items-center gap-4"
-                      >
-                        <div
-                          className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 cursor-pointer"
-                          onClick={() => router.push(`/protected/user/${req.profile.username}`)}
-                        >
-                          {req.profile.avatar_url ? (
-                            <img src={req.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="font-display text-lg font-bold text-primary">
-                              {(req.profile.full_name || req.profile.username).charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold truncate">
-                            {req.profile.full_name || req.profile.username}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">@{req.profile.username}</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-muted-foreground">Pending</span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-2"
-                            onClick={() => handleDeclineOrCancel(req.id)}
-                            disabled={actioningId === req.id}
-                          >
-                            {actioningId === req.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <><X className="w-4 h-4 mr-1" /> Cancel</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
+                      <PersonRow key={req.id} profile={req.profile}>
+                        <Badge variant="outline">Pending</Badge>
+                        <ConfirmButton
+                          label="Cancel request"
+                          confirmLabel="Confirm cancel"
+                          icon={X}
+                          onConfirm={() => handleDeclineOrCancel(req.id, req.profile, "cancel")}
+                        />
+                      </PersonRow>
                     ))}
-                  </div>
+                  </ul>
                 )}
-              </div>
+              </section>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* ============ FIND FRIENDS TAB ============ */}
       {activeTab === "find" && (
-        <>
-          <div className="relative max-w-xl">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <Input
-              placeholder="Search by username or name..."
-              className="pl-12 py-6 text-lg bg-card border-2 border-border"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {isSearching && (
-              <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 animate-spin text-muted-foreground" />
-            )}
-          </div>
-
-          {searchQuery.trim() && !isSearching && searchResults.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No users found matching &ldquo;{searchQuery}&rdquo;</p>
+        <div
+          role="tabpanel"
+          id={`${TAB_ID_BASE}-panel-find`}
+          aria-labelledby={`${TAB_ID_BASE}-tab-find`}
+          className="mt-8"
+        >
+          <Field label="Find people" htmlFor="friend-search" className="max-w-xl">
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                id="friend-search"
+                type="search"
+                autoComplete="off"
+                placeholder="Search by username or name"
+                className="pl-9"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-          )}
+          </Field>
 
-          {searchResults.length > 0 && (
-            <div className="space-y-3">
-              {searchResults.map((user) => (
-                <div
-                  key={user.id}
-                  className="border-2 border-border p-4 flex items-center gap-4 hover:border-primary/50 transition-colors"
-                >
-                  <div
-                    className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0 cursor-pointer"
-                    onClick={() => router.push(`/protected/user/${user.username}`)}
-                  >
-                    {user.avatar_url ? (
-                      <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="font-display text-lg font-bold text-primary">
-                        {(user.full_name || user.username).charAt(0).toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => router.push(`/protected/user/${user.username}`)}
-                  >
-                    <h3 className="font-semibold truncate">{user.full_name || user.username}</h3>
-                    <p className="text-sm text-muted-foreground">@{user.username}</p>
-                  </div>
-                  <div>
+          <div className="mt-6">
+            {isSearching && <LoadingLine label="Searching" className="mb-4" />}
+
+            {searchError && !isSearching && (
+              <Notice tone="error" title="Search didn't go through">
+                Check your connection, then change the search to try again.
+              </Notice>
+            )}
+
+            {trimmedQuery && !isSearching && !searchError && searchResults.length === 0 && (
+              <EmptyState
+                icon={Search}
+                title={<>No one found matching &ldquo;{trimmedQuery}&rdquo;</>}
+                description="Check the spelling, or try their username instead of their name."
+              />
+            )}
+
+            {searchResults.length > 0 && (
+              <ul className="drawer-in">
+                {searchResults.map((user) => (
+                  <PersonRow key={user.id} profile={user}>
                     {user.relationshipStatus === "friends" ? (
-                      <span className="flex items-center gap-1.5 text-sm text-primary font-medium px-3 py-1.5 border-2 border-primary/30 rounded-md">
-                        <UserCheck className="w-4 h-4" /> Friends
-                      </span>
+                      <Badge>Friends</Badge>
                     ) : user.relationshipStatus === "pending_sent" ? (
-                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground px-3 py-1.5 border border-border rounded-md">
-                        <Clock className="w-4 h-4" /> Pending
-                      </span>
+                      <Badge variant="outline">Pending</Badge>
                     ) : user.relationshipStatus === "pending_received" ? (
                       <Button
                         size="sm"
+                        variant="outline"
                         onClick={() => {
-                          if (user.friendshipId) handleAcceptRequest(user.friendshipId);
+                          if (user.friendshipId) handleAcceptRequest(user.friendshipId, user);
                         }}
                         disabled={actioningId === user.friendshipId}
                       >
-                        <Check className="w-4 h-4 mr-1" /> Accept
+                        <Check aria-hidden="true" />
+                        {actioningId === user.friendshipId ? "Accepting…" : "Accept"}
                       </Button>
                     ) : (
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-2"
-                        onClick={() => handleSendRequest(user.id)}
+                        onClick={() => handleSendRequest(user)}
                         disabled={sendingTo === user.id}
                       >
-                        {sendingTo === user.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <><UserPlus className="w-4 h-4 mr-1" /> Add Friend</>
-                        )}
+                        <UserPlus aria-hidden="true" />
+                        {sendingTo === user.id ? "Sending…" : "Add friend"}
                       </Button>
                     )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                  </PersonRow>
+                ))}
+              </ul>
+            )}
 
-          {!searchQuery.trim() && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                <Search className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">Find Friends</h2>
-              <p className="text-muted-foreground max-w-md">
-                Search by username or name to find and connect with other users.
-              </p>
-            </div>
-          )}
-        </>
+            {!trimmedQuery && (
+              <EmptyState
+                icon={Search}
+                title="Find friends"
+                description="Search by username or name to find and connect with other users."
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { syncProfile } from "@/lib/sync-profile";
 import { ProfileClient } from "@/components/profile-client";
+import { PageLoading } from "@/components/ui/loading";
 import { Suspense } from "react";
-import { Loader2 } from "lucide-react";
 
 async function ProfileLoader() {
   const supabase = await createClient();
@@ -38,13 +38,7 @@ async function ProfileLoader() {
 
 export default function ProfilePage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
-      }
-    >
+    <Suspense fallback={<PageLoading label="Loading your profile" />}>
       <ProfileLoader />
     </Suspense>
   );
