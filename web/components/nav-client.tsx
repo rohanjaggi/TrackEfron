@@ -1,20 +1,38 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMode } from "@/lib/mode-context";
-import { Home, Library, Clock, Compass, BarChart3, Clapperboard, Music2 } from "lucide-react";
+import { Home, Library, Clock, Compass, BarChart3, Clapperboard, Music2, Plus } from "lucide-react";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 const NAV_LINKS = [
-  { href: "/protected",           label: "Home",      icon: Home,      exact: true },
-  { href: "/protected/library",   label: "Library",   icon: Library,   exact: false },
-  { href: "/protected/watchlist", label: "Queue",     icon: Clock,     exact: false },
-  { href: "/protected/discover",  label: "Discover",  icon: Compass,   exact: false },
-  { href: "/protected/analytics", label: "Analytics", icon: BarChart3, exact: false },
+  { href: "/protected",           label: "Home",      icon: Home,      exact: true,  key: "h" },
+  { href: "/protected/library",   label: "Library",   icon: Library,   exact: false, key: "l" },
+  { href: "/protected/watchlist", label: "Queue",     icon: Clock,     exact: false, key: "q" },
+  { href: "/protected/discover",  label: "Discover",  icon: Compass,   exact: false, key: "d" },
+  { href: "/protected/analytics", label: "Analytics", icon: BarChart3, exact: false, key: "a" },
 ];
 
+/**
+ * The accent line above the nav. On a film ↔ music change a highlight sweeps
+ * it and a cue mark blinks twice in the corner, like a reel change.
+ */
 export function NavAccentBar() {
-  return <div className="mode-accent-bar w-full" />;
+  const { switches } = useMode();
+
+  return (
+    <div className="mode-accent-bar w-full" aria-hidden="true">
+      {switches > 0 && <span key={switches} className="reel-sweep" />}
+    </div>
+  );
+}
+
+export function ReelCueMark() {
+  const { switches } = useMode();
+  if (switches === 0) return null;
+  return <span key={switches} className="cue-mark" aria-hidden="true" />;
 }
 
 export function NavLinks() {
@@ -24,24 +42,27 @@ export function NavLinks() {
   return (
     <div className="flex items-center gap-0.5">
       {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
-        const isActive = exact ? pathname === href : pathname.startsWith(href) && href !== "/protected";
-        const isDashboard = href === "/protected" && pathname === "/protected";
-        const active = isActive || isDashboard;
+        const active = exact ? pathname === href : pathname.startsWith(href);
+        const text = label === "Queue" && mode === "film" ? "Watchlist" : label;
 
         return (
           <Link
             key={href}
             href={href}
+            aria-label={text}
+            aria-current={active ? "page" : undefined}
+            title={text}
             className={[
-              "flex items-center gap-1.5 px-3.5 py-1.5 border transition-all duration-200",
-              "text-[11px] font-medium tracking-[0.08em] uppercase",
+              "flex h-9 items-center gap-1.5 border px-2.5 lg:px-3.5",
+              "text-[11px] font-medium uppercase tracking-[0.08em]",
+              "transition-[color,background-color,border-color] duration-cut ease-mech",
               active
                 ? "nav-link-active"
-                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--border-raw)]",
+                : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-raw)] hover:text-[var(--text)]",
             ].join(" ")}
           >
-            <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="hidden md:inline">{label === "Queue" && mode === "film" ? "Watchlist" : label}</span>
+            <Icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+            <span className="hidden lg:inline">{text}</span>
           </Link>
         );
       })}
@@ -49,45 +70,92 @@ export function NavLinks() {
   );
 }
 
+/** The core action, always one click (or the N key) away. */
+export function NavLogButton() {
+  const pathname = usePathname();
+  const { mode } = useMode();
+  const label = mode === "music" ? "Log a listen" : "Log a watch";
+  const active = pathname.startsWith("/protected/log");
+
+  return (
+    <Link
+      href="/protected/log"
+      aria-label={`${label} (press N)`}
+      aria-current={active ? "page" : undefined}
+      title={`${label} · N`}
+      className={[
+        "flex h-9 items-center gap-1.5 border px-3",
+        "text-[11px] font-medium uppercase tracking-[0.1em]",
+        "transition-[color,background-color,border-color,transform] duration-cut ease-mech active:translate-y-px",
+        "border-primary bg-primary text-primary-foreground hover:border-foreground hover:bg-foreground",
+      ].join(" ")}
+    >
+      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="hidden sm:inline">Log</span>
+    </Link>
+  );
+}
+
 export function NavModeToggle() {
   const { mode, setMode } = useMode();
 
   return (
-    <div
-      className="flex items-center p-[3px] gap-[2px]"
-      style={{ background: "var(--surface)", border: "1px solid var(--border-raw)" }}
-    >
-      <button
-        onClick={() => setMode("film")}
-        title="Film & TV mode"
-        className={[
-          "flex items-center gap-[5px] px-2.5 py-[5px]",
-          "text-[10px] font-medium tracking-[0.08em] uppercase transition-all duration-200",
-          mode === "film"
-            ? "text-[var(--film)]"
-            : "text-[var(--text-muted)] hover:text-[var(--text)]",
-        ].join(" ")}
-        style={mode === "film" ? { background: "var(--film-dim)" } : {}}
-      >
-        <Clapperboard className="w-3.5 h-3.5" />
-        <span className="hidden sm:inline">Film</span>
-      </button>
-
-      <button
-        onClick={() => setMode("music")}
-        title="Music mode"
-        className={[
-          "flex items-center gap-[5px] px-2.5 py-[5px]",
-          "text-[10px] font-medium tracking-[0.08em] uppercase transition-all duration-200",
-          mode === "music"
-            ? "text-[var(--music)]"
-            : "text-[var(--text-muted)] hover:text-[var(--text)]",
-        ].join(" ")}
-        style={mode === "music" ? { background: "var(--music-dim)" } : {}}
-      >
-        <Music2 className="w-3.5 h-3.5" />
-        <span className="hidden sm:inline">Music</span>
-      </button>
-    </div>
+    <SegmentedControl
+      label="Mode"
+      size="sm"
+      value={mode}
+      onChange={setMode}
+      options={[
+        { value: "film", label: "Film", icon: Clapperboard },
+        { value: "music", label: "Music", icon: Music2 },
+      ]}
+      className="[&_span]:hidden md:[&_span]:inline"
+    />
   );
+}
+
+/**
+ * Global keys. N logs; G then H/L/Q/D/A jumps between sections.
+ * Ignored while typing or when a modifier is held.
+ */
+export function GlobalShortcuts() {
+  const router = useRouter();
+
+  useEffect(() => {
+    let gAt = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+      const el = e.target as HTMLElement | null;
+      if (
+        el &&
+        (el.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) ||
+          el.getAttribute("role") === "slider")
+      ) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === "n") {
+        e.preventDefault();
+        router.push("/protected/log");
+        return;
+      }
+      if (key === "g") {
+        gAt = Date.now();
+        return;
+      }
+      if (Date.now() - gAt < 1200) {
+        const target = NAV_LINKS.find((l) => l.key === key);
+        if (target) {
+          e.preventDefault();
+          router.push(target.href);
+        }
+        gAt = 0;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
+
+  return null;
 }

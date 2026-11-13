@@ -2,244 +2,663 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  /* ─── TrackEfron Design System ──────────────────────────────── */
-  /* Dark ink-black aesthetic with film gold + music teal accents  */
-  :root {
-    /* Tailwind-compatible HSL tokens */
-    --background: 60 14% 4%;           /* #0A0A08  ink-black */
-    --foreground: 40 30% 88%;          /* #E8E4DA  warm off-white */
-    --card: 60 11% 7%;                 /* #131310  surface */
-    --card-foreground: 40 30% 88%;
-    --popover: 60 9% 10%;              /* #1C1C18  surface-2 */
-    --popover-foreground: 40 30% 88%;
-    --primary: 38 52% 60%;             /* #C8A86A  film gold */
-    --primary-foreground: 60 14% 4%;
-    --secondary: 60 9% 10%;
-    --secondary-foreground: 40 30% 88%;
-    --muted: 60 10% 15%;               /* #2A2A22  border */
-    --muted-foreground: 48 12% 38%;    /* #6B6957  text-muted */
-    --accent: 38 52% 60%;              /* film gold — same as primary; teal only in music mode */
-    --accent-foreground: 60 14% 4%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 40 30% 88%;
-    --border: 60 10% 15%;              /* #2A2A22 */
-    --input: 60 9% 10%;
-    --ring: 38 52% 60%;
-    --radius: 2px;
+/* ════════════════════════════════════════════════════════════════
+   TrackEfron design system
+   Ink-black, sharp-edged, hairline-ruled. Two worlds share one
+   skeleton: film mode is a cinema programme (rules, registration
+   ticks, stamps); music mode is a hi-fi faceplate (bevels, meter
+   ticks, stepped switches). See DESIGN.md at the repo root.
+   ════════════════════════════════════════════════════════════════ */
 
-    /* ── Raw design tokens (used in custom CSS below) ── */
-    --bg: #0A0A08;
-    --surface: #131310;
-    --surface-2: #1C1C18;
-    --border-raw: #2A2A22;
-    --border-hover: #3D3D32;
-    --text: #E8E4DA;
-    --text-muted: #6B6957;
-    --text-dim: #3D3D32;
-
-    /* ── Mode-specific colors ── */
-    --film: #C8A86A;
-    --film-dim: rgba(200, 168, 106, 0.12);
-    --film-glow: rgba(200, 168, 106, 0.25);
-    --music: #6EC8C2;
-    --music-dim: rgba(110, 200, 194, 0.12);
-    --music-glow: rgba(110, 200, 194, 0.25);
-
-    /* ── Mode accent (swapped via data-mode="music" on <html>) ── */
-    --mode-accent: var(--film);
-    --mode-accent-dim: var(--film-dim);
-    --mode-accent-glow: var(--film-glow);
-    --mode-primary-hsl: 38 52% 60%;    /* mirrors primary for film */
-  }
-
-  /* .dark === same tokens (app is dark-only) */
-  .dark {
-    --background: 60 14% 4%;
-    --foreground: 40 30% 88%;
-    --card: 60 11% 7%;
-    --card-foreground: 40 30% 88%;
-    --popover: 60 9% 10%;
-    --popover-foreground: 40 30% 88%;
-    --primary: 38 52% 60%;
-    --primary-foreground: 60 14% 4%;
-    --secondary: 60 9% 10%;
-    --secondary-foreground: 40 30% 88%;
-    --muted: 60 10% 15%;
-    --muted-foreground: 48 12% 38%;
-    --accent: 38 52% 60%;              /* gold in film mode, overridden to teal in music mode */
-    --accent-foreground: 60 14% 4%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 40 30% 88%;
-    --border: 60 10% 15%;
-    --input: 60 9% 10%;
-    --ring: 38 52% 60%;
-  }
-
-  /* Music mode — swap primary & accent to teal, update mode vars */
-  [data-mode="music"] {
-    --primary: 177 45% 61%;            /* music teal becomes primary */
-    --primary-foreground: 60 14% 4%;
-    --accent: 177 45% 61%;             /* accent also = teal in music mode */
-    --accent-foreground: 60 14% 4%;
-    --ring: 177 45% 61%;
-    --mode-accent: var(--music);
-    --mode-accent-dim: var(--music-dim);
-    --mode-accent-glow: var(--music-glow);
-    --mode-primary-hsl: 177 45% 61%;
-  }
+/* The accent is a registered colour so the whole interface can
+   cross-fade between film gold and music teal in one move. */
+@property --mode-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c8a86a;
 }
 
 @layer base {
-  * { @apply border-border; }
+  :root {
+    /* ── Surfaces: a ladder you can actually see ── */
+    --bg: #0a0a08;            /* 4%  page */
+    --surface: #161613;       /* 8%  frames, cards */
+    --surface-2: #21211c;     /* 12% wells, hovered frames, inputs */
+    --surface-3: #2c2c26;     /* 16% popovers, menus */
+
+    /* ── Rules ── */
+    --border-raw: #35342c;    /* hairline */
+    --border-strong: #605e50; /* emphasis, hover, input edge */
+    --border-hover: var(--border-strong);
+
+    /* ── Ink ── */
+    --text: #e8e4da;          /* primary  */
+    --text-muted: #a09c8a;    /* secondary copy, labels: AA on every surface */
+    --text-dim: #7d7a69;      /* decoration and disabled only, never body copy */
+
+    /* ── Mode colours ── */
+    --film: #c8a86a;
+    --music: #6ec8c2;
+    --mode-accent: var(--film);
+    --mode-accent-dim: color-mix(in srgb, var(--mode-accent) 13%, transparent);
+    --mode-accent-glow: color-mix(in srgb, var(--mode-accent) 26%, transparent);
+    --film-dim: color-mix(in srgb, var(--film) 13%, transparent);
+    --music-dim: color-mix(in srgb, var(--music) 13%, transparent);
+
+    /* ── Status, tuned to the palette ── */
+    --success: #93b88a;
+    --warning: #dc9a5b;
+    --danger: #e0705c;
+
+    /* ── Chart ramp (film): gold, bone, rust, olive, slate ── */
+    --chart-1: #c8a86a;
+    --chart-2: #e8e4da;
+    --chart-3: #b8674a;
+    --chart-4: #8c9166;
+    --chart-5: #7f8fa3;
+
+    /* ── Tailwind/shadcn HSL bridge ── */
+    --background: 60 11% 4%;
+    --foreground: 43 23% 88%;
+    --card: 60 7% 8%;
+    --card-foreground: 43 23% 88%;
+    --popover: 60 7% 16%;
+    --popover-foreground: 43 23% 88%;
+    --secondary: 60 8% 12%;
+    --secondary-foreground: 43 23% 88%;
+    --muted: 60 8% 12%;
+    --muted-foreground: 49 10% 58%;
+    --destructive: 9 68% 62%;
+    --destructive-foreground: 60 11% 4%;
+    --border: 53 9% 19%;
+    --input: 53 9% 35%;
+    --radius: 0px;
+
+    /* ── Motion ── */
+    --dur-tick: 80ms;         /* press, tick */
+    --dur-cut: 140ms;         /* colour and border changes */
+    --dur-move: 240ms;        /* wipes, reveals */
+    --dur-reel: 420ms;        /* the film ↔ music change */
+    --ease-mech: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-reel: cubic-bezier(0.7, 0, 0.2, 1);
+    --fill-timing: var(--ease-mech);   /* selection fills: smooth ink in film */
+
+    /* ── Per-mode surface character ── */
+    --frame-fill: var(--surface);
+    --frame-bevel: 0 0 0 0 transparent;
+    --tick-opacity: 1;
+    --rule-style: double;
+
+    transition: --mode-accent var(--dur-reel) linear;
+  }
+
+  [data-mode="music"] {
+    --mode-accent: var(--music);
+
+    /* teal, bone, coral, moss, violet-grey */
+    --chart-1: #6ec8c2;
+    --chart-2: #e8e4da;
+    --chart-3: #d98a6c;
+    --chart-4: #8fa67a;
+    --chart-5: #9a8fb5;
+
+    --fill-timing: steps(4, end);      /* selection fills: stepped switch */
+    --frame-fill: linear-gradient(180deg, #1a1a16 0%, #141411 100%);
+    --frame-bevel: inset 0 1px 0 rgba(232, 228, 218, 0.07), inset 0 -1px 0 rgba(0, 0, 0, 0.55);
+    --tick-opacity: 0;
+    --rule-style: solid;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scrollbar-color: var(--border-strong) var(--bg);
+    scrollbar-width: thin;
+  }
+
   body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-mono), 'Courier New', monospace;
+    color: var(--text);
+    background:
+      radial-gradient(120% 70% at 50% -12%, #15150f 0%, var(--bg) 58%) fixed,
+      var(--bg);
+    font-family: var(--font-mono), "Courier New", monospace;
     font-size: 13px;
     line-height: 1.6;
+    caret-color: var(--mode-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: var(--mode-accent);
+    color: var(--bg);
+  }
+
+  /* One focus mark for the whole product: square, accent, offset. */
+  :focus-visible {
+    outline: 2px solid var(--mode-accent);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  a {
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  /* Native controls take the theme instead of OS chrome. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.8) sepia(0.2);
+    cursor: pointer;
   }
 }
 
-/* ─── Grain overlay ──────────────────────────────────────────── */
+/* ─── Grain: film stock over everything ──────────────────────── */
 body::before {
-  content: '';
+  content: "";
   position: fixed;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.91  0 0 0 0 0.89  0 0 0 0 0.85  0 0 0 0.9 -0.18'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   pointer-events: none;
   z-index: 999;
-  opacity: 0.55;
+  opacity: 0.075;
 }
 
-/* ─── Typography utilities ───────────────────────────────────── */
-.font-display {
-  font-family: var(--font-display), 'Georgia', serif;
-}
-
-.font-mono-ui {
-  font-family: var(--font-mono), 'Courier New', monospace;
-}
-
-/* ─── Mode accent bar ────────────────────────────────────────── */
-.mode-accent-bar {
-  height: 2px;
-  background: var(--mode-accent);
-  transition: background 0.4s ease;
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.mode-accent-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-  animation: accentShimmer 3s ease infinite;
-}
-
-/* ─── Nav link active state ──────────────────────────────────── */
-.nav-link-active {
-  color: var(--mode-accent) !important;
-  border-color: var(--mode-accent-dim) !important;
-  background: var(--mode-accent-dim) !important;
-}
-
-/* ─── Card styles ────────────────────────────────────────────── */
-.card-surface {
-  background: var(--surface);
-  border: 1px solid var(--border-raw);
-}
-
-.card-surface-2 {
-  background: var(--surface-2);
-  border: 1px solid var(--border-raw);
-}
-
-/* ─── Activity item ──────────────────────────────────────────── */
-.activity-item {
-  border-bottom: 1px solid var(--border-raw);
-  transition: background 0.15s;
-}
-
-.activity-item:hover {
-  background: var(--surface);
-}
-
-/* ─── Label / eyebrow text ───────────────────────────────────── */
-.label-upper {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* ─── Film/music badge ───────────────────────────────────────── */
-.badge-film {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: 1px solid var(--film);
-  color: var(--film);
-  background: var(--film-dim);
-}
-
-.badge-music {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  border: 1px solid var(--music);
-  color: var(--music);
-  background: var(--music-dim);
-}
-
-/* ─── Waveform animation (dashboard music card) ──────────────── */
-.wave-bar {
-  width: 2px;
-  border-radius: 1px;
-  animation: wave 1.2s ease infinite;
-  opacity: 0.75;
-}
-.wave-bar:nth-child(2) { animation-delay: 0.1s; }
-.wave-bar:nth-child(3) { animation-delay: 0.2s; }
-.wave-bar:nth-child(4) { animation-delay: 0.15s; }
-.wave-bar:nth-child(5) { animation-delay: 0.05s; }
-.wave-bar:nth-child(6) { animation-delay: 0.25s; }
-.wave-bar:nth-child(7) { animation-delay: 0.1s; }
-.wave-bar:nth-child(8) { animation-delay: 0.3s; }
-
-/* ─── Animations ─────────────────────────────────────────────── */
-@keyframes accentShimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-@keyframes wave {
-  0%, 100% { height: 4px; }
-  50%       { height: 20px; }
-}
-
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulseDot {
-  0%, 100% { opacity: 1;   transform: scale(1);   }
-  50%       { opacity: 0.4; transform: scale(0.7); }
-}
-
-/* ─── Scrollbar ──────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ─── Scrollbar (WebKit) ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-raw); }
-::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+@layer components {
+  /* ═══ Type ═══════════════════════════════════════════════════ */
+  .font-display { font-family: var(--font-display), Georgia, serif; }
+  .font-mono-ui { font-family: var(--font-mono), "Courier New", monospace; }
+
+  /* Page title: light serif, with <strong> for a name and <em> for the accent clause. */
+  .t-display {
+    font-family: var(--font-display), Georgia, serif;
+    font-size: clamp(34px, 4.4vw, 52px);
+    font-weight: 300;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    font-variant-numeric: lining-nums;
+  }
+  .t-display strong { font-weight: 600; }
+  .t-display em { font-style: italic; color: var(--mode-accent); }
+
+  /* Section title. */
+  .t-title {
+    font-family: var(--font-display), Georgia, serif;
+    font-size: 23px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.005em;
+    color: var(--text);
+  }
+
+  /* Card and row titles. */
+  .t-card {
+    font-family: var(--font-display), Georgia, serif;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text);
+  }
+
+  /* Reviews and other long-form reading. */
+  .t-prose {
+    font-family: var(--font-display), Georgia, serif;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--text);
+    max-width: 68ch;
+  }
+
+  /* Big figures. */
+  .t-numeral {
+    font-family: var(--font-display), Georgia, serif;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  /* Small tracked caps: field labels, column heads, metadata keys. */
+  .label-upper {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  /* Secondary line under a title. */
+  .t-meta {
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+  }
+
+  /* ═══ Frames ═════════════════════════════════════════════════ */
+  /* The one container. 1px hairline, filled, never rounded. */
+  .frame {
+    position: relative;
+    background: var(--frame-fill);
+    border: 1px solid var(--border-raw);
+    box-shadow: var(--frame-bevel);
+  }
+
+  /* Recessed well inside a frame (inputs, trays, code). */
+  .well {
+    background: var(--bg);
+    border: 1px solid var(--border-raw);
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.6);
+  }
+
+  /* The TrackEfron mark: an accent line across the top edge.
+     At rest it is the top border; on an interactive frame it thickens. */
+  .frame-accent {
+    border-top-color: var(--mode-accent);
+  }
+  .frame-accent::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--mode-accent);
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform var(--dur-cut) var(--ease-mech);
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  /* A frame you can click. */
+  .frame-interactive {
+    transition:
+      border-color var(--dur-cut) var(--ease-mech),
+      background-color var(--dur-cut) var(--ease-mech);
+  }
+  .frame-interactive:hover,
+  .frame-interactive:focus-visible,
+  .frame-interactive:focus-within {
+    border-color: var(--border-strong);
+  }
+  .frame-interactive.frame-accent:hover,
+  .frame-interactive.frame-accent:focus-visible,
+  .frame-interactive.frame-accent:focus-within {
+    border-top-color: var(--mode-accent);
+  }
+  .frame-interactive.frame-accent:hover::before,
+  .frame-interactive.frame-accent:focus-visible::before,
+  .frame-interactive.frame-accent:focus-within::before {
+    transform: scaleY(1);
+  }
+
+  /* Lifted objects: featured card, sticky preview, dialogs. */
+  .frame-raised {
+    box-shadow:
+      var(--frame-bevel),
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      0 24px 48px -24px rgba(0, 0, 0, 0.95);
+  }
+
+  /* Film: registration ticks just outside the corners of a feature frame.
+     Music hides them (the bevel does that job). */
+  .ticks::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    pointer-events: none;
+    opacity: var(--tick-opacity);
+    --t: var(--border-strong);
+    background:
+      linear-gradient(var(--t), var(--t)) left top / 12px 1px no-repeat,
+      linear-gradient(var(--t), var(--t)) left top / 1px 12px no-repeat,
+      linear-gradient(var(--t), var(--t)) right top / 12px 1px no-repeat,
+      linear-gradient(var(--t), var(--t)) right top / 1px 12px no-repeat,
+      linear-gradient(var(--t), var(--t)) left bottom / 12px 1px no-repeat,
+      linear-gradient(var(--t), var(--t)) left bottom / 1px 12px no-repeat,
+      linear-gradient(var(--t), var(--t)) right bottom / 12px 1px no-repeat,
+      linear-gradient(var(--t), var(--t)) right bottom / 1px 12px no-repeat;
+  }
+
+  /* One off-centre light leak behind a hero object. */
+  .light-leak {
+    position: relative;
+    isolation: isolate;
+  }
+  .light-leak::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -30% 0 auto 30%;
+    height: 130%;
+    background: radial-gradient(closest-side, var(--mode-accent-glow), transparent 72%);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  /* ═══ Rules ══════════════════════════════════════════════════ */
+  /* Section rule. Film: a printer's double rule. Music: a meter scale. */
+  .rule {
+    border-bottom: 3px var(--rule-style) var(--border-raw);
+    position: relative;
+  }
+  [data-mode="music"] .rule {
+    border-bottom-width: 1px;
+  }
+  [data-mode="music"] .rule::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -6px;
+    height: 5px;
+    background: repeating-linear-gradient(90deg, var(--border-raw) 0 1px, transparent 1px 8px);
+    pointer-events: none;
+  }
+
+  .hairline { border-bottom: 1px solid var(--border-raw); }
+
+  /* Dotted leader between a label and its value: <span>Label</span><i class="leader"/><span>42</span> */
+  .leader {
+    flex: 1 1 auto;
+    min-width: 16px;
+    align-self: flex-end;
+    margin: 0 8px 5px;
+    border-bottom: 1px dotted var(--border-strong);
+  }
+
+  /* ═══ Rows ═══════════════════════════════════════════════════ */
+  .row-item {
+    border-bottom: 1px solid var(--border-raw);
+    transition: background-color var(--dur-cut) var(--ease-mech);
+  }
+  .row-item:hover,
+  .row-item:focus-within {
+    background: var(--surface);
+  }
+
+  /* ═══ Posters and covers ═════════════════════════════════════ */
+  /* Artwork rests slightly drained so it comes up to full colour under the cursor. */
+  .artwork {
+    filter: saturate(0.82) contrast(1.04);
+    transition: filter var(--dur-move) var(--ease-mech);
+  }
+  .media-card:hover .artwork,
+  .media-card:focus-within .artwork,
+  .artwork-live {
+    filter: none;
+  }
+  .media-card__caption {
+    clip-path: inset(100% 0 0 0);
+    transition: clip-path 200ms var(--ease-mech);
+  }
+  .media-card:hover .media-card__caption,
+  .media-card:focus-within .media-card__caption {
+    clip-path: inset(0 0 0 0);
+  }
+  @media (hover: none) {
+    .media-card__caption { clip-path: none; }
+    .artwork { filter: none; }
+  }
+
+  /* ═══ Segmented control and tabs ═════════════════════════════ */
+  .seg {
+    position: relative;
+    isolation: isolate;
+    color: var(--text-muted);
+    transition: color var(--dur-cut) var(--ease-mech);
+  }
+  .seg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--mode-accent-dim);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mode-accent) 45%, transparent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur-move) var(--fill-timing);
+  }
+  .seg:hover { color: var(--text); }
+  .seg[data-active="true"] { color: var(--mode-accent); }
+  .seg[data-active="true"]::before { transform: scaleX(1); }
+
+  .tab {
+    position: relative;
+    color: var(--text-muted);
+    transition: color var(--dur-cut) var(--ease-mech);
+  }
+  .tab::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--mode-accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur-move) var(--fill-timing);
+  }
+  .tab:hover { color: var(--text); }
+  .tab[data-active="true"] { color: var(--text); }
+  .tab[data-active="true"]::after { transform: scaleX(1); }
+
+  /* ═══ Nav ════════════════════════════════════════════════════ */
+  .nav-link-active {
+    color: var(--mode-accent) !important;
+    border-color: color-mix(in srgb, var(--mode-accent) 40%, transparent) !important;
+    background: var(--mode-accent-dim) !important;
+  }
+
+  .mode-accent-bar {
+    height: 2px;
+    background: var(--mode-accent);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* ═══ Loading ════════════════════════════════════════════════ */
+  /* A placeholder block with a single scan line travelling down it. */
+  .skeleton {
+    background-color: var(--surface-2);
+    background-image: linear-gradient(var(--mode-accent), var(--mode-accent));
+    background-size: 100% 1px;
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    animation: scan 1.6s steps(16, end) infinite;
+  }
+
+  /* Block cursor after a line of mono text. */
+  .cursor-blink::after {
+    content: "";
+    display: inline-block;
+    width: 0.55em;
+    height: 1em;
+    margin-left: 0.35em;
+    vertical-align: -0.12em;
+    background: var(--mode-accent);
+    animation: blink 1s steps(1, end) infinite;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Motion: the projection booth
+   Cuts and wipes, never floats. Only transform, opacity, clip-path
+   and registered colours animate.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Shutter cut: a route's content opens top-down. */
+@keyframes shutterIn {
+  from { clip-path: inset(0 0 100% 0); transform: translateY(10px); }
+  to   { clip-path: inset(0 0 0 0);    transform: translateY(0); }
+}
+.shutter-in {
+  animation: shutterIn 320ms var(--ease-mech) backwards;
+}
+
+/* Frame advance: grid and list items rise into place, staggered, capped. */
+@keyframes frameIn {
+  from { clip-path: inset(100% 0 0 0); transform: translateY(6px); }
+  to   { clip-path: inset(0 0 0 0);    transform: translateY(0); }
+}
+.advance > * {
+  animation: frameIn var(--dur-move) var(--ease-mech) backwards;
+}
+.advance > *:nth-child(1)  { animation-delay: 0ms; }
+.advance > *:nth-child(2)  { animation-delay: 30ms; }
+.advance > *:nth-child(3)  { animation-delay: 60ms; }
+.advance > *:nth-child(4)  { animation-delay: 90ms; }
+.advance > *:nth-child(5)  { animation-delay: 120ms; }
+.advance > *:nth-child(6)  { animation-delay: 150ms; }
+.advance > *:nth-child(7)  { animation-delay: 180ms; }
+.advance > *:nth-child(8)  { animation-delay: 210ms; }
+.advance > *:nth-child(9)  { animation-delay: 240ms; }
+.advance > *:nth-child(n + 10) { animation-delay: 270ms; }
+
+/* Drawer cut: menus, disclosure panels, search results. */
+@keyframes drawerIn {
+  from { clip-path: inset(0 0 100% 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+@keyframes drawerOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.drawer-in { animation: drawerIn 160ms var(--ease-mech) backwards; }
+.drawer-out { animation: drawerOut var(--dur-tick) linear forwards; }
+
+/* Reel change: on film ↔ music, a highlight sweeps the accent bar and a cue mark blinks twice. */
+@keyframes reelSweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+.reel-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.85) 50%, transparent 100%);
+  animation: reelSweep var(--dur-reel) var(--ease-reel) forwards;
+  transform: translateX(-100%);
+}
+@keyframes cueMark {
+  0%, 24%   { opacity: 1; }
+  25%, 49%  { opacity: 0; }
+  50%, 74%  { opacity: 1; }
+  75%, 100% { opacity: 0; }
+}
+.cue-mark {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  background: var(--mode-accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: cueMark 400ms steps(1, end) forwards;
+}
+
+/* Stamp: the mark that lands when something is logged or rated. */
+@keyframes stamp {
+  0%   { transform: scale(1.35) rotate(var(--stamp-tilt, -2deg)); opacity: 0; }
+  100% { transform: scale(1) rotate(var(--stamp-tilt, -2deg)); opacity: 1; }
+}
+.stamp {
+  animation: stamp 160ms var(--ease-mech) backwards;
+}
+@keyframes tickIn {
+  from { transform: scale(1.5); }
+  to   { transform: scale(1); }
+}
+.tick-in { animation: tickIn 120ms var(--ease-mech) backwards; }
+
+/* Counter: a numeral rolls up into place the first time it shows. */
+@keyframes counterIn {
+  from { transform: translateY(60%); clip-path: inset(0 0 100% 0); }
+  to   { transform: translateY(0);   clip-path: inset(-10% 0 -10% 0); }
+}
+.counter-in {
+  display: inline-block;
+  animation: counterIn 360ms var(--ease-mech) backwards;
+}
+
+@keyframes scan {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100%; }
+}
+@keyframes blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* Menus and popovers (Radix sets data-state and data-side). */
+.menu-surface[data-state="open"] { animation: drawerIn 160ms var(--ease-mech) backwards; }
+.menu-surface[data-state="open"][data-side="top"] { animation-name: drawerInUp; }
+.menu-surface[data-state="closed"] { animation: drawerOut var(--dur-tick) linear forwards; }
+@keyframes drawerInUp {
+  from { clip-path: inset(100% 0 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* Toast marks. Film stamps at a tilt; music reads out straight with an LED. */
+.stamp-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  transform: rotate(var(--stamp-tilt, -2deg));
+}
+[data-mode="music"] { --stamp-tilt: 0deg; }
+[data-mode="music"] .stamp-mark::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* ─── Reduced motion: every wipe becomes a cut ───────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-tick: 0ms;
+    --dur-cut: 0ms;
+    --dur-move: 0ms;
+    --dur-reel: 0ms;
+    transition: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton { background-image: none; }
+  .cursor-blink::after { opacity: 1; }
+  .reel-sweep, .cue-mark { display: none; }
+}

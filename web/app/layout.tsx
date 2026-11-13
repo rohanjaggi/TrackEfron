@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Cormorant_Garamond, Azeret_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Analytics } from "@vercel/analytics/next";
+import { ToastProvider } from "@/components/ui/toast";
+import { MODE_BOOT_SCRIPT } from "@/lib/mode-context";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -36,6 +38,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MODE_BOOT_SCRIPT }} />
+      </head>
       <body className={`${cormorant.variable} ${azeretMono.variable} antialiased`}>
         <ThemeProvider
           attribute="class"
@@ -43,7 +48,7 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
+          <ToastProvider>{children}</ToastProvider>
           <Analytics />
         </ThemeProvider>
       </body>
