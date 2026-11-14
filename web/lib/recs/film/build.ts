@@ -31,7 +31,11 @@ export async function buildFilmRecs(deps: {
     ...watchlist.map((w) => `${w.media_type}:${w.tmdb_id}`),
   ]);
 
-  const [years, candidates] = await Promise.all([deps.yearsOf(logs), deps.gather(logs, exclude)]);
+  const [years, gathered] = await Promise.all([deps.yearsOf(logs), deps.gather(logs, exclude)]);
+  const { candidates } = gathered;
+  if (candidates.length === 0 && gathered.tmdbDown) {
+    throw new Error("TMDB is unavailable, so no candidate titles could be gathered");
+  }
   const era = eraLimits(years);
 
   const user = buildFilmRecommendUserPrompt({

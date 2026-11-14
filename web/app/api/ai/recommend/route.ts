@@ -11,7 +11,7 @@ import type {
   RightNow,
 } from "@/lib/ai/types";
 import { AIError, makeAI } from "@/lib/recs/ai-call";
-import { CACHE_DAYS, isCacheValid } from "@/lib/recs/cache";
+import { cacheExpiry, isCacheValid } from "@/lib/recs/cache";
 import { buildFilmRecs } from "@/lib/recs/film/build";
 import { gatherFilmCandidates } from "@/lib/recs/film/candidates";
 import { makeFilmLookup } from "@/lib/recs/film/lookup";
@@ -79,6 +79,7 @@ async function writeCache(
   mode: CacheMode,
   recommendations: unknown,
   logCount: number,
+  status: "ok" | "empty",
 ) {
   const now = new Date();
   const { error } = await supabase.from("ai_recommendation_cache").upsert(
@@ -88,7 +89,7 @@ async function writeCache(
       recommendations,
       generated_at: now.toISOString(),
       log_count_at_generation: logCount,
-      expires_at: new Date(now.getTime() + CACHE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: cacheExpiry(status, now).toISOString(),
     },
     { onConflict: "user_id,mode" },
   );
@@ -108,12 +109,14 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
     supabase.from("watchlist").select("tmdb_id, media_type").eq("user_id", userId),
     supabase.from("taste_dna").select("fingerprint, film_profile, blind_spots").eq("user_id", userId).maybeSingle(),
   ]);
+  if (logsRes.error) throw new Error(`watch_logs read failed: ${logsRes.error.message}`);
+  if (watchlistRes.error) throw new Error(`watchlist read failed: ${watchlistRes.error.message}`);
   const logs = (logsRes.data ?? []) as WatchLogRow[];
 
   // Old rows stored a bare array; only the { items } shape is valid.
   const cachedFilm = cache?.recommendations as { items?: FilmRecommendation[] } | undefined;
   if (!refresh && cachedFilm && Array.isArray(cachedFilm.items) && isCacheValid(cache, logs.length, new Date())) {
-    return { status: "ok", items: cachedFilm.items };
+    return { status: cachedFilm.items.length ? "ok" : "empty", items: cachedFilm.items };
   }
 
   const result = await buildFilmRecs({
@@ -126,7 +129,9 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
     ai: makeAI<{ picks: RawFilmPick[] }>({ supabase, userId, tool: filmRecommendTool }),
   });
 
-  if (result.status === "ok") await writeCache(supabase, userId, FILM_MODE, { items: result.items }, logs.length);
+  if (result.status === "ok" || result.status === "empty") {
+    await writeCache(supabase, userId, FILM_MODE, { items: result.items }, logs.length, result.status);
+  }
   return result;
 }
 
@@ -143,12 +148,14 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
     supabase.from("music_queue").select("spotify_id, title, artist").eq("user_id", userId),
     supabase.from("taste_dna").select("fingerprint, music_profile").eq("user_id", userId).maybeSingle(),
   ]);
+  if (logsRes.error) throw new Error(`listen_logs read failed: ${logsRes.error.message}`);
+  if (queueRes.error) throw new Error(`music_queue read failed: ${queueRes.error.message}`);
   const logs = (logsRes.data ?? []) as ListenLogRow[];
 
   // Old rows stored a bare array; only the { items, right_now } shape is valid.
   const cached = cache?.recommendations as { items?: MusicRecommendation[]; right_now?: RightNow | null } | undefined;
   if (!refresh && cached && Array.isArray(cached.items) && isCacheValid(cache, logs.length, new Date())) {
-    return { status: "ok", items: cached.items, right_now: cached.right_now ?? null };
+    return { status: cached.items.length ? "ok" : "empty", items: cached.items, right_now: cached.right_now ?? null };
   }
 
   let tops: SpotifyTops | null = null;
@@ -169,8 +176,15 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
     ai: makeAI<{ recommendations: MusicRecommendation[] }>({ supabase, userId, tool: musicRecommendTool }),
   });
 
-  if (result.status === "ok") {
-    await writeCache(supabase, userId, MUSIC_MODE, { items: result.items, right_now: result.right_now }, logs.length);
+  if (result.status === "ok" || result.status === "empty") {
+    await writeCache(
+      supabase,
+      userId,
+      MUSIC_MODE,
+      { items: result.items, right_now: result.right_now },
+      logs.length,
+      result.status,
+    );
   }
   return result;
 }

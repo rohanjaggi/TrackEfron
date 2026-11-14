@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { FilmCandidate, RawFilmPick } from "@/lib/ai/types";
 import { buildFilmRecs } from "./build";
+import type { GatherResult } from "./candidates";
 import type { WatchLogRow } from "./select-logs";
 
 const log = (id: number, rating: number | null = 8): WatchLogRow => ({
@@ -20,7 +21,7 @@ const pick = (id: number | null, over: Partial<RawFilmPick> = {}): RawFilmPick =
 
 function deps(over: Record<string, unknown> = {}) {
   const ai = vi.fn<(system: string, user: string) => Promise<{ picks: RawFilmPick[] }>>(async () => ({ picks: [pick(100)] }));
-  const gather = vi.fn<(logs: WatchLogRow[], exclude: Set<string>) => Promise<FilmCandidate[]>>(async () => [cand(100)]);
+  const gather = vi.fn<(logs: WatchLogRow[], exclude: Set<string>) => Promise<GatherResult>>(async () => ({ candidates: [cand(100)], tmdbDown: false }));
   return {
     ai, gather,
     d: {
@@ -101,6 +102,21 @@ describe("buildFilmRecs", () => {
   test("returns empty when matching drops everything", async () => {
     const { d } = deps({ ai: async () => ({ picks: [pick(999)] }) });
     expect(await buildFilmRecs(d)).toEqual({ status: "empty", items: [] });
+  });
+  test("zero candidates because TMDB is down throws without calling ai", async () => {
+    const { ai, d } = deps({ gather: async () => ({ candidates: [], tmdbDown: true }) });
+    await expect(buildFilmRecs(d)).rejects.toThrow("TMDB is unavailable");
+    expect(ai).not.toHaveBeenCalled();
+  });
+  test("zero candidates for a legitimate reason still calls ai, which may propose titles itself", async () => {
+    const { ai, d } = deps({
+      gather: async () => ({ candidates: [], tmdbDown: false }),
+      lookup: async () => cand(500),
+    });
+    ai.mockResolvedValueOnce({ picks: [pick(null, { title: "Cand500" })] });
+    const r = await buildFilmRecs(d);
+    expect(ai).toHaveBeenCalledTimes(1);
+    expect(r.status).toBe("ok");
   });
   test("ai rejection propagates", async () => {
     const { d } = deps({ ai: async () => { throw new Error("boom"); } });

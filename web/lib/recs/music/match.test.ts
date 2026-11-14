@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { matchMusicPicks } from "./match";
 import { normalise } from "../normalise";
 import type { MusicRecommendation } from "@/lib/ai/types";
@@ -28,6 +28,7 @@ const result = (id: string, name: string, artist: string): SpotifySearchResult =
 const fake = (table: Record<string, SpotifySearchResult[]>) => async (q: string) => table[q] ?? [];
 
 describe("matchMusicPicks", () => {
+  afterEach(() => vi.restoreAllMocks());
   test("accepts a result matching title and artist ignoring case and punctuation", async () => {
     const search = fake({ "Radiohead OK Computer": [result("a1", "OK, Computer!", "RADIOHEAD")] });
     const out = await matchMusicPicks([pick("Radiohead", "OK Computer")], new Set(), search, 5);
@@ -41,12 +42,31 @@ describe("matchMusicPicks", () => {
     expect(out).toEqual([]);
   });
 
-  test("drops a pick when search throws", async () => {
+  test("drops a pick when its search throws and the others still match, warning once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const search = async (q: string) => {
+      if (q.startsWith("Bad")) throw new Error("boom");
+      return [result("a1", "OK Computer", "Radiohead")];
+    };
+    const out = await matchMusicPicks(
+      [pick("Bad", "One"), pick("Bad", "Two"), pick("Radiohead", "OK Computer")], new Set(), search, 5);
+    expect(out.map((o) => o.spotify_id)).toEqual(["a1"]);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test("throws when every search in the batch throws, warning once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const search = async () => {
       throw new Error("boom");
     };
-    const out = await matchMusicPicks([pick("Radiohead", "OK Computer")], new Set(), search, 5);
-    expect(out).toEqual([]);
+    await expect(
+      matchMusicPicks([pick("A", "One"), pick("B", "Two")], new Set(), search, 5),
+    ).rejects.toThrow("Spotify search failed for every proposed pick");
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test("an empty batch does not throw", async () => {
+    expect(await matchMusicPicks([], new Set(), fake({}), 5)).toEqual([]);
   });
 
   test("drops excluded ids and duplicates", async () => {

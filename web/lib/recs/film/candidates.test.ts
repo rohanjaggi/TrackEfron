@@ -1,6 +1,16 @@
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { FilmCandidate } from "@/lib/ai/types";
-import { mergeCandidates } from "./candidates";
+import * as tmdb from "@/lib/tmdb/tmdb";
+import { gatherFilmCandidates, mergeCandidates } from "./candidates";
+import type { WatchLogRow } from "./select-logs";
+
+vi.mock("@/lib/tmdb/tmdb", async (orig) => ({
+  ...(await orig<typeof import("@/lib/tmdb/tmdb")>()),
+  getRecommendations: vi.fn(),
+  getMovieDetails: vi.fn(),
+  getTvDetails: vi.fn(),
+  discoverFiltered: vi.fn(),
+}));
 
 const c = (id: number): FilmCandidate => ({
   tmdb_id: id, media_type: "movie", title: `T${id}`, year: 2020, genres: [], overview: "", poster_url: null,
@@ -39,5 +49,37 @@ describe("mergeCandidates", () => {
   test("unused recommendation slots are filled by discover", () => {
     const out = mergeCandidates([range(0, 5)], range(1000, 30), range(2000, 30), new Set());
     expect(out).toHaveLength(60);
+  });
+});
+
+const seedLog = (id: number): WatchLogRow => ({
+  tmdb_id: id, title: `L${id}`, media_type: "movie", rating: 5, review: null,
+  plot_rating: null, cinematography_rating: null, acting_rating: null,
+  soundtrack_rating: null, pacing_rating: null, casting_rating: null, watched_date: "2024-01-01",
+});
+
+describe("gatherFilmCandidates tmdbDown", () => {
+  beforeEach(() => vi.resetAllMocks());
+  test("is true when every TMDB call fails", async () => {
+    vi.mocked(tmdb.getRecommendations).mockRejectedValue(new Error("down"));
+    vi.mocked(tmdb.getMovieDetails).mockRejectedValue(new Error("down"));
+    const r = await gatherFilmCandidates([seedLog(1), seedLog(2)], new Set());
+    expect(r).toEqual({ candidates: [], tmdbDown: true });
+  });
+  test("is false when TMDB answers but nothing survives", async () => {
+    vi.mocked(tmdb.getRecommendations).mockResolvedValue([]);
+    vi.mocked(tmdb.getMovieDetails).mockResolvedValue({ id: 1, genres: [] });
+    const r = await gatherFilmCandidates([seedLog(1)], new Set());
+    expect(r).toEqual({ candidates: [], tmdbDown: false });
+  });
+  test("is false when only some calls fail", async () => {
+    vi.mocked(tmdb.getRecommendations).mockRejectedValue(new Error("down"));
+    vi.mocked(tmdb.getMovieDetails).mockResolvedValue({ id: 1, genres: [] });
+    const r = await gatherFilmCandidates([seedLog(1)], new Set());
+    expect(r.tmdbDown).toBe(false);
+  });
+  test("is false with no rated seeds", async () => {
+    const r = await gatherFilmCandidates([{ ...seedLog(1), rating: null }], new Set());
+    expect(r).toEqual({ candidates: [], tmdbDown: false });
   });
 });

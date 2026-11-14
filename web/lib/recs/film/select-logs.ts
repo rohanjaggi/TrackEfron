@@ -10,7 +10,7 @@ export type WatchLogRow = {
   soundtrack_rating: number | null;
   pacing_rating: number | null;
   casting_rating: number | null;
-  watched_date: string;
+  watched_date: string | null;
 };
 
 const FULL_LIST_LIMIT = 80;
@@ -26,7 +26,7 @@ export function selectWatchLogs(logs: WatchLogRow[]): WatchLogRow[] {
   const rated = logs.filter((l) => l.rating != null);
   const byRating = [...rated].sort((a, b) => (b.rating as number) - (a.rating as number));
   const recent = [...logs]
-    .sort((a, b) => b.watched_date.localeCompare(a.watched_date))
+    .sort((a, b) => (b.watched_date ?? "").localeCompare(a.watched_date ?? ""))
     .slice(0, RECENT);
 
   const chosen = new Map<string, WatchLogRow>();
@@ -46,7 +46,7 @@ export function formatWatchLogs(logs: WatchLogRow[]): string {
   return logs
     .map((l) => {
       const parts = [`${l.title} (${l.media_type})`];
-      if (l.rating != null) parts.push(`rating ${l.rating}/10`);
+      if (l.rating != null) parts.push(`rating ${l.rating}/5`);
       const aspects: [string, number | null][] = [
         ["plot", l.plot_rating],
         ["cinematography", l.cinematography_rating],
@@ -60,7 +60,7 @@ export function formatWatchLogs(logs: WatchLogRow[]): string {
         .map(([name, v]) => `${name} ${v}`)
         .join(", ");
       if (aspectText) parts.push(aspectText);
-      parts.push(`watched ${l.watched_date}`);
+      if (l.watched_date) parts.push(`watched ${l.watched_date}`);
       let line = `- ${parts.join("; ")}`;
       if (l.review && l.review.trim()) line += `\n  Review: ${l.review.slice(0, REVIEW_CHARS)}`;
       return line;

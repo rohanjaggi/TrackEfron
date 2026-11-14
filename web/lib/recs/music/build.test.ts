@@ -121,6 +121,12 @@ describe("buildMusicRecs", () => {
     expect(r.status).toBe("empty");
     expect(r.right_now).not.toBeNull();
   });
+  test("every search throwing rejects instead of returning empty", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { d } = deps({ search: async () => { throw new Error("spotify down"); } });
+    await expect(buildMusicRecs(d)).rejects.toThrow("Spotify search failed");
+    vi.restoreAllMocks();
+  });
   test("keeps at most 20", async () => {
     const { d } = deps({ ai: async () => ({ recommendations: Array.from({ length: 30 }, (_, i) => rec(i + 1)) }) });
     expect((await buildMusicRecs(d)).items).toHaveLength(20);

@@ -27,7 +27,31 @@ describe("selectWatchLogs", () => {
   });
 });
 
+describe("selectWatchLogs with undated logs", () => {
+  test("does not throw over 80 logs when some watched_date values are null, and keeps undated logs last", () => {
+    const logs = Array.from({ length: 120 }, (_, i) => log(i, { watched_date: i < 30 ? null : log(i).watched_date }));
+    const ids = selectWatchLogs(logs).map((l) => l.tmdb_id);
+    for (let i = 70; i < 120; i++) expect(ids).toContain(i);
+  });
+  test("undated logs sort after dated ones in the recent slice", () => {
+    const logs = Array.from({ length: 90 }, (_, i) => log(i, { rating: null, watched_date: i < 45 ? null : log(i).watched_date }));
+    const ids = selectWatchLogs(logs).map((l) => l.tmdb_id);
+    expect(ids).toHaveLength(50);
+    for (let i = 45; i < 90; i++) expect(ids).toContain(i);
+  });
+});
+
 describe("formatWatchLogs", () => {
+  test("states ratings out of 5", () => {
+    const out = formatWatchLogs([log(1, { rating: 4.5 })]);
+    expect(out).toContain("rating 4.5/5");
+    expect(out).not.toContain("/10");
+  });
+  test("omits the watched part for an undated log", () => {
+    const out = formatWatchLogs([log(1, { watched_date: null })]);
+    expect(out).not.toContain("watched");
+    expect(out).not.toContain("null");
+  });
   test("formatWatchLogs cuts a 500-char review to 300", () => {
     const out = formatWatchLogs([log(1, { review: "x".repeat(500) })]);
     expect(out).toContain("x".repeat(300));

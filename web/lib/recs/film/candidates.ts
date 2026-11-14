@@ -97,23 +97,39 @@ export function mergeCandidates(
   return out;
 }
 
+export type GatherResult = {
+  candidates: FilmCandidate[];
+  /** True when every TMDB call made failed, as opposed to calls that succeeded with nothing useful. */
+  tmdbDown: boolean;
+};
+
 export async function gatherFilmCandidates(
   logs: WatchLogRow[],
   exclude: Set<string>,
-): Promise<FilmCandidate[]> {
+): Promise<GatherResult> {
   const seeds = logs
     .filter((l) => l.rating != null)
     .sort((a, b) => (b.rating as number) - (a.rating as number))
     .slice(0, SEED_LOGS);
-  if (seeds.length === 0) return [];
+  if (seeds.length === 0) return { candidates: [], tmdbDown: false };
 
   // Each TMDB call below can fail on its own; a failure only shrinks the candidate pool.
+  let calls = 0;
+  let failures = 0;
+  const tolerate = <T>(promise: Promise<T>, fallback: T): Promise<T> => {
+    calls++;
+    return promise.catch(() => {
+      failures++;
+      return fallback;
+    });
+  };
   const [recLists, details] = await Promise.all([
-    Promise.all(seeds.map((s) => getRecommendations(s.media_type, s.tmdb_id).catch(() => []))),
+    Promise.all(seeds.map((s) => tolerate(getRecommendations(s.media_type, s.tmdb_id), [] as TmdbResult[]))),
     Promise.all(
       seeds.map((s) =>
-        (s.media_type === "movie" ? getMovieDetails(s.tmdb_id) : getTvDetails(s.tmdb_id)).catch(
-          () => null,
+        tolerate(
+          s.media_type === "movie" ? getMovieDetails(s.tmdb_id) : getTvDetails(s.tmdb_id),
+          null,
         ),
       ),
     ),
@@ -135,9 +151,10 @@ export async function gatherFilmCandidates(
   const [discovered, lowVote] = genreIds.length
     ? await Promise.all([
         // A failed discover pool is left out; the recommendation pool still fills the batch.
-        discoverFiltered(discoverType, { genreIds }).catch(() => []),
-        discoverFiltered(discoverType, { genreIds, maxVoteCount: 500, minVoteAverage: 7 }).catch(
-          () => [],
+        tolerate(discoverFiltered(discoverType, { genreIds }), [] as TmdbResult[]),
+        tolerate(
+          discoverFiltered(discoverType, { genreIds, maxVoteCount: 500, minVoteAverage: 7 }),
+          [] as TmdbResult[],
         ),
       ])
     : [[], []];
@@ -145,10 +162,11 @@ export async function gatherFilmCandidates(
   const convert = (list: TmdbResult[], type: "movie" | "tv") =>
     list.map((r) => toCandidate(r, type)).filter((c): c is FilmCandidate => c !== null);
 
-  return mergeCandidates(
+  const candidates = mergeCandidates(
     recLists.map((list, i) => convert(list, seeds[i].media_type)),
     convert(discovered, discoverType),
     convert(lowVote, discoverType),
     exclude,
   );
+  return { candidates, tmdbDown: calls > 0 && failures === calls };
 }
