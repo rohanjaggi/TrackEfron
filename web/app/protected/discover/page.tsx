@@ -17,6 +17,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { RightNowStrip } from "@/components/discover/right-now-strip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +28,16 @@ import { TabBar } from "@/components/ui/segmented-control";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
-import type { FilmRecommendation, MusicRecommendation, VibeSearchResult } from "@/lib/ai/types";
-import type { SpotifyArtistResult } from "@/app/api/spotify/me/route";
+import type {
+  Confidence,
+  FilmRecommendation,
+  MusicRecommendation,
+  MusicRecsResponse,
+  RecsResponse,
+  RightNow,
+  VibeSearchResponse,
+  VibeSearchResult,
+} from "@/lib/ai/types";
 
 // ─── Types ───
 
@@ -73,10 +82,37 @@ type MusicMediaItem = {
   type: "album" | "track";
 };
 
-type FilmRec = MediaItem & { explanation?: string; source?: string };
-type MusicRec = MusicMediaItem & { explanation?: string };
+type FilmRec = MediaItem & { explanation?: string; confidence?: Confidence };
+type MusicRec = MusicMediaItem & { explanation?: string; confidence?: Confidence };
 
 type Tab = "for-you" | "browse";
+
+/** What one call to the recommendations endpoint came back with. */
+type RecsLoad<T> =
+  | { kind: "ok"; body: T }
+  | { kind: "no_key" }
+  | { kind: "error"; detail: string | null };
+
+/** Why a For you section has nothing (new) to show. */
+type RecsProblem =
+  | { kind: "no_key" }
+  | { kind: "not_enough_logs" }
+  | { kind: "error"; detail: string | null };
+
+/** A For you section. `loading` starts true: the section shows as loading until its first answer settles. */
+type Recs<T> = { loading: boolean; items: T[]; problem: RecsProblem | null };
+
+/** A settled title search, tagged with what it was for so a stale one is never shown. */
+type TitleSearch = { key: string; failed: boolean; films: SearchResult[]; music: MusicMediaItem[] };
+
+/** A search by description. It runs only when Enter is pressed. */
+type VibeSearch = {
+  query: string;
+  loading: boolean;
+  failed: boolean;
+  interpretation: string;
+  results: VibeSearchResult[];
+};
 
 // ─── Constants ───
 
@@ -86,19 +122,10 @@ const SEARCH_RESULT_LIMIT = 10;
 /** Postgres unique-violation: the row is already there. */
 const DUPLICATE_ROW = "23505";
 
-const MOODS = [
-  { label: "Chill", query: "chill vibes" },
-  { label: "Workout", query: "workout motivation" },
-  { label: "Study", query: "study focus lofi" },
-  { label: "Party", query: "party hits" },
-  { label: "Sleep", query: "sleep calm ambient" },
-  { label: "Focus", query: "deep focus concentration" },
-];
+const NOT_ENOUGH_LOGS_COPY = "Log and rate at least 5 titles to get recommendations.";
+const RECS_ERROR_COPY = "Couldn't build recommendations. Try again.";
 
-const MUSIC_GENRE_QUERIES = [
-  { title: "Hot in pop", subtitle: "Chart-topping pop releases", query: "pop hits" },
-  { title: "Hip-hop now", subtitle: "Latest rap and hip-hop", query: "hip hop rap" },
-];
+const NO_TITLE_SEARCH: TitleSearch = { key: "", failed: false, films: [], music: [] };
 
 const FILM_GENRES = [
   { id: 28, name: "Action" },
@@ -111,7 +138,6 @@ const FILM_GENRES = [
   { id: 99, name: "Documentary" },
 ];
 
-const MOOD_OPTIONS = MOODS.map((m) => ({ key: m.label, label: m.label }));
 const FILM_GENRE_OPTIONS = FILM_GENRES.map((g) => ({ key: String(g.id), label: g.name }));
 
 const TABS = [
@@ -120,13 +146,6 @@ const TABS = [
 ] as const;
 
 // ─── Helpers ───
-
-/** True when a query reads like a description ("something slow for a rainy night") rather than a title. */
-function detectVibeQuery(q: string): boolean {
-  const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
-  const lower = q.toLowerCase();
-  return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
-}
 
 /** TMDB movie and TV ids are separate namespaces, so a title is always the pair. */
 function titleKey(mediaType: string | null | undefined, id: number) {
@@ -148,6 +167,10 @@ function filmMeta(
   return [lead, year, score].filter(Boolean).join(" · ");
 }
 
+function titleSearchKey(mode: string, run: number, q: string) {
+  return `${mode}:${run}:${q}`;
+}
+
 function toMusicRec(r: MusicRecommendation): MusicRec {
   return {
     id: r.spotify_id || r.title,
@@ -158,6 +181,7 @@ function toMusicRec(r: MusicRecommendation): MusicRec {
     release_date: "",
     type: r.type || "album",
     explanation: r.explanation,
+    confidence: r.confidence,
   };
 }
 
@@ -167,9 +191,53 @@ function toFilmRec(r: FilmRecommendation): FilmRec {
     title: r.title,
     media_type: r.media_type,
     poster_url: r.poster_url,
+    release_date: r.year != null ? String(r.year) : undefined,
     explanation: r.explanation,
-    source: r.source,
+    confidence: r.confidence,
   };
+}
+
+function recsStart<T>(): Recs<T> {
+  return { loading: true, items: [], problem: null };
+}
+
+/**
+ * The one loader for film and music picks. 402 means no AI key; any other failure
+ * (an error status, a network failure, a body without `items`) is an error, and a
+ * provider error carries the server's message to show beneath.
+ */
+async function loadRecs<T extends RecsResponse<unknown>>(url: string): Promise<RecsLoad<T>> {
+  try {
+    const res = await fetch(url);
+    if (res.status === 402) return { kind: "no_key" };
+    const body: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = (body ?? {}) as { error?: unknown; code?: unknown };
+      const detail = err.code === "PROVIDER_ERROR" && typeof err.error === "string" ? err.error : null;
+      return { kind: "error", detail };
+    }
+    if (!body || !Array.isArray((body as { items?: unknown }).items)) return { kind: "error", detail: null };
+    return { kind: "ok", body: body as T };
+  } catch {
+    return { kind: "error", detail: null };
+  }
+}
+
+function recsProblem<R>(load: RecsLoad<RecsResponse<R>>): RecsProblem | null {
+  if (load.kind === "no_key") return { kind: "no_key" };
+  if (load.kind === "error") return { kind: "error", detail: load.detail };
+  if (load.body.status === "not_enough_logs") return { kind: "not_enough_logs" };
+  if (load.body.status === "empty" || load.body.items.length === 0) return { kind: "error", detail: null };
+  return null;
+}
+
+/** Fold an answer into a section. A failure keeps the picks already on screen; too few logs clears them. */
+function settleRecs<T, R>(prev: Recs<T>, load: RecsLoad<RecsResponse<R>>, toItem: (r: R) => T): Recs<T> {
+  const problem = recsProblem(load);
+  if (problem === null && load.kind === "ok") {
+    return { loading: false, items: load.body.items.map(toItem), problem: null };
+  }
+  return { loading: false, items: problem?.kind === "not_enough_logs" ? [] : prev.items, problem };
 }
 
 // ─── Shared pieces ───
@@ -325,16 +393,24 @@ function Shelf({
   );
 }
 
+/** Marks a pick that reaches past the user's usual taste. */
+function StretchBadge() {
+  return <Badge variant="secondary">Stretch</Badge>;
+}
+
 // ─── Film pieces ───
 
 function FilmCard({
   item,
   rank,
+  stretch,
   onWatchlist,
   watchlisted,
 }: {
   item: FilmRec;
   rank?: number;
+  /** A "discovery" pick: shown with a Stretch tag. */
+  stretch?: boolean;
   onWatchlist?: (item: MediaItem) => void;
   watchlisted?: boolean;
 }) {
@@ -347,7 +423,14 @@ function FilmCard({
       aspect="poster"
       href={mediaHref(item.media_type, item.id)}
       fallbackIcon={Film}
-      badge={rank != null ? <Badge variant="secondary">No. {rank}</Badge> : undefined}
+      badge={
+        rank != null || stretch ? (
+          <span className="flex flex-wrap gap-1">
+            {rank != null && <Badge variant="secondary">No. {rank}</Badge>}
+            {stretch && <StretchBadge />}
+          </span>
+        ) : undefined
+      }
       footer={item.explanation ? <p className="line-clamp-4">{item.explanation}</p> : undefined}
       actions={
         onWatchlist ? (
@@ -395,6 +478,7 @@ function MusicCard({
   onQueue,
   queued,
   explanation,
+  stretch,
   showType,
 }: {
   item: MusicMediaItem;
@@ -402,6 +486,8 @@ function MusicCard({
   onQueue?: (item: MusicMediaItem) => void;
   queued?: boolean;
   explanation?: string;
+  /** A "discovery" pick: shown with a Stretch tag. */
+  stretch?: boolean;
   /** Add "Album" or "Track" and the year to the second line. */
   showType?: boolean;
 }) {
@@ -417,6 +503,7 @@ function MusicCard({
       image={item.image_url}
       aspect="square"
       fallbackIcon={Disc3}
+      badge={stretch ? <StretchBadge /> : undefined}
       footer={
         explanation || onQueue ? (
           <>
@@ -475,42 +562,153 @@ function AiKeyLink() {
   );
 }
 
+// ─── For you pieces ───
+
+/**
+ * Why a For you section has nothing new to show. On its own it fills the section;
+ * `withPicks` is the failed-refresh case, shown above the picks that stay on screen.
+ */
+function RecsProblemView({
+  problem,
+  domain,
+  withPicks = false,
+  onRetry,
+}: {
+  problem: RecsProblem;
+  domain: "film" | "music";
+  withPicks?: boolean;
+  onRetry: () => void;
+}) {
+  if (problem.kind === "no_key") {
+    return withPicks ? (
+      <Notice tone="error" title="Couldn't refresh your picks" action={<AiKeyLink />} className="mb-6">
+        Recommendations need an AI key, and none is saved. The picks below are from before.
+      </Notice>
+    ) : (
+      <div className="frame">
+        <EmptyState
+          icon={Sparkles}
+          title="Recommendations need an AI key."
+          description="These picks are written using your own AI key, and none is saved yet. Add one in your profile and they will appear here."
+          action={<AiKeyLink />}
+        />
+      </div>
+    );
+  }
+
+  if (problem.kind === "not_enough_logs") {
+    return (
+      <div className="frame">
+        <EmptyState
+          icon={Sparkles}
+          title={NOT_ENOUGH_LOGS_COPY}
+          description="We need a few more ratings to learn your taste. Keep logging."
+          action={
+            <Button asChild variant="outline">
+              <Link href={LOG_HREF}>{domain === "music" ? "Log a listen" : "Log a watch"}</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  return (
+    <Notice
+      tone="error"
+      title={RECS_ERROR_COPY}
+      className={withPicks ? "mb-6" : undefined}
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    >
+      {(problem.detail || withPicks) && (
+        <>
+          {problem.detail && <p className="t-meta">{problem.detail}</p>}
+          {withPicks && <p className={problem.detail ? "mt-1" : undefined}>The picks below are from before.</p>}
+        </>
+      )}
+    </Notice>
+  );
+}
+
+/** A For you section's header with Refresh, then its picks, its loading state, or why there are none. */
+function PicksSection({
+  title,
+  note,
+  domain,
+  recs,
+  onRefresh,
+  children,
+}: {
+  title: string;
+  note: string;
+  domain: "film" | "music";
+  recs: { loading: boolean; problem: RecsProblem | null; count: number };
+  /** Asks for a rebuild: used by Refresh and by Try again, since an empty answer is cached. */
+  onRefresh: () => void;
+  /** The grid of picks. */
+  children: React.ReactNode;
+}) {
+  const { loading, problem, count } = recs;
+  return (
+    <>
+      <SectionHeader
+        title={title}
+        className="mb-3"
+        meta={!loading && count > 0 ? `${count} picks` : undefined}
+        action={
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+            <RefreshCw aria-hidden="true" />
+            {loading ? "Refreshing" : "Refresh"}
+          </Button>
+        }
+      />
+      <p className="t-meta mb-5">{note}</p>
+
+      {count > 0 ? (
+        <>
+          {problem && !loading && (
+            <RecsProblemView problem={problem} domain={domain} withPicks onRetry={onRefresh} />
+          )}
+          {children}
+        </>
+      ) : loading ? (
+        <>
+          <LoadingLine label="Finding picks for you" className="mb-5" />
+          <MediaGridSkeleton count={10} aspect={domain === "music" ? "square" : "poster"} />
+        </>
+      ) : problem ? (
+        <RecsProblemView problem={problem} domain={domain} onRetry={onRefresh} />
+      ) : null}
+    </>
+  );
+}
+
 // ─── Page ───
 
 export default function DiscoverPage() {
-  const { mode } = useMode();
+  const { mode, ready } = useMode();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("for-you");
 
-  // Music state
-  const [newReleases, setNewReleases] = useState<MusicMediaItem[]>([]);
-  const [musicLoading, setMusicLoading] = useState(false);
-  const [musicFetched, setMusicFetched] = useState(false);
+  // Music state. Lazy shelves start as loading; music mode shows them loading until their first fetch settles.
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
-  const [musicSearchResults, setMusicSearchResults] = useState<MusicMediaItem[]>([]);
-  const [activeMood, setActiveMood] = useState<string | null>(null);
-  const [moodResults, setMoodResults] = useState<MusicMediaItem[]>([]);
-  const [moodLoading, setMoodLoading] = useState(false);
-  const [moodError, setMoodError] = useState(false);
-  const [musicGenreRows, setMusicGenreRows] = useState<{ title: string; subtitle: string; items: MusicMediaItem[] }[]>([]);
-  const [musicGenreLoading, setMusicGenreLoading] = useState(false);
-  const [musicGenreFetched, setMusicGenreFetched] = useState(false);
   const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
-  const [personalMusicLoading, setPersonalMusicLoading] = useState(false);
-  const [personalMusicFetched, setPersonalMusicFetched] = useState(false);
+  const [personalMusicLoading, setPersonalMusicLoading] = useState(true);
   const [spotifyTopTracks, setSpotifyTopTracks] = useState<MusicMediaItem[]>([]);
-  const [spotifyTopArtists, setSpotifyTopArtists] = useState<SpotifyArtistResult[]>([]);
   const [spotifyOAuthConnected, setSpotifyOAuthConnected] = useState<boolean | null>(null);
-  const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(false);
-  const [spotifyOAuthFetched, setSpotifyOAuthFetched] = useState(false);
+  const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(true);
 
-  // Search (shared across modes). `searchQuery` is what is typed; `activeQuery` is what results are for.
+  // Search (shared across modes). `searchQuery` is what is typed; `activeQuery` is the title search it
+  // settles into. A search by description (`vibe`) runs only on Enter and is shown instead while it exists.
   const [searchQuery, setSearchQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [searchRun, setSearchRun] = useState(0);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState(false);
+  const [titleSearch, setTitleSearch] = useState<TitleSearch>(NO_TITLE_SEARCH);
+  const [vibe, setVibe] = useState<VibeSearch | null>(null);
   const [searchNeedsKey, setSearchNeedsKey] = useState(false);
 
   // Browse tab state
@@ -528,43 +726,25 @@ export default function DiscoverPage() {
   const [personalLoading, setPersonalLoading] = useState(true);
   const [watchedKeys, setWatchedKeys] = useState<Set<string>>(new Set());
 
-  // Browse data fetched flag
-  const [browseFetched, setBrowseFetched] = useState(false);
-
-  // Picks from the recommendation service (For you tab)
-  const [mlRecs, setMlRecs] = useState<FilmRec[]>([]);
-  const [mlLoading, setMlLoading] = useState(false);
-  const [mlFetched, setMlFetched] = useState(false);
+  // For you picks, written by the AI recommendations route
   const [watchlistedKeys, setWatchlistedKeys] = useState<Set<string>>(new Set());
-  const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
-
-  // AI recommendations
-  const [aiMusicRecs, setAiMusicRecs] = useState<MusicRec[]>([]);
-  const [aiMusicLoading, setAiMusicLoading] = useState(false);
-  const [aiMusicFetched, setAiMusicFetched] = useState(false);
-  const [aiMusicError, setAiMusicError] = useState(false);
-  const [aiFilmRecs, setAiFilmRecs] = useState<FilmRec[]>([]);
-  const [aiFilmLoading, setAiFilmLoading] = useState(false);
-  const [aiFilmFetched, setAiFilmFetched] = useState(false);
-  const [aiFilmError, setAiFilmError] = useState(false);
-
-  // Search by description
-  const [vibeResults, setVibeResults] = useState<VibeSearchResult[]>([]);
-  const [vibeInterpretation, setVibeInterpretation] = useState<string>("");
-  const [isVibeQuery, setIsVibeQuery] = useState(false);
+  const [filmRecs, setFilmRecs] = useState<Recs<FilmRec>>(recsStart);
+  const [musicRecs, setMusicRecs] = useState<Recs<MusicRec>>(recsStart);
+  const [rightNow, setRightNow] = useState<RightNow | null>(null);
 
   // AI key status
   const [aiNotConfigured, setAiNotConfigured] = useState(false);
 
-  // Guards: ignore a slow response once a newer request has been made; ignore a second press while saving.
-  const moodRequest = useRef(0);
+  // Guards: ignore a slow response once a newer request (or a mode switch) has replaced it;
+  // start each lazy fetch once; ignore a second press while saving.
   const genreRequest = useRef(0);
+  const vibeRequest = useRef(0);
+  const filmRecsRequest = useRef(0);
+  const filmRecsInFlight = useRef(false);
+  const musicRecsRequest = useRef(0);
+  const musicRecsInFlight = useRef(false);
+  const started = useRef({ library: false, spotify: false, browse: false });
   const savingIds = useRef(new Set<string>());
-  // Mirrors `aiNotConfigured` so the search effect can read it without re-running when it flips.
-  const noAiKey = useRef(false);
-  useEffect(() => {
-    noAiKey.current = aiNotConfigured;
-  }, [aiNotConfigured]);
 
   // When the mode changes, drop the old mode's transient state in the same render so nothing stale paints.
   const [prevMode, setPrevMode] = useState(mode);
@@ -573,49 +753,27 @@ export default function DiscoverPage() {
     setActiveTab("for-you");
     setSearchQuery("");
     setActiveQuery("");
-    setSearchResults([]);
-    setMusicSearchResults([]);
-    setVibeResults([]);
-    setVibeInterpretation("");
-    setIsVibeQuery(false);
-    setSearchLoading(false);
-    setSearchError(false);
+    setVibe(null);
     setSearchNeedsKey(false);
-    setActiveMood(null);
-    setMoodResults([]);
-    setMoodError(false);
-    setMoodLoading(false);
     setSelectedGenre(null);
     setGenreResults([]);
     setGenreError(false);
     setGenreLoading(false);
   }
-  // Late answers for a mood or genre picked in the old mode must not land in the new one.
+  // Late answers for a request made in the old mode must not land in the new one. A dropped For you
+  // request leaves its section loading, so the fetch below asks again when the mode comes back.
+  // Declared before the fetch effects so it runs first on a switch.
+  const lastMode = useRef(mode);
   useEffect(() => {
-    moodRequest.current++;
+    if (lastMode.current === mode) return;
+    lastMode.current = mode;
     genreRequest.current++;
+    vibeRequest.current++;
+    filmRecsRequest.current++;
+    filmRecsInFlight.current = false;
+    musicRecsRequest.current++;
+    musicRecsInFlight.current = false;
   }, [mode]);
-
-  // ─── Fetch music browse data (lazy — only when mode is music) ───
-  useEffect(() => {
-    if (mode !== "music" || musicFetched) return;
-    setMusicFetched(true);
-    setMusicLoading(true);
-
-    async function fetchMusicBrowse() {
-      try {
-        const res = await fetch("/api/spotify?action=new-releases");
-        const data = await res.json();
-        if (Array.isArray(data)) setNewReleases(data);
-      } catch {
-        // The shelf simply stays hidden.
-      } finally {
-        setMusicLoading(false);
-      }
-    }
-
-    fetchMusicBrowse();
-  }, [mode, musicFetched]);
 
   // ─── Music queue keys (music mode only; reloaded on each visit) ───
   useEffect(() => {
@@ -645,9 +803,9 @@ export default function DiscoverPage() {
     };
   }, [mode]);
 
-  // ─── Film watchlist keys (film mode only; reloaded on each visit) ───
+  // ─── Film watchlist keys (film mode only, once the stored mode is known; reloaded on each visit) ───
   useEffect(() => {
-    if (mode !== "film") return;
+    if (!ready || mode !== "film") return;
     let cancelled = false;
 
     async function fetchWatchlistKeys() {
@@ -671,42 +829,12 @@ export default function DiscoverPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode]);
+  }, [mode, ready]);
 
-  // ─── Music genre shelves (music mode; wait until Spotify connection is known so the shelf budget is exact) ───
+  // ─── Personalised music rows (lazy — top artist from listen_logs) ───
   useEffect(() => {
-    if (mode !== "music" || musicGenreFetched || !spotifyOAuthFetched || spotifyOAuthLoading) return;
-    setMusicGenreFetched(true);
-    setMusicGenreLoading(true);
-    const queries = MUSIC_GENRE_QUERIES.slice(0, spotifyOAuthConnected ? 1 : 2);
-
-    async function fetchMusicGenres() {
-      try {
-        const rows = await Promise.all(
-          queries.map(async (g) => {
-            try {
-              const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(g.query)}&type=album`);
-              const data = await res.json();
-              return { title: g.title, subtitle: g.subtitle, items: Array.isArray(data) ? data : [] };
-            } catch {
-              return { title: g.title, subtitle: g.subtitle, items: [] };
-            }
-          })
-        );
-        setMusicGenreRows(rows.filter((r) => r.items.length > 0));
-      } finally {
-        setMusicGenreLoading(false);
-      }
-    }
-
-    fetchMusicGenres();
-  }, [mode, musicGenreFetched, spotifyOAuthFetched, spotifyOAuthLoading, spotifyOAuthConnected]);
-
-  // ─── Personalised music rows (lazy — top artists from listen_logs) ───
-  useEffect(() => {
-    if (mode !== "music" || personalMusicFetched) return;
-    setPersonalMusicFetched(true);
-    setPersonalMusicLoading(true);
+    if (mode !== "music" || started.current.library) return;
+    started.current.library = true;
 
     async function fetchPersonalMusic() {
       try {
@@ -753,30 +881,24 @@ export default function DiscoverPage() {
     }
 
     fetchPersonalMusic();
-  }, [mode, personalMusicFetched]);
+  }, [mode]);
 
-  // ─── Fetch Spotify OAuth personalised data (lazy — top tracks & artists) ───
+  // ─── Spotify top tracks (lazy — music mode, needs a connected account) ───
   useEffect(() => {
-    if (mode !== "music" || spotifyOAuthFetched) return;
-    setSpotifyOAuthFetched(true);
-    setSpotifyOAuthLoading(true);
+    if (mode !== "music" || started.current.spotify) return;
+    started.current.spotify = true;
 
-    async function fetchSpotifyOAuth() {
+    async function fetchSpotifyTopTracks() {
       try {
-        const [tracksRes, artistsRes] = await Promise.all([
-          fetch("/api/spotify/me?action=top-tracks"),
-          fetch("/api/spotify/me?action=top-artists"),
-        ]);
+        const tracksRes = await fetch("/api/spotify/me?action=top-tracks");
         const tracksData = await tracksRes.json();
-        const artistsData = await artistsRes.json();
 
-        if (tracksData.connected === false || artistsData.connected === false) {
+        if (tracksData.connected === false) {
           setSpotifyOAuthConnected(false);
           return;
         }
         setSpotifyOAuthConnected(true);
         if (Array.isArray(tracksData)) setSpotifyTopTracks(tracksData);
-        if (Array.isArray(artistsData)) setSpotifyTopArtists(artistsData);
       } catch {
         setSpotifyOAuthConnected(false);
       } finally {
@@ -784,91 +906,66 @@ export default function DiscoverPage() {
       }
     }
 
-    fetchSpotifyOAuth();
-  }, [mode, spotifyOAuthFetched]);
+    fetchSpotifyTopTracks();
+  }, [mode]);
 
-  // ─── Fetch picks from the recommendation service (lazy — only when the For you tab is first opened) ───
-  useEffect(() => {
-    if (mode !== "film" || activeTab !== "for-you" || mlFetched) return;
-    setMlFetched(true);
-    setMlLoading(true);
-
-    async function fetchMlRecs() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
-        const data = await res.json();
-        if (Array.isArray(data)) setMlRecs(data);
-      } catch {
-        // The recommendation service may not be running; AI picks or the empty state take over.
-      } finally {
-        setMlLoading(false);
+  // ─── For you picks: one request at a time per mode, the newest wins ───
+  const fetchFilmRecs = useCallback(
+    async (refresh: boolean) => {
+      const request = ++filmRecsRequest.current;
+      filmRecsInFlight.current = true;
+      const load = await loadRecs<RecsResponse<FilmRecommendation>>(
+        `/api/ai/recommend?mode=film${refresh ? "&refresh=true" : ""}`,
+      );
+      if (request !== filmRecsRequest.current) return;
+      filmRecsInFlight.current = false;
+      if (load.kind === "no_key") setAiNotConfigured(true);
+      setFilmRecs((prev) => settleRecs(prev, load, toFilmRec));
+      if (refresh && recsProblem(load) === null) {
+        toast({ mark: "Updated", title: "Your recommendations are fresh" });
       }
-    }
+    },
+    [toast],
+  );
 
-    fetchMlRecs();
-  }, [mode, activeTab, mlFetched]);
-
-  // ─── Fetch AI music recommendations (lazy — only when mode is music) ───
-  useEffect(() => {
-    if (mode !== "music" || aiMusicFetched) return;
-    setAiMusicFetched(true);
-    setAiMusicLoading(true);
-
-    async function fetchAiMusicRecs() {
-      try {
-        const res = await fetch("/api/ai/recommend?mode=music");
-        const data = await res.json();
-        if (data?.code === "NO_API_KEY") {
-          setAiNotConfigured(true);
-        } else if (Array.isArray(data)) {
-          setAiMusicRecs((data as MusicRecommendation[]).map(toMusicRec));
-        } else {
-          setAiMusicError(true);
-        }
-      } catch {
-        setAiMusicError(true);
-      } finally {
-        setAiMusicLoading(false);
+  const fetchMusicRecs = useCallback(
+    async (refresh: boolean) => {
+      const request = ++musicRecsRequest.current;
+      musicRecsInFlight.current = true;
+      const load = await loadRecs<MusicRecsResponse>(
+        `/api/ai/recommend?mode=music${refresh ? "&refresh=true" : ""}`,
+      );
+      if (request !== musicRecsRequest.current) return;
+      musicRecsInFlight.current = false;
+      // "Right now" arrives with the picks; a failed or keyless answer has none.
+      setRightNow(load.kind === "ok" ? (load.body.right_now ?? null) : null);
+      if (load.kind === "no_key") setAiNotConfigured(true);
+      setMusicRecs((prev) => settleRecs(prev, load, toMusicRec));
+      if (refresh && recsProblem(load) === null) {
+        toast({ mark: "Updated", title: "Your recommendations are fresh" });
       }
-    }
+    },
+    [toast],
+  );
 
-    fetchAiMusicRecs();
-  }, [mode, aiMusicFetched]);
-
-  // ─── Fetch AI film recommendations (lazy — only when For you tab + film mode) ───
+  // Music picks: lazy, music mode only.
   useEffect(() => {
-    if (mode !== "film" || activeTab !== "for-you" || aiFilmFetched) return;
-    setAiFilmFetched(true);
-    setAiFilmLoading(true);
+    if (!ready || mode !== "music" || !musicRecs.loading || musicRecsInFlight.current) return;
+    fetchMusicRecs(false);
+  }, [ready, mode, musicRecs.loading, fetchMusicRecs]);
 
-    async function fetchAiFilmRecs() {
-      try {
-        const res = await fetch("/api/ai/recommend?mode=film");
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setAiFilmRecs((data as FilmRecommendation[]).map(toFilmRec));
-        } else if (data?.code === "NO_API_KEY") {
-          setAiNotConfigured(true);
-        } else {
-          setAiFilmError(true);
-        }
-      } catch {
-        setAiFilmError(true);
-      } finally {
-        setAiFilmLoading(false);
-      }
-    }
-
-    fetchAiFilmRecs();
-  }, [mode, activeTab, aiFilmFetched]);
+  // Film picks: lazy, For you tab in film mode only, and never before the stored mode is known
+  // (the server renders film, so a music-mode reload must not start a film request).
+  useEffect(() => {
+    if (!ready || mode !== "film" || activeTab !== "for-you") return;
+    if (!filmRecs.loading || filmRecsInFlight.current) return;
+    fetchFilmRecs(false);
+  }, [ready, mode, activeTab, filmRecs.loading, fetchFilmRecs]);
 
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
-    if (mode !== "film" || activeTab !== "browse" || browseFetched) return;
-    setBrowseFetched(true);
+    if (mode !== "film" || activeTab !== "browse" || started.current.browse) return;
+    started.current.browse = true;
 
     async function fetchBrowse() {
       try {
@@ -974,97 +1071,42 @@ export default function DiscoverPage() {
 
     fetchBrowse();
     fetchPersonalized();
-  }, [mode, activeTab, browseFetched]);
+  }, [mode, activeTab]);
 
-  // ─── Search: typing settles into `activeQuery` after a pause; submitting does it at once ───
+  // ─── Title search: typing settles into `activeQuery` after a pause ───
   useEffect(() => {
     const q = searchQuery.trim();
-    if (!q) {
-      setActiveQuery("");
-      return;
-    }
-    const t = setTimeout(() => setActiveQuery(q), detectVibeQuery(q) ? 800 : 350);
+    if (!q) return;
+    const t = setTimeout(() => setActiveQuery(q), 350);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // ─── Search: run whenever the settled query, the mode, or a manual submit changes ───
+  // ─── Title search: run whenever the settled query, the mode, or a retry changes ───
   useEffect(() => {
     const q = activeQuery;
-    setSearchResults([]);
-    setMusicSearchResults([]);
-    setVibeResults([]);
-    setVibeInterpretation("");
-    setSearchError(false);
-    setSearchNeedsKey(false);
-
-    if (!q) {
-      setIsVibeQuery(false);
-      setSearchLoading(false);
-      return;
-    }
-
+    if (!q) return;
+    const key = titleSearchKey(mode, searchRun, q);
+    const failed: TitleSearch = { key, failed: true, films: [], music: [] };
     let cancelled = false;
-    const isVibe = detectVibeQuery(q);
-    setIsVibeQuery(isVibe);
-    setSearchLoading(true);
 
-    /** The ordinary title search for the current mode. */
-    async function titleSearch() {
-      if (mode === "music") {
-        const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (Array.isArray(data)) setMusicSearchResults(data);
-        else setSearchError(true);
-      } else {
-        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (Array.isArray(data)) setSearchResults(data);
-        else setSearchError(true);
-      }
-    }
-
-    /** No AI key: search the words as a title and note that describing a mood needs a key. */
-    async function titleSearchWithoutKey() {
-      setIsVibeQuery(false);
-      setSearchNeedsKey(true);
-      await titleSearch();
-    }
-
-    async function run() {
+    async function run(): Promise<TitleSearch> {
       try {
-        if (isVibe && noAiKey.current) {
-          await titleSearchWithoutKey();
-        } else if (isVibe) {
-          const res = await fetch("/api/ai/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
-          });
-          const data = await res.json();
-          if (cancelled) return;
-          if (data?.code === "NO_API_KEY") {
-            noAiKey.current = true;
-            setAiNotConfigured(true);
-            await titleSearchWithoutKey();
-          } else if (Array.isArray(data?.results)) {
-            setVibeResults(data.results as VibeSearchResult[]);
-            setVibeInterpretation(data.interpretation || "");
-          } else {
-            setSearchError(true);
-          }
-        } else {
-          await titleSearch();
+        if (mode === "music") {
+          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+          const data: unknown = await res.json();
+          return Array.isArray(data) ? { key, failed: false, films: [], music: data as MusicMediaItem[] } : failed;
         }
+        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+        const data: unknown = await res.json();
+        return Array.isArray(data) ? { key, failed: false, films: data as SearchResult[], music: [] } : failed;
       } catch {
-        if (!cancelled) setSearchError(true);
-      } finally {
-        if (!cancelled) setSearchLoading(false);
+        return failed;
       }
     }
 
-    run();
+    run().then((result) => {
+      if (!cancelled) setTitleSearch(result);
+    });
     return () => {
       cancelled = true;
     };
@@ -1072,17 +1114,75 @@ export default function DiscoverPage() {
 
   // ─── Handlers ───
 
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    // Typing goes back to the title search and drops any search by description still out.
+    vibeRequest.current++;
+    setVibe(null);
+    setSearchNeedsKey(false);
+    if (!value.trim()) setActiveQuery("");
+  }
+
+  /** Search by description. Run on Enter only, never while typing. */
+  async function runVibeSearch(q: string) {
+    const request = ++vibeRequest.current;
+    setSearchNeedsKey(false);
+    if (aiNotConfigured) {
+      // No AI key: search the words as a title and note that describing a mood needs a key.
+      setVibe(null);
+      setActiveQuery(q);
+      setSearchNeedsKey(true);
+      return;
+    }
+    setVibe({ query: q, loading: true, failed: false, interpretation: "", results: [] });
+    const failed: VibeSearch = { query: q, loading: false, failed: true, interpretation: "", results: [] };
+    try {
+      const res = await fetch("/api/ai/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
+      });
+      const data = (await res.json().catch(() => null)) as (Partial<VibeSearchResponse> & { code?: string }) | null;
+      if (request !== vibeRequest.current) return;
+      if (res.status === 402 || data?.code === "NO_API_KEY") {
+        setAiNotConfigured(true);
+        setVibe(null);
+        setActiveQuery(q);
+        setSearchNeedsKey(true);
+      } else if (res.ok && Array.isArray(data?.results)) {
+        setVibe({
+          query: q,
+          loading: false,
+          failed: false,
+          interpretation: data.interpretation || "",
+          results: data.results,
+        });
+      } else {
+        setVibe(failed);
+      }
+    } catch {
+      if (request === vibeRequest.current) setVibe(failed);
+    }
+  }
+
   function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const q = searchQuery.trim();
     if (!q) return;
-    setActiveQuery(q);
-    setSearchRun((n) => n + 1);
+    runVibeSearch(q);
   }
 
   function clearSearch() {
+    vibeRequest.current++;
     setSearchQuery("");
     setActiveQuery("");
+    setVibe(null);
+    setSearchNeedsKey(false);
+  }
+
+  function retrySearch() {
+    if (vibe) runVibeSearch(vibe.query);
+    else setSearchRun((n) => n + 1);
   }
 
   async function handleAddToWatchlist(item: MediaItem) {
@@ -1129,16 +1229,17 @@ export default function DiscoverPage() {
     }
   }
 
-  async function handleAddToQueue(item: MusicMediaItem) {
+  /** Resolves true once the item is in the queue (a duplicate counts). */
+  async function handleAddToQueue(item: MusicMediaItem): Promise<boolean> {
     const key = `queue-${item.id}`;
-    if (savingIds.current.has(key)) return;
+    if (savingIds.current.has(key)) return false;
     savingIds.current.add(key);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({ mark: "Failed", tone: "error", title: "Sign in to add to your queue" });
-        return;
+        return false;
       }
       const { error } = await supabase.from("music_queue").insert({
         user_id: user.id,
@@ -1155,11 +1256,12 @@ export default function DiscoverPage() {
           title: `Couldn't add ${item.name} to your queue`,
           description: "Try again in a moment.",
         });
-        return;
+        return false;
       }
       setQueuedIds((prev) => new Set([...prev, item.id]));
       if (error) toast({ tone: "info", title: `${item.name} is already in your queue` });
       else toast({ mark: "Added", title: `${item.name} added to your queue` });
+      return true;
     } catch {
       toast({
         mark: "Failed",
@@ -1167,72 +1269,26 @@ export default function DiscoverPage() {
         title: `Couldn't add ${item.name} to your queue`,
         description: "Check your connection and try again.",
       });
+      return false;
     } finally {
       savingIds.current.delete(key);
     }
   }
 
-  async function handleRefreshMlRecs() {
-    setMlLoading(true);
-    setRefreshStatus("idle");
-    try {
-      const res = await fetch("/api?action=refresh_profile", { method: "POST" });
-      setRefreshStatus(res.ok ? "ok" : "error");
-    } catch {
-      setRefreshStatus("error");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    setMlRecs([]);
-    setMlFetched(false);
+  /** Queueing a result found by description is picking it, so the search by description is done. */
+  async function handleQueueVibeResult(item: MusicMediaItem) {
+    if (await handleAddToQueue(item)) clearSearch();
   }
 
-  async function handleRefreshAiMusicRecs() {
-    setAiMusicLoading(true);
-    setAiMusicError(false);
-    try {
-      const res = await fetch("/api/ai/recommend?mode=music&refresh=true");
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setAiMusicRecs((data as MusicRecommendation[]).map(toMusicRec));
-        toast({ mark: "Updated", title: "Your recommendations are fresh" });
-      } else if (data?.code === "NO_API_KEY") {
-        setAiNotConfigured(true);
-      } else {
-        throw new Error("refresh failed");
-      }
-    } catch {
-      toast({
-        mark: "Failed",
-        tone: "error",
-        title: "Couldn't refresh your recommendations",
-        description: "Try again in a moment.",
-      });
-    } finally {
-      setAiMusicLoading(false);
-    }
+  // Refresh and Try again both ask for a rebuild: an empty answer is cached, so a plain retry would repeat it.
+  function refreshFilmRecs() {
+    setFilmRecs((r) => ({ ...r, loading: true, problem: null }));
+    fetchFilmRecs(true);
   }
 
-  async function handleRefreshAiFilmRecs() {
-    setAiFilmLoading(true);
-    setAiFilmError(false);
-    try {
-      const res = await fetch("/api/ai/recommend?mode=film&refresh=true");
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setAiFilmRecs((data as FilmRecommendation[]).map(toFilmRec));
-      } else if (data?.code !== "NO_API_KEY") {
-        setAiFilmError(true);
-      }
-    } catch {
-      setAiFilmError(true);
-    } finally {
-      setAiFilmLoading(false);
-    }
-  }
-
-  function handleRefreshFilmRecs() {
-    handleRefreshMlRecs();
-    handleRefreshAiFilmRecs();
+  function refreshMusicRecs() {
+    setMusicRecs((r) => ({ ...r, loading: true, problem: null }));
+    fetchMusicRecs(true);
   }
 
   function clearGenre() {
@@ -1267,38 +1323,6 @@ export default function DiscoverPage() {
     }
   }
 
-  function clearMood() {
-    moodRequest.current++;
-    setActiveMood(null);
-    setMoodResults([]);
-    setMoodError(false);
-    setMoodLoading(false);
-  }
-
-  async function handleMoodToggle(key: string) {
-    const mood = MOODS.find((m) => m.label === key);
-    if (!mood || activeMood === mood.label) {
-      clearMood();
-      return;
-    }
-    const request = ++moodRequest.current;
-    setActiveMood(mood.label);
-    setMoodResults([]);
-    setMoodError(false);
-    setMoodLoading(true);
-    try {
-      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(mood.query)}&type=album,track`);
-      const data = await res.json();
-      if (request !== moodRequest.current) return;
-      if (Array.isArray(data)) setMoodResults(data);
-      else setMoodError(true);
-    } catch {
-      if (request === moodRequest.current) setMoodError(true);
-    } finally {
-      if (request === moodRequest.current) setMoodLoading(false);
-    }
-  }
-
   const filterWatched = (items: MediaItem[]) =>
     watchedKeys.size > 0 ? items.filter((i) => !watchedKeys.has(titleKey(i.media_type, i.id))) : items;
 
@@ -1306,9 +1330,17 @@ export default function DiscoverPage() {
 
   const isMusic = mode === "music";
 
-  const filmRecs = aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs;
-  const filmRecsLoading = mlLoading || aiFilmLoading;
+  const currentSearchKey = activeQuery ? titleSearchKey(mode, searchRun, activeQuery) : "";
+  const titleSearchDone = currentSearchKey !== "" && titleSearch.key === currentSearchKey;
+  const searchResults = titleSearchDone ? titleSearch.films : [];
+  const musicSearchResults = titleSearchDone ? titleSearch.music : [];
 
+  const isVibeQuery = vibe !== null;
+  const shownQuery = vibe ? vibe.query : activeQuery;
+  const searchLoading = vibe ? vibe.loading : activeQuery !== "" && !titleSearchDone;
+  const searchError = vibe ? vibe.failed : titleSearchDone && titleSearch.failed;
+
+  const vibeResults = vibe?.results ?? [];
   const filmVibeResults = vibeResults.filter((r) => r.tmdb_id != null);
   const musicVibeResults = vibeResults.filter((r) => r.spotify_id);
   const searchCount = isVibeQuery
@@ -1345,8 +1377,8 @@ export default function DiscoverPage() {
               htmlFor="discover-search"
               hint={
                 isMusic
-                  ? "Type a title or an artist, or describe what you are in the mood for, like “something calm for late at night”."
-                  : "Type a title, or describe what you are in the mood for, like “something tense and slow”."
+                  ? "Albums and tracks appear as you type. Or describe a mood, like “something calm for late at night”, and press Enter."
+                  : "Films and shows appear as you type. Or describe a mood, like “something tense and slow”, and press Enter."
               }
             >
               <div className="flex gap-2">
@@ -1364,18 +1396,24 @@ export default function DiscoverPage() {
                     className="pl-9"
                     aria-describedby="discover-search-hint"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter that confirms an IME composition must not submit the search.
+                      if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
+                        e.preventDefault();
+                      }
+                    }}
                   />
                 </div>
-                <Button type="submit">Search</Button>
+                <Button type="submit">Search by mood</Button>
               </div>
             </Field>
           </form>
 
-          {activeQuery && (
+          {shownQuery && (
             <div className="mt-10">
               <SectionHeader
-                title={`Results for “${activeQuery}”`}
+                title={`Results for “${shownQuery}”`}
                 meta={
                   !searchLoading && searchCount > 0
                     ? `${searchCount} ${searchCount === 1 ? "match" : "matches"}`
@@ -1393,7 +1431,7 @@ export default function DiscoverPage() {
                 <Notice tone="error" title="Search didn't go through">
                   <p>Check your connection and try again.</p>
                   <div className="mt-3">
-                    <Button variant="outline" size="sm" onClick={() => setSearchRun((n) => n + 1)}>
+                    <Button variant="outline" size="sm" onClick={retrySearch}>
                       Try again
                     </Button>
                   </div>
@@ -1402,7 +1440,7 @@ export default function DiscoverPage() {
                 <div className="frame">
                   <EmptyState
                     icon={Search}
-                    title={`Nothing matched “${activeQuery}”.`}
+                    title={`Nothing matched “${shownQuery}”.`}
                     description={
                       isVibeQuery
                         ? "Try describing it another way, or search by title."
@@ -1412,8 +1450,8 @@ export default function DiscoverPage() {
                 </div>
               ) : (
                 <>
-                  {isVibeQuery && vibeInterpretation && (
-                    <p className="t-meta mb-5 max-w-[62ch]">{vibeInterpretation}</p>
+                  {isVibeQuery && vibe.interpretation && (
+                    <p className="t-meta mb-5 max-w-[62ch]">{vibe.interpretation}</p>
                   )}
                   <MediaGrid>
                     {isVibeQuery && isMusic &&
@@ -1430,7 +1468,7 @@ export default function DiscoverPage() {
                             type: r.type === "track" ? "track" : "album",
                           }}
                           explanation={r.why}
-                          onQueue={handleAddToQueue}
+                          onQueue={handleQueueVibeResult}
                           queued={queuedIds.has(r.spotify_id ?? "")}
                         />
                       ))}
@@ -1492,116 +1530,35 @@ export default function DiscoverPage() {
         {/* ─── MUSIC MODE ─── */}
         {isMusic && (
           <>
-            {/* Mood */}
-            <section>
-              <SectionHeader
-                title={activeMood ? `${activeMood} music` : "Pick a mood"}
-                action={activeMood ? <ClearButton label="Clear mood" onClick={clearMood} /> : undefined}
-              />
-              <ToggleGroup label="Mood" options={MOOD_OPTIONS} activeKey={activeMood} onToggle={handleMoodToggle} />
-
-              {activeMood && (
-                <div className="mt-8">
-                  {moodLoading ? (
-                    <MediaGridSkeleton count={10} aspect="square" />
-                  ) : moodError ? (
-                    <Notice tone="error" title="Couldn't load that mood">
-                      Check your connection, then pick the mood again.
-                    </Notice>
-                  ) : moodResults.length === 0 ? (
-                    <div className="frame">
-                      <EmptyState
-                        icon={Disc3}
-                        title="Nothing turned up for that mood."
-                        description="Try another one."
-                      />
-                    </div>
-                  ) : (
-                    <MediaGrid>
-                      {moodResults.map((item) => (
-                        <MusicCard
-                          key={item.id}
-                          item={item}
-                          onQueue={handleAddToQueue}
-                          queued={queuedIds.has(item.id)}
-                        />
-                      ))}
-                    </MediaGrid>
-                  )}
-                </div>
-              )}
-            </section>
+            {/* Right now: rising and dropped-off artists, from the same answer as the picks */}
+            {rightNow && <RightNowStrip rightNow={rightNow} />}
 
             {/* For you */}
-            {!activeMood && (
-              <section>
-                <SectionHeader
-                  title="For you"
-                  className="mb-3"
-                  meta={!aiMusicLoading && aiMusicRecs.length > 0 ? `${aiMusicRecs.length} picks` : undefined}
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshAiMusicRecs}
-                      disabled={aiMusicLoading}
-                    >
-                      <RefreshCw aria-hidden="true" />
-                      {aiMusicLoading ? "Refreshing" : "Refresh"}
-                    </Button>
-                  }
-                />
-                <p className="t-meta mb-5">Based on what you have logged and rated highly.</p>
-
-                {aiMusicLoading ? (
-                  <>
-                    <LoadingLine label="Finding picks for you" className="mb-5" />
-                    <MediaGridSkeleton count={10} aspect="square" />
-                  </>
-                ) : aiMusicRecs.length > 0 ? (
-                  <MediaGrid>
-                    {aiMusicRecs.map((item) => (
-                      <MusicCard
-                        key={item.id}
-                        item={item}
-                        explanation={item.explanation}
-                        onQueue={handleAddToQueue}
-                        queued={queuedIds.has(item.id)}
-                      />
-                    ))}
-                  </MediaGrid>
-                ) : aiNotConfigured ? (
-                  <div className="frame">
-                    <EmptyState
-                      icon={Sparkles}
-                      title="Recommendations need an AI key."
-                      description="These picks are written using your own AI key, and none is saved yet. Add one in your profile and they will appear here."
-                      action={<AiKeyLink />}
+            <section>
+              <PicksSection
+                title="For you"
+                note="Based on what you have logged and rated highly."
+                domain="music"
+                recs={{ loading: musicRecs.loading, problem: musicRecs.problem, count: musicRecs.items.length }}
+                onRefresh={refreshMusicRecs}
+              >
+                <MediaGrid>
+                  {musicRecs.items.map((item) => (
+                    <MusicCard
+                      key={item.id}
+                      item={item}
+                      explanation={item.explanation}
+                      stretch={item.confidence === "discovery"}
+                      onQueue={handleAddToQueue}
+                      queued={queuedIds.has(item.id)}
                     />
-                  </div>
-                ) : aiMusicError ? (
-                  <Notice tone="error" title="Couldn't load your recommendations">
-                    Something went wrong on our side. Press Refresh to try again.
-                  </Notice>
-                ) : (
-                  <div className="frame">
-                    <EmptyState
-                      icon={Sparkles}
-                      title="Nothing to go on yet."
-                      description="Log some music and recommendations will appear here."
-                      action={
-                        <Button asChild variant="outline">
-                          <Link href={LOG_HREF}>Log a listen</Link>
-                        </Button>
-                      }
-                    />
-                  </div>
-                )}
-              </section>
-            )}
+                  ))}
+                </MediaGrid>
+              </PicksSection>
+            </section>
 
-            {/* Spotify — top tracks and artists */}
-            {!activeMood && spotifyOAuthLoading && (
+            {/* Spotify — top tracks */}
+            {spotifyOAuthLoading && (
               <MusicShelf
                 title="Your top tracks"
                 subtitle="Loading from Spotify"
@@ -1610,32 +1567,16 @@ export default function DiscoverPage() {
                 queuedIds={queuedIds}
               />
             )}
-            {!activeMood && spotifyOAuthConnected === true && (
-              <>
-                <MusicShelf
-                  title="Your top tracks"
-                  subtitle="Your most-played tracks on Spotify"
-                  items={spotifyTopTracks}
-                  onQueue={handleAddToQueue}
-                  queuedIds={queuedIds}
-                />
-                <MusicShelf
-                  title="Your top artists"
-                  subtitle="Artists you listen to most"
-                  items={spotifyTopArtists.map((a) => ({
-                    id: a.id,
-                    name: a.name,
-                    artist: a.genres.slice(0, 2).join(", ") || "Artist",
-                    album_name: "",
-                    image_url: a.image_url,
-                    release_date: "",
-                    type: "album" as const,
-                  }))}
-                  queuedIds={queuedIds}
-                />
-              </>
+            {spotifyOAuthConnected === true && (
+              <MusicShelf
+                title="Your top tracks"
+                subtitle="Your most-played tracks on Spotify"
+                items={spotifyTopTracks}
+                onQueue={handleAddToQueue}
+                queuedIds={queuedIds}
+              />
             )}
-            {!activeMood && spotifyOAuthConnected === false && (
+            {spotifyOAuthConnected === false && (
               <Notice
                 tone="info"
                 title="Connect Spotify for personalised picks"
@@ -1649,67 +1590,30 @@ export default function DiscoverPage() {
                   </Button>
                 }
               >
-                See your top tracks and artists right here once you connect your account.
+                See your top tracks and what is rising in your listening once you connect your account.
               </Notice>
             )}
 
-            {/* New releases */}
-            {!activeMood && (
+            {/* Personalised shelves — based on the artists logged most */}
+            {personalMusicLoading ? (
               <MusicShelf
-                title="New releases"
-                subtitle="New this week on Spotify"
-                items={newReleases}
-                loading={musicLoading}
-                onQueue={handleAddToQueue}
+                title="From your library"
+                subtitle="Based on artists you've logged"
+                items={[]}
+                loading
                 queuedIds={queuedIds}
               />
-            )}
-
-            {/* Personalised shelves — based on the artists logged most */}
-            {!activeMood &&
-              (personalMusicLoading ? (
+            ) : (
+              personalMusicRows.map((row) => (
                 <MusicShelf
-                  title="From your library"
-                  subtitle="Based on artists you've logged"
-                  items={[]}
-                  loading
+                  key={row.title}
+                  title={row.title}
+                  items={row.items}
+                  onQueue={handleAddToQueue}
                   queuedIds={queuedIds}
                 />
-              ) : (
-                personalMusicRows.map((row) => (
-                  <MusicShelf
-                    key={row.title}
-                    title={row.title}
-                    items={row.items}
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))
-              ))}
-
-            {/* Genre shelves */}
-            {!activeMood &&
-              (musicGenreLoading || !musicGenreFetched
-                ? MUSIC_GENRE_QUERIES.slice(0, 1).map((g) => (
-                    <MusicShelf
-                      key={g.title}
-                      title={g.title}
-                      subtitle={g.subtitle}
-                      items={[]}
-                      loading
-                      queuedIds={queuedIds}
-                    />
-                  ))
-                : musicGenreRows.map((row) => (
-                    <MusicShelf
-                      key={row.title}
-                      title={row.title}
-                      subtitle={row.subtitle}
-                      items={row.items}
-                      onQueue={handleAddToQueue}
-                      queuedIds={queuedIds}
-                    />
-                  )))}
+              ))
+            )}
           </>
         )}
 
@@ -1732,74 +1636,26 @@ export default function DiscoverPage() {
                 id="discover-panel-for-you"
                 aria-labelledby="discover-tab-for-you"
               >
-                <SectionHeader
+                <PicksSection
                   title="Recommended for you"
-                  className="mb-3"
-                  meta={
-                    filmRecsLoading
-                      ? undefined
-                      : refreshStatus === "ok"
-                        ? "Updated"
-                        : filmRecs.length > 0
-                          ? `${filmRecs.length} picks`
-                          : undefined
-                  }
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRefreshFilmRecs}
-                      disabled={filmRecsLoading}
-                    >
-                      <RefreshCw aria-hidden="true" />
-                      {filmRecsLoading ? "Refreshing" : "Refresh"}
-                    </Button>
-                  }
-                />
-                <p className="t-meta mb-5">Based on what you have rated highly.</p>
-
-                {refreshStatus === "error" && !mlLoading && (
-                  <Notice tone="error" title="Couldn't refresh your picks" className="mb-6">
-                    The recommendation service didn&apos;t respond, so these may be out of date. Try again
-                    in a few minutes.
-                  </Notice>
-                )}
-
-                {filmRecsLoading && filmRecs.length === 0 ? (
-                  <>
-                    <LoadingLine label="Finding picks for you" className="mb-5" />
-                    <MediaGridSkeleton count={10} />
-                  </>
-                ) : filmRecs.length > 0 ? (
+                  note="Based on what you have rated highly."
+                  domain="film"
+                  recs={{ loading: filmRecs.loading, problem: filmRecs.problem, count: filmRecs.items.length }}
+                  onRefresh={refreshFilmRecs}
+                >
                   <MediaGrid>
-                    {filmRecs.map((item, idx) => (
+                    {filmRecs.items.map((item, idx) => (
                       <FilmCard
                         key={`rec-${item.id}-${idx}`}
                         item={item}
                         rank={idx + 1}
+                        stretch={item.confidence === "discovery"}
                         onWatchlist={handleAddToWatchlist}
                         watchlisted={watchlistedKeys.has(titleKey(item.media_type, item.id))}
                       />
                     ))}
                   </MediaGrid>
-                ) : aiFilmError ? (
-                  <Notice tone="error" title="Couldn't load your picks">
-                    Something went wrong on our side. Press Refresh to try again.
-                  </Notice>
-                ) : (
-                  <div className="frame">
-                    <EmptyState
-                      icon={Sparkles}
-                      title="Log 5 or more watches to unlock personalised picks."
-                      description="We need a few more ratings to learn your taste. Keep logging."
-                      action={
-                        <Button asChild variant="outline">
-                          <Link href={LOG_HREF}>Log a watch</Link>
-                        </Button>
-                      }
-                    />
-                  </div>
-                )}
+                </PicksSection>
               </section>
             )}
 

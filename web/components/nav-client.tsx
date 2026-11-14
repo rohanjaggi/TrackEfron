@@ -16,6 +16,20 @@ const NAV_LINKS = [
 ];
 
 /**
+ * Wording that differs by mode, shown from the `data-mode` attribute (set
+ * before first paint) rather than from JS state, so a hard reload in music mode
+ * never flashes the film wording while the page hydrates.
+ */
+function ModeWord({ film, music }: { film: string; music: string }) {
+  return (
+    <>
+      <span className="film-only">{film}</span>
+      <span className="music-only">{music}</span>
+    </>
+  );
+}
+
+/**
  * The accent line above the nav. On a film ↔ music change a highlight sweeps
  * it and a cue mark blinks twice in the corner, like a reel change.
  */
@@ -51,13 +65,14 @@ export function MobileNav() {
       <ul className="grid grid-cols-5">
         {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
-          const text = label === "Queue" && mode === "film" ? "Watchlist" : label;
-          const short = text === "Analytics" ? "Stats" : text === "Watchlist" ? "Watch" : text;
+          const isQueue = label === "Queue";
+          const name = isQueue && mode === "film" ? "Watchlist" : label;
+          const short = label === "Analytics" ? "Stats" : label;
           return (
             <li key={href}>
               <Link
                 href={href}
-                aria-label={text}
+                aria-label={name}
                 aria-current={active ? "page" : undefined}
                 className={[
                   "relative flex h-14 flex-col items-center justify-center gap-1",
@@ -70,7 +85,9 @@ export function MobileNav() {
                   <span aria-hidden="true" className="absolute inset-x-3 top-[-1px] h-[2px] bg-[var(--mode-accent)]" />
                 )}
                 <Icon className="h-4 w-4" aria-hidden="true" />
-                <span aria-hidden="true">{short}</span>
+                <span aria-hidden="true">
+                  {isQueue ? <ModeWord film="Watch" music="Queue" /> : short}
+                </span>
               </Link>
             </li>
           );
@@ -82,16 +99,15 @@ export function MobileNav() {
 
 /** Credits the catalogue that the current mode draws on. */
 export function FooterAttribution() {
-  const { mode } = useMode();
-  if (mode === "music") {
-    return <span>Music data &amp; covers by Spotify</span>;
-  }
   return (
-    <span className="flex items-center gap-2">
-      Data &amp; images by
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
-    </span>
+    <>
+      <span className="film-only flex items-center gap-2">
+        Data &amp; images by
+        { }
+        <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
+      </span>
+      <span className="music-only">Music data &amp; covers by Spotify</span>
+    </>
   );
 }
 
@@ -103,15 +119,17 @@ export function NavLinks() {
     <div className="hidden items-center gap-0.5 sm:flex">
       {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
         const active = exact ? pathname === href : pathname.startsWith(href);
-        const text = label === "Queue" && mode === "film" ? "Watchlist" : label;
+        const isQueue = label === "Queue";
+        // Accessible name follows the mode once known; the visible word follows data-mode.
+        const name = isQueue && mode === "film" ? "Watchlist" : label;
 
         return (
           <Link
             key={href}
             href={href}
-            aria-label={text}
+            aria-label={name}
             aria-current={active ? "page" : undefined}
-            title={text}
+            title={name}
             className={[
               "flex h-9 items-center gap-1.5 border px-2.5 lg:px-3.5",
               "text-[13.5px] font-medium",
@@ -122,7 +140,9 @@ export function NavLinks() {
             ].join(" ")}
           >
             <Icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
-            <span className="hidden lg:inline">{text}</span>
+            <span className="hidden lg:inline">
+              {isQueue ? <ModeWord film="Watchlist" music="Queue" /> : label}
+            </span>
           </Link>
         );
       })}
@@ -169,7 +189,7 @@ export function NavModeToggle() {
         { value: "film", label: "Film", icon: Clapperboard },
         { value: "music", label: "Music", icon: Music2 },
       ]}
-      className="[&_span]:hidden md:[&_span]:inline"
+      className="nav-mode-toggle [&_span]:hidden md:[&_span]:inline"
     />
   );
 }

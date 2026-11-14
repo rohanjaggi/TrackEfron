@@ -64,7 +64,7 @@ export function MediaCard({
         )}
       >
         {image && !broken ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img
             src={image}
             alt=""

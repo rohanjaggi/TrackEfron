@@ -20,7 +20,6 @@ import { useToast } from "@/components/ui/toast";
 import { useMode, type AppMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
 import { syncProfile } from "@/lib/sync-profile";
-import { TasteDNACard } from "@/components/taste-dna-card";
 
 interface ProfileProps {
   profile: {
@@ -483,6 +482,7 @@ export function ProfileClient({ profile }: ProfileProps) {
   // The colour read from the user's own photo; the first chart colour stands in until there is one.
   const tint = profileColor || "var(--chart-1)";
   const aiProvider = providerLabel(aiKeyInfo?.provider ?? null);
+  const usesServerKey = aiKeyInfo?.source === "env";
 
   return (
     <div className="flex flex-col gap-16">
@@ -568,9 +568,6 @@ export function ProfileClient({ profile }: ProfileProps) {
           </div>
         )}
       </section>
-
-      {/* Taste DNA */}
-      <TasteDNACard />
 
       {/* Profile details */}
       <section>
@@ -711,18 +708,7 @@ export function ProfileClient({ profile }: ProfileProps) {
             <Notice tone="error" title="Couldn't load your AI settings">
               Reload the page to try again.
             </Notice>
-          ) : aiKeyInfo.source === "env" ? (
-            <div className="flex items-start gap-4">
-              <Key aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <p className="t-card">Server configured</p>
-                  {aiProvider && <Badge>{aiProvider}</Badge>}
-                </div>
-                <p className="t-meta mt-1.5">AI features are configured by the server</p>
-              </div>
-            </div>
-          ) : aiKeyInfo.hasKey ? (
+          ) : aiKeyInfo.hasKey && aiKeyInfo.source !== "env" ? (
             <div className="flex flex-col gap-4">
               {aiKeyError && <Notice tone="error">{aiKeyError}</Notice>}
               <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
@@ -753,9 +739,11 @@ export function ProfileClient({ profile }: ProfileProps) {
               <div className="flex items-start gap-4">
                 <Key aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
-                  <p className="t-card">No API key</p>
+                  <p className="t-card">{usesServerKey ? "Server key in use" : "No API key"}</p>
                   <p className="t-meta mt-1.5">
-                    Add an Anthropic, OpenAI or Gemini key to enable AI-powered features
+                    {usesServerKey
+                      ? `The server's ${aiProvider ?? "AI"} key is used until you add your own.`
+                      : "Add an Anthropic, OpenAI or Gemini key to enable AI-powered features"}
                   </p>
                 </div>
               </div>

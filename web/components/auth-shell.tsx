@@ -28,7 +28,7 @@ export function AuthShell({
   return (
     <main className="flex min-h-svh w-full flex-col items-center justify-center px-4 py-12 sm:py-16">
       <Link href="/" className="mb-8 flex items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img src="/images/logo.png" alt="" className="h-9 w-9 object-contain" />
         <span className="wordmark text-[24px]">
           TrackEfron

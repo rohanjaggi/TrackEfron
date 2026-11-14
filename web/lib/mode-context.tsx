@@ -5,7 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { MODE_STORAGE_KEY } from "@/lib/mode-boot";
@@ -36,26 +36,34 @@ interface ModeContextValue {
   setMode: (m: AppMode) => void;
   /** How many times the mode has changed since this provider mounted; drives the reel-change animation. */
   switches: number;
+  /**
+   * False during the server render and hydration, when `mode` is only the
+   * default "film"; true afterwards. It flips in the same render in which
+   * `mode` settles, so `ready` is never true alongside the server default.
+   */
+  ready: boolean;
 }
 
 const ModeContext = createContext<ModeContextValue>({
   mode: "film",
   setMode: () => {},
   switches: 0,
+  ready: true,
 });
 
 let switchCount = 0;
-const readSnapshot = () => `${readMode()}|${switchCount}`;
+// One snapshot carries mode, switch count and readiness, so they change together.
+const readSnapshot = () => `${readMode()}|${switchCount}|1`;
 
 export function ModeProvider({ children }: { children: React.ReactNode }) {
   // The server always renders film; the client re-reads storage straight after hydration.
-  const snapshot = useSyncExternalStore(subscribe, readSnapshot, () => "film|0");
-  const [mode, count] = snapshot.split("|") as [AppMode, string];
+  const snapshot = useSyncExternalStore(subscribe, readSnapshot, () => "film|0|0");
+  const [mode, count, readyFlag] = snapshot.split("|") as [AppMode, string, string];
+  const ready = readyFlag === "1";
 
   // Count only the switches made while this provider is mounted, so returning
   // to the app does not replay the reel change.
-  const baseline = useRef<number | null>(null);
-  if (baseline.current === null) baseline.current = Number(count);
+  const [baseline] = useState(() => Number(count));
 
   // Keep <html data-mode> in step with the store. The boot script in the root
   // layout sets it before paint; this covers another tab changing the mode.
@@ -77,7 +85,7 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ModeContext.Provider
-      value={{ mode, setMode, switches: Number(count) - (baseline.current ?? 0) }}
+      value={{ mode, setMode, switches: Number(count) - baseline, ready }}
     >
       {children}
     </ModeContext.Provider>

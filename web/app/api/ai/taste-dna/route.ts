@@ -4,6 +4,9 @@ import { callAI } from "@/lib/ai/provider";
 import { tasteDNATool } from "@/lib/ai/tools";
 import { TASTE_DNA_SYSTEM, buildTasteDNAUserPrompt } from "@/lib/ai/prompts";
 import type { TasteDNA } from "@/lib/ai/types";
+import { validateObservations, limitTasteDNA } from "@/lib/taste/validate";
+
+export const maxDuration = 300;
 
 export async function POST() {
   const supabase = await createClient();
@@ -49,7 +52,26 @@ export async function POST() {
     return NextResponse.json({ error: result.error, code: result.code }, { status });
   }
 
-  const dna = result.data as TasteDNA;
+  // Validate against the logs first, then de-duplicate and trim to 3, so a valid fourth can replace a dropped one.
+  const raw = result.data as TasteDNA;
+  const loggedTitles = [...watchLogs, ...listenLogs].map((l) => l.title);
+  const validObservations = validateObservations(Array.isArray(raw.observations) ? raw.observations : [], loggedTitles);
+  const limited = limitTasteDNA({ ...raw, observations: validObservations });
+  if (!limited) {
+    return NextResponse.json(
+      { error: "The model returned an incomplete Taste DNA. Try again.", code: "PROVIDER_ERROR" },
+      { status: 500 }
+    );
+  }
+
+  const observations = limited.observations;
+  if (observations.length === 0) {
+    return NextResponse.json(
+      { error: "The model returned no observations that match your logs. Try again.", code: "PROVIDER_ERROR" },
+      { status: 500 }
+    );
+  }
+  const dna: TasteDNA = { ...limited, observations };
 
   const { error: upsertError } = await supabase.from("taste_dna").upsert(
     {
@@ -57,11 +79,13 @@ export async function POST() {
       generated_at: new Date().toISOString(),
       model_version: result.model,
       fingerprint: dna.fingerprint,
+      pulse: dna.pulse,
+      observations: dna.observations,
       film_profile: dna.film_identity,
       music_profile: dna.music_identity,
-      cross_domain: dna.cross_domain,
+      cross_domain: null,
       blind_spots: dna.blind_spots,
-      guilty_pleasures: dna.guilty_pleasures,
+      guilty_pleasures: null,
       film_log_count: watchLogs.length,
       music_log_count: listenLogs.length,
     },
@@ -82,25 +106,35 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data } = await supabase
-    .from("taste_dna")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
+  const [dnaRes, watchRes, listenRes] = await Promise.all([
+    supabase.from("taste_dna").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase.from("watch_logs").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("listen_logs").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+  ]);
 
+  if (dnaRes.error) {
+    console.error("taste_dna read failed:", dnaRes.error.message);
+    return NextResponse.json({ error: dnaRes.error.message }, { status: 500 });
+  }
+
+  const data = dnaRes.data;
   if (!data) {
     return NextResponse.json(null);
   }
 
+  const filmCount = data.film_log_count ?? 0;
+  const musicCount = data.music_log_count ?? 0;
+  const logsSince = Math.max(0, (watchRes.count ?? 0) + (listenRes.count ?? 0) - filmCount - musicCount);
+  const pulse = Array.isArray(data.pulse) ? data.pulse : null;
+
   return NextResponse.json({
     fingerprint: data.fingerprint,
-    film_identity: data.film_profile,
-    music_identity: data.music_profile,
-    cross_domain: data.cross_domain,
-    blind_spots: data.blind_spots,
-    guilty_pleasures: data.guilty_pleasures,
+    pulse: pulse ?? [],
+    observations: Array.isArray(data.observations) ? data.observations : [],
     generated_at: data.generated_at,
-    film_log_count: data.film_log_count,
-    music_log_count: data.music_log_count,
+    film_log_count: filmCount,
+    music_log_count: musicCount,
+    logs_since: logsSince,
+    needs_regenerate: !pulse || pulse.length === 0 || !Array.isArray(data.observations),
   });
 }

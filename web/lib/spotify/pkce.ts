@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SpotifyTokenResponse = {
   access_token: string;
@@ -9,7 +8,6 @@ export type SpotifyTokenResponse = {
   expires_in: number;
 };
 
-// ── PKCE crypto ───────────────────────────────────────────────────────────────
 
 export function generateCodeVerifier(): string {
   return crypto.randomBytes(64).toString("base64url");
@@ -33,7 +31,6 @@ export function buildAuthorizeUrl(codeChallenge: string): string {
   return `https://accounts.spotify.com/authorize?${params.toString()}`;
 }
 
-// ── Token exchange ────────────────────────────────────────────────────────────
 
 export async function exchangeCodeForTokens(
   code: string,
@@ -54,6 +51,7 @@ export async function exchangeCodeForTokens(
   });
 
   if (!res.ok) {
+    // The body only supplies the error text; fall back to the status line without it.
     const err = await res.json().catch(() => ({}));
     throw new Error(`Spotify token exchange failed: ${err.error ?? res.statusText}`);
   }
@@ -85,8 +83,9 @@ export async function refreshAccessToken(
   });
 
   if (!res.ok) {
+    // The body only supplies the error text; fall back to the status line without it.
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Spotify refresh failed: ${err.error ?? res.statusText}|${res.status}`);
+    throw new SpotifyRefreshError(`Spotify refresh failed: ${err.error ?? res.statusText}`, res.status);
   }
 
   const data = await res.json();
@@ -98,7 +97,6 @@ export async function refreshAccessToken(
   };
 }
 
-// ── DB helpers ────────────────────────────────────────────────────────────────
 
 export async function saveTokens(
   supabase: SupabaseClient,
@@ -107,7 +105,7 @@ export async function saveTokens(
   spotifyUserId?: string
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
-  await supabase.from("spotify_tokens").upsert(
+  const { error } = await supabase.from("spotify_tokens").upsert(
     {
       user_id: userId,
       spotify_user_id: spotifyUserId ?? null,
@@ -118,6 +116,14 @@ export async function saveTokens(
     },
     { onConflict: "user_id" }
   );
+  if (error) throw new Error(`Saving Spotify tokens failed: ${error.message}`);
+}
+
+/** A non-2xx answer from the Spotify token endpoint, carrying its HTTP status. */
+class SpotifyRefreshError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
 }
 
 export async function getValidToken(
@@ -138,13 +144,21 @@ export async function getValidToken(
   if (Date.now() >= expiresAt - fiveMinutes) {
     try {
       const refreshed = await refreshAccessToken(row.refresh_token);
-      await saveTokens(supabase, userId, refreshed);
+      try {
+        await saveTokens(supabase, userId, refreshed);
+      } catch (saveErr) {
+        // The refreshed token is still valid for this call; the next call refreshes again.
+        console.error("Saving the refreshed Spotify token failed:", saveErr);
+      }
       return refreshed.access_token;
-    } catch (err: any) {
-      // invalid_grant means the token was revoked — clean up
-      if (err.message?.includes("invalid_grant") || err.message?.includes("400")) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      // A 400 from the token endpoint (invalid_grant) means the token was revoked — clean up
+      if (err instanceof SpotifyRefreshError && err.status === 400) {
+        // Best-effort cleanup: the token is already unusable, so a failed delete is retried on the next call.
         await supabase.from("spotify_tokens").delete().eq("user_id", userId);
       }
+      console.error("Spotify token refresh failed:", message);
       return null;
     }
   }

@@ -1,0 +1,84 @@
+import type { FilmCandidate, FilmRecommendation, RawFilmPick } from "@/lib/ai/types";
+
+export type Lookup = (
+  type: "movie" | "tv",
+  title: string,
+  year: number | null,
+) => Promise<FilmCandidate | null>;
+
+const LOOKUP_CONCURRENCY = 5;
+
+/** Runs `fn` over `items` with at most `limit` in flight, returning results in input order. */
+async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+export async function matchFilmPicks(
+  raw: RawFilmPick[],
+  candidates: FilmCandidate[],
+  exclude: Set<string>,
+  lookup: Lookup,
+  limits: { max: number; maxOlder: number; olderBefore: number | null },
+): Promise<FilmRecommendation[]> {
+  const byKey = new Map(candidates.map((c) => [`${c.media_type}:${c.tmdb_id}`, c]));
+  const seen = new Set<string>();
+  const out: FilmRecommendation[] = [];
+  let older = 0;
+  let lookupFailed = false;
+
+  // Resolve every pick first, with bounded concurrency, then apply the rules in input order.
+  const resolved = await mapBounded(raw, LOOKUP_CONCURRENCY, async (pick) => {
+    const fromCandidates =
+      pick.tmdb_id != null ? (byKey.get(`${pick.media_type}:${pick.tmdb_id}`) ?? null) : null;
+    if (fromCandidates) return fromCandidates;
+    let found: FilmCandidate | null = null;
+    try {
+      found = await lookup(pick.media_type, pick.title, pick.year);
+    } catch (e) {
+      // a failed lookup means no match for this pick only; warn once per batch
+      if (!lookupFailed) {
+        lookupFailed = true;
+        console.warn("TMDB lookup failed while matching film picks:", e instanceof Error ? e.message : e);
+      }
+    }
+    if (found && !(pick.year != null && found.year != null && Math.abs(found.year - pick.year) > 1)) {
+      return found;
+    }
+    return null;
+  });
+
+  for (const [index, pick] of raw.entries()) {
+    if (out.length >= limits.max) break;
+    const match = resolved[index];
+    if (!match) continue;
+
+    const k = `${match.media_type}:${match.tmdb_id}`;
+    if (exclude.has(k) || seen.has(k)) continue;
+
+    const isOlder =
+      match.year != null && limits.olderBefore != null && match.year < limits.olderBefore;
+    if (isOlder && older >= limits.maxOlder) continue;
+
+    seen.add(k);
+    if (isOlder) older++;
+    out.push({
+      tmdb_id: match.tmdb_id,
+      title: match.title,
+      media_type: match.media_type,
+      year: match.year,
+      poster_url: match.poster_url,
+      explanation: pick.explanation,
+      confidence: pick.confidence,
+    });
+  }
+  return out;
+}

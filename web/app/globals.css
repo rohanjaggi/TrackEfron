@@ -782,3 +782,22 @@ body::before {
   .cursor-blink::after { opacity: 1; }
   .reel-sweep, .cue-mark { display: none; }
 }
+
+/* ═══ Mode wording and the nav mode toggle ═══════════════════════
+   Driven by the data-mode attribute, which the boot script sets before first
+   paint, so a hard reload in music mode is right before hydration. */
+[data-mode="music"] .film-only,
+:root:not([data-mode="music"]) .music-only {
+  display: none;
+}
+.nav-mode-toggle .seg { color: var(--text-muted); }
+.nav-mode-toggle .seg::before { transform: scaleX(0); }
+.nav-mode-toggle .seg:hover { color: var(--text); }
+:root:not([data-mode="music"]) .nav-mode-toggle .seg:first-child,
+[data-mode="music"] .nav-mode-toggle .seg:last-child {
+  color: var(--mode-accent);
+}
+:root:not([data-mode="music"]) .nav-mode-toggle .seg:first-child::before,
+[data-mode="music"] .nav-mode-toggle .seg:last-child::before {
+  transform: scaleX(1);
+}

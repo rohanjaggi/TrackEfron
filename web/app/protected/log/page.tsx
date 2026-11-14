@@ -16,40 +16,18 @@ import { StarInput, Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode, useSyncMode } from "@/lib/mode-context";
+import type { SpotifySearchResult } from "@/lib/spotify/spotify";
+import { resizePoster } from "@/lib/tmdb/poster";
+import type { MediaSearchResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type MediaType = "movie" | "tv" | "album" | "track";
-
-type TmdbResult = {
-  id: number;
-  /** "movie" | "tv" from the film search; set to the searched type for music. */
-  media_type?: string;
-  spotify_id?: string;
-  artist?: string;
-  album_name?: string;
-  title?: string;
-  name?: string;
-  release_date?: string;
-  first_air_date?: string;
-  poster_path?: string;
-  poster_url?: string | null;
-  overview?: string;
-};
-
-type SpotifyHit = {
-  id?: string;
-  name?: string;
-  artist?: string;
-  album_name?: string;
-  image_url?: string | null;
-  release_date?: string;
-};
 
 type OtherType = { type: MediaType; count: number };
 type SearchState = {
   key: string;
   type: MediaType;
-  results: TmdbResult[];
+  results: MediaSearchResult[];
   failed: boolean;
   /** Results of the mode's other type, offered when the chosen type has none. */
   other: OtherType | null;
@@ -120,8 +98,8 @@ function today() {
 }
 
 const isMusicType = (type: MediaType | null) => type === "album" || type === "track";
-const labelOf = (item: TmdbResult) => item.title || item.name || "Untitled";
-const yearOf = (item: TmdbResult) => (item.release_date || item.first_air_date || "").slice(0, 4);
+const labelOf = (item: MediaSearchResult) => item.title || item.name || "Untitled";
+const yearOf = (item: MediaSearchResult) => (item.release_date || item.first_air_date || "").slice(0, 4);
 
 export default function LogWatchPage() {
   return (
@@ -142,14 +120,14 @@ function parsePrefill(params: URLSearchParams): Prefill | null {
 }
 
 /** Spotify search for one music type. Throws when the server reports an error. */
-async function searchMusic(query: string, type: MediaType): Promise<TmdbResult[]> {
+async function searchMusic(query: string, type: MediaType): Promise<MediaSearchResult[]> {
   const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(query)}&type=${type}`);
   if (!res.ok) throw new Error("Search failed");
   const raw: unknown = await res.json();
   if (!Array.isArray(raw)) return [];
-  return (raw as SpotifyHit[]).map((r, idx) => ({
+  return (raw as SpotifySearchResult[]).map((r, idx) => ({
     id: idx + 1,
-    media_type: type,
+    media_type: type as "album" | "track",
     spotify_id: r.id,
     name: r.name,
     artist: r.artist,
@@ -170,9 +148,9 @@ function ResultThumb({ src, music, Icon }: { src?: string | null; music: boolean
       )}
     >
       {src && !failed ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img
-          src={src.replace(/\/w\d+\//, "/w342/")}
+          src={src}
           alt=""
           loading="eager"
           onError={() => setFailed(true)}
@@ -198,7 +176,7 @@ function LogWatchForm() {
   // Links like ?type=tv&id=1399&title=Game+of+Thrones open the form pre-filled (create mode only).
   const [initialPrefill] = useState(() => parsePrefill(searchParams));
   const prefillRef = useRef<Prefill | null>(initialPrefill);
-  const chooseRef = useRef<(item: TmdbResult) => void>(() => {});
+  const chooseRef = useRef<(item: MediaSearchResult) => void>(() => {});
 
   const [editLoading, setEditLoading] = useState(!!editId);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -218,7 +196,7 @@ function LogWatchForm() {
   const [search, setSearch] = useState<SearchState | null>(null);
   const [searchOpen, setSearchOpen] = useState(!!initialPrefill?.title);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [selectedMovie, setSelectedMovie] = useState<TmdbResult | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<MediaSearchResult | null>(null);
   const [showCategories, setShowCategories] = useState(false);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [watchedOn, setWatchedOn] = useState("");
@@ -289,7 +267,7 @@ function LogWatchForm() {
 
     const t = setTimeout(async () => {
       try {
-        let data: TmdbResult[];
+        let data: MediaSearchResult[];
         let other: OtherType | null = null;
         if (isMusicType(type)) {
           data = await searchMusic(query, type);
@@ -307,7 +285,7 @@ function LogWatchForm() {
           const res = await fetch(`/api?action=search&q=${encodeURIComponent(query)}`);
           if (!res.ok) throw new Error("Search failed");
           const raw: unknown = await res.json();
-          const all = Array.isArray(raw) ? (raw as TmdbResult[]) : [];
+          const all = Array.isArray(raw) ? (raw as MediaSearchResult[]) : [];
           // The film search returns films and shows together: keep the chosen type.
           data = all.filter((r) => !r.media_type || r.media_type === type);
           const sibling: MediaType = type === "movie" ? "tv" : "movie";
@@ -368,6 +346,8 @@ function LogWatchForm() {
             .eq("id", editId)
             .eq("user_id", user.id)
             .maybeSingle();
+          // No row is expected here (PGRST116) when the entry is a music one.
+          if (res.error && res.error.code !== "PGRST116") throw res.error;
           filmData = res.data;
         }
         if (cancelled) return;
@@ -416,6 +396,7 @@ function LogWatchForm() {
               .eq("id", editId)
               .eq("user_id", user.id)
               .maybeSingle();
+            if (res.error) throw res.error;
             musicData = res.data;
           }
           if (cancelled) return;
@@ -648,7 +629,7 @@ function LogWatchForm() {
     setActiveIndex(-1);
   };
 
-  const chooseResult = (item: TmdbResult) => {
+  const chooseResult = (item: MediaSearchResult) => {
     setTitle(labelOf(item));
     setSelectedMovie(item);
     setSearchOpen(false);
@@ -1025,9 +1006,9 @@ function LogWatchForm() {
                   )}
                 >
                   {selectedMovie.poster_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img
-                      src={selectedMovie.poster_url.replace(/\/w\d+\//, "/w780/")}
+                      src={resizePoster(selectedMovie.poster_url, "w780") ?? selectedMovie.poster_url}
                       alt=""
                       className="artwork-live h-full w-full object-cover"
                     />

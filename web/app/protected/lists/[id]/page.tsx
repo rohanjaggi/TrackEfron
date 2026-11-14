@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import {
@@ -26,6 +26,11 @@ import { EmptyState, Field, Notice, PageHeader, SectionHeader } from "@/componen
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useSyncMode } from "@/lib/mode-context";
+import type { MediaSearchResult } from "@/lib/types";
+import type { SpotifySearchResult } from "@/lib/spotify/spotify";
+import { resizePoster } from "@/lib/tmdb/poster";
+import { useClickOutside } from "@/hooks/use-click-outside";
+import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ListMeta = {
   id: string;
@@ -51,32 +56,6 @@ type ListItem = {
   position: number;
 };
 
-type SearchResult = {
-  id: number | string;
-  spotify_id?: string;
-  artist?: string;
-  album_name?: string;
-  title?: string;
-  name?: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  release_date?: string;
-  first_air_date?: string;
-  poster_url?: string | null;
-  image_url?: string | null;
-  vote_average?: number;
-};
-
-/** One row of the Spotify search response. */
-type SpotifySearchItem = {
-  id: string;
-  name?: string;
-  artist?: string;
-  album_name?: string;
-  type: string;
-  release_date?: string;
-  image_url?: string | null;
-};
-
 type LoadStatus = "loading" | "ready" | "missing" | "failed";
 
 const LISTS_HREF = "/protected/watchlist?tab=lists";
@@ -85,11 +64,6 @@ const RETRY_HINT = "Check your connection and try again.";
 // PostgREST "no rows" (the list does not exist, or row-level security hides it)
 // and Postgres "invalid uuid" (a mangled link) both mean there is no list to show.
 const MISSING_CODES = new Set(["PGRST116", "22P02"]);
-
-function upscalePoster(url: string | null, size = "w500"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -160,19 +134,44 @@ function ListDetailContent() {
   const [saving, setSaving] = useState(false);
 
   // Add items search state
-  const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchFailed, setSearchFailed] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const {
+    query: addQuery,
+    setQuery: setAddQuery,
+    results: addResults,
+    loading: isSearching,
+    error: searchError,
+  } = useDebouncedSearch<MediaSearchResult>(async (q) => {
+    if (isMusic) {
+      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+      if (!res.ok) throw new Error("Search failed");
+      const raw: unknown = await res.json();
+      const data: MediaSearchResult[] = Array.isArray(raw)
+        ? (raw as SpotifySearchResult[]).map((r) => ({
+            id: r.id,
+            spotify_id: r.id,
+            name: r.name,
+            artist: r.artist,
+            album_name: r.album_name,
+            media_type: r.type,
+            release_date: r.release_date,
+            image_url: r.image_url,
+          }))
+        : [];
+      setShowAddDropdown(true);
+      return data;
+    }
+    const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error("Search failed");
+    const data: unknown = await res.json();
+    setShowAddDropdown(true);
+    return Array.isArray(data) ? (data as MediaSearchResult[]) : [];
+  }, [isMusic]);
+  const searchFailed = searchError !== null;
   const [addingId, setAddingId] = useState<number | string | null>(null);
 
-  useEffect(() => {
-    fetchListData();
-  }, [listId]);
-
   /** Loads the list and its items. Returns false (and sets the page state) when it could not. */
-  async function fetchListData(): Promise<boolean> {
+  const fetchListData = useCallback(async (): Promise<boolean> => {
     try {
       const supabase = createClient();
 
@@ -212,83 +211,21 @@ function ListDetailContent() {
       setStatus("failed");
       return false;
     }
-  }
+  }, [listId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads the list on mount and when the id changes; state is only set after the awaited requests
+    fetchListData();
+  }, [fetchListData]);
 
   function retryLoad() {
     setStatus("loading");
     fetchListData();
   }
 
-  // Debounced search
-  useEffect(() => {
-    const q = addQuery.trim();
-    if (!q) {
-      setAddResults([]);
-      setShowAddDropdown(false);
-      setSearchFailed(false);
-      setIsSearching(false);
-      return;
-    }
+  useClickOutside(searchRef, () => setShowAddDropdown(false));
 
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        setIsSearching(true);
-        setSearchFailed(false);
-        if (isMusic) {
-          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-          if (!res.ok) throw new Error("Search failed");
-          const raw: unknown = await res.json();
-          const data: SearchResult[] = Array.isArray(raw)
-            ? (raw as SpotifySearchItem[]).map((r) => ({
-                id: r.id,
-                spotify_id: r.id,
-                name: r.name,
-                artist: r.artist,
-                album_name: r.album_name,
-                media_type: r.type as "album" | "track",
-                release_date: r.release_date,
-                image_url: r.image_url,
-              }))
-            : [];
-          if (cancelled) return;
-          setAddResults(data);
-        } else {
-          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-          if (!res.ok) throw new Error("Search failed");
-          const data: unknown = await res.json();
-          if (cancelled) return;
-          setAddResults(Array.isArray(data) ? (data as SearchResult[]) : []);
-        }
-        setShowAddDropdown(true);
-      } catch {
-        if (cancelled) return;
-        setAddResults([]);
-        setShowAddDropdown(false);
-        setSearchFailed(true);
-      } finally {
-        if (!cancelled) setIsSearching(false);
-      }
-    }, 350);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [addQuery, isMusic]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowAddDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  async function handleAddItem(result: SearchResult) {
+  async function handleAddItem(result: MediaSearchResult) {
     if (!isOwner) return;
     const label = result.title || result.name || "Untitled";
     setAddingId(result.spotify_id || result.id);
@@ -572,7 +509,10 @@ function ListDetailContent() {
                 autoComplete="off"
                 placeholder={isMusic ? "Search for an album or track" : "Search for a film or TV show"}
                 value={addQuery}
-                onChange={(e) => setAddQuery(e.target.value)}
+                onChange={(e) => {
+                  setAddQuery(e.target.value);
+                  if (!e.target.value.trim()) setShowAddDropdown(false);
+                }}
                 onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
                 className="pl-9"
               />
@@ -587,13 +527,13 @@ function ListDetailContent() {
             </Notice>
           )}
 
-          {showAddDropdown && !isSearching && query && addResults.length === 0 && (
+          {showAddDropdown && !searchFailed && !isSearching && query && addResults.length === 0 && (
             <p className="t-meta mt-3" role="status">
               Nothing found for &ldquo;{query}&rdquo;. Try a different spelling.
             </p>
           )}
 
-          {showAddDropdown && addResults.length > 0 && (
+          {showAddDropdown && !searchFailed && addResults.length > 0 && (
             <ul className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
               {addResults.slice(0, 8).map((result) => {
                 const label = result.title || result.name || "Untitled";
@@ -601,7 +541,7 @@ function ListDetailContent() {
                 const resultKey = result.spotify_id || String(result.id);
                 const alreadyAdded = existingKeys.has(itemKey(result.media_type, result.id, result.spotify_id));
                 const resultIsMusic = isMusicType(result.media_type);
-                const art = resultIsMusic ? result.image_url || result.poster_url : result.poster_url;
+                const art = resultIsMusic ? result.image_url || result.poster_url : resizePoster(result.poster_url, "w185");
                 const adding = addingId === (result.spotify_id || result.id);
                 const FallbackIcon = resultIsMusic ? Disc3 : result.media_type === "movie" ? Film : Tv;
                 return (
@@ -612,7 +552,7 @@ function ListDetailContent() {
                       }`}
                     >
                       {art ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <img src={art} alt="" className="h-full w-full object-cover" />
                       ) : (
                         <FallbackIcon className="size-4 text-dim" aria-hidden="true" />
@@ -701,7 +641,7 @@ function ListDetailContent() {
                       ? `${typeLabel(item.media_type)} · ${item.artist}`
                       : typeLabel(item.media_type)
                   }
-                  image={itemIsMusic ? item.image_url : upscalePoster(item.poster_url)}
+                  image={itemIsMusic ? item.image_url : resizePoster(item.poster_url, "w342")}
                   aspect={itemIsMusic ? "square" : "poster"}
                   href={href}
                   fallbackIcon={itemIsMusic ? Disc3 : item.media_type === "movie" ? Film : Tv}

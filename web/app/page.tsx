@@ -161,7 +161,7 @@ export default function Home() {
       <header className="border-b border-border">
         <div className={cn(WRAP, "flex h-14 items-center justify-between gap-4")}>
           <Link href="/" className="flex items-center gap-2.5" aria-label="TrackEfron home">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src="/images/logo.png" alt="" className="h-7 w-7 object-contain" />
             <Wordmark />
           </Link>
@@ -395,7 +395,7 @@ export default function Home() {
               <div className="hairline pb-4">
                 <dt className="t-card">Recommendations</dt>
                 <dd className="mt-1.5 text-muted-foreground">
-                  Film picks and music picks built from your own ratings and listening. Every suggestion says why
+                  AI picks for film and for music, built from your own ratings and listening. Every suggestion says why
                   it fits your taste.
                 </dd>
               </div>
@@ -451,14 +451,14 @@ export default function Home() {
       <footer className="border-t border-border">
         <div className={cn(WRAP, "flex flex-col gap-5 py-8 md:flex-row md:items-center md:justify-between")}>
           <div className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src="/images/logo.png" alt="" className="h-6 w-6 object-contain" />
             <Wordmark />
           </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
             <p className="t-meta flex items-center gap-3">
               Data and images provided by
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img src="/images/tmdb.svg" alt="TMDB" className="h-3.5" />
             </p>
             <p className="t-meta">&copy; 2026 TrackEfron. All rights reserved.</p>

@@ -25,6 +25,8 @@ import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { WatchLog as SharedWatchLog } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type ViewType = "grid" | "list";
 // "film" = movies+tv, "music" = albums+tracks
@@ -48,20 +50,11 @@ const VIEW_OPTIONS: SegmentOption<ViewType>[] = [
   { value: "list", label: "List view", icon: List, iconOnly: true },
 ];
 
-type WatchLog = {
-  id: string;
-  /** The table this row was loaded from; deletes go back to the same table. */
+/** A library row from either table, with the table it came from so deletes go back to it. */
+type WatchLog = Omit<SharedWatchLog, "rating" | "watched_date"> & {
   source: "watch_logs" | "listen_logs";
-  title: string;
-  media_type: "movie" | "tv" | "album" | "track";
   rating: number | null;
-  review: string | null;
   watched_date: string | null;
-  poster_url: string | null;
-  tmdb_id: number | null;
-  spotify_id?: string | null;
-  created_at: string;
-  artist?: string | null;
 };
 
 const TYPE_LABEL: Record<WatchLog["media_type"], string> = {
@@ -77,11 +70,6 @@ const TYPE_ICON: Record<WatchLog["media_type"], LucideIcon> = {
   album: Disc3,
   track: Music2,
 };
-
-function upscalePoster(url: string | null, size = "w342"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -500,7 +488,7 @@ export default function LibraryPage() {
                 key={item.id}
                 title={item.title}
                 subtitle={isMusicItem(item) && item.artist ? item.artist : undefined}
-                image={upscalePoster(item.poster_url)}
+                image={resizePoster(item.poster_url, "w342")}
                 aspect={isMusicItem(item) ? "square" : "poster"}
                 href={mediaHref(item)}
                 rating={isRated(item) ? Number(item.rating) : null}
@@ -520,7 +508,7 @@ export default function LibraryPage() {
             {filteredItems.map((item) => {
               const music = isMusicItem(item);
               const href = mediaHref(item);
-              const poster = upscalePoster(item.poster_url);
+              const poster = resizePoster(item.poster_url, "w185");
               const FallbackIcon = TYPE_ICON[item.media_type];
               return (
                 <li key={item.id} className="row-item group relative flex items-start gap-4 px-2 py-4">
@@ -532,7 +520,7 @@ export default function LibraryPage() {
                   >
                     <FallbackIcon className="size-4 text-dim" aria-hidden="true" />
                     {poster && (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img
                         src={poster}
                         alt=""

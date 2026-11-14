@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { BarChart3, Disc3, Film, Headphones, Music2, Plus } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { BarChart3, Film, Headphones, Plus } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -11,11 +10,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar as RechartsRadar,
   CartesianGrid,
   ScatterChart,
   Scatter,
@@ -23,6 +17,7 @@ import {
 } from "recharts";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import { TasteDNACard } from "@/components/taste-dna-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/loading";
@@ -34,8 +29,7 @@ import {
   SectionHeader,
   StatBlock,
 } from "@/components/ui/page";
-import { TabBar } from "@/components/ui/segmented-control";
-import { Stars } from "@/components/ui/stars";
+import type { ListenLog } from "@/lib/types";
 
 type WatchLog = {
   rating: number | null;
@@ -44,39 +38,8 @@ type WatchLog = {
   created_at: string;
   tmdb_id: number | null;
   title: string;
-  plot_rating: number | null;
-  cinematography_rating: number | null;
-  acting_rating: number | null;
-  soundtrack_rating: number | null;
-  pacing_rating: number | null;
-  casting_rating: number | null;
-  watched_on: string | null;
-  discovered_via: string | null;
-  rewatchability: string | null;
   times_watched: string | null;
   poster_url: string | null;
-  review: string | null;
-};
-
-type ListenLog = {
-  id: string;
-  media_type: "album" | "track";
-  title: string;
-  artist: string | null;
-  album_name: string | null;
-  image_url: string | null;
-  rating: number | null;
-  review: string | null;
-  listened_date: string | null;
-  created_at: string;
-  lyrics_rating: number | null;
-  production_rating: number | null;
-  vocals_rating: number | null;
-  melody_rating: number | null;
-  replay_rating: number | null;
-  energy_rating: number | null;
-  listened_on: string | null;
-  listening_context: string | null;
 };
 
 type ControversialPick = {
@@ -92,15 +55,12 @@ type TmdbDetail = {
   seasons?: number;
   episodes?: number;
   genres: string[];
-  directors: string[];
-  topCast: string[];
   voteAvg: number | null;
   releaseYear: number | null;
   posterUrl: string | null;
 };
 
 type Tally = { name: string; count: number };
-type CategoryAverage = { label: string; full: string; avg: number; count: number };
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -150,15 +110,6 @@ function tally(values: (string | null | undefined)[]): Tally[] {
   return Object.entries(counts)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
-}
-
-/** The last 12 calendar months, oldest first, each with two zeroed counters. */
-function lastTwelveMonths(now: Date) {
-  return Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    return { key, label: formatDate(d, { month: "short" }), a: 0, b: 0 };
-  });
 }
 
 const MIN_POINTS = 3;
@@ -221,28 +172,6 @@ function Section({
   );
 }
 
-function TabPanel({
-  idBase,
-  value,
-  children,
-}: {
-  idBase: string;
-  value: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      role="tabpanel"
-      id={`${idBase}-panel-${value}`}
-      aria-labelledby={`${idBase}-tab-${value}`}
-      tabIndex={0}
-      className="advance mt-10 flex flex-col gap-16"
-    >
-      {children}
-    </div>
-  );
-}
-
 /** A chart in its single frame, with a title and a hidden one-sentence summary. */
 function ChartFigure({
   title,
@@ -284,29 +213,6 @@ function ListSkeleton({ label, rows = 5 }: { label: string; rows?: number }) {
 
 function Hint({ children }: { children: React.ReactNode }) {
   return <p className="t-meta">{children}</p>;
-}
-
-function Swatch({ color }: { color: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="mr-2 inline-block size-2 shrink-0"
-      style={{ background: color }}
-    />
-  );
-}
-
-function SeriesKey({ series }: { series: { name: string; color: string }[] }) {
-  return (
-    <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1" aria-hidden="true">
-      {series.map((s) => (
-        <span key={s.name} className="t-label inline-flex items-center">
-          <Swatch color={s.color} />
-          {s.name}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function SubHeading({ children }: { children: React.ReactNode }) {
@@ -366,149 +272,9 @@ function TallyBars({
   );
 }
 
-/** Stacked monthly columns for two kinds of log. */
-function MonthlyBars({
-  data,
-  nameA,
-  nameB,
-}: {
-  data: { label: string; a: number; b: number }[];
-  nameA: string;
-  nameB: string;
-}) {
-  return (
-    <>
-      <SeriesKey
-        series={[
-          { name: nameA, color: CHART[0] },
-          { name: nameB, color: CHART[1] },
-        ]}
-      />
-      <ResponsiveContainer width="100%" height={240} minWidth={0}>
-        <BarChart data={data} margin={{ left: -16, right: 4, top: 4, bottom: 0 }}>
-          <CartesianGrid stroke={GRID_STROKE} vertical={false} />
-          <XAxis dataKey="label" minTickGap={4} {...AXIS_PROPS} />
-          <YAxis allowDecimals={false} {...AXIS_PROPS} />
-          <Tooltip {...TOOLTIP_PROPS} cursor={BAR_CURSOR} />
-          <Bar dataKey="a" name={nameA} stackId="logs" fill={CHART[0]} radius={0} isAnimationActive={false} />
-          <Bar dataKey="b" name={nameB} stackId="logs" fill={CHART[1]} radius={0} isAnimationActive={false} />
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-}
-
-function monthlySummary(data: { label: string; a: number; b: number }[], noun: string): string {
-  const total = data.reduce((acc, m) => acc + m.a + m.b, 0);
-  const busiest = data.reduce((best, m) => (m.a + m.b > best.a + best.b ? m : best), data[0]);
-  if (total === 0) return `Nothing ${noun} in the last 12 months.`;
-  return `${total} ${noun} in the last 12 months. Busiest month: ${busiest.label}, with ${busiest.a + busiest.b}.`;
-}
-
 function tallySummary(data: Tally[], what: string): string {
   const total = data.reduce((acc, d) => acc + d.count, 0);
   return `${what}: ${data[0].name} leads with ${data[0].count} of ${total}.`;
-}
-
-type RadarTickProps = {
-  x?: number | string;
-  y?: number | string;
-  textAnchor?: string;
-  payload?: { value?: unknown };
-};
-
-/** Full category name, wrapped onto two lines at a space, so no label is clipped. */
-function RadarLabel({ x = 0, y = 0, textAnchor, payload }: RadarTickProps) {
-  const words = String(payload?.value ?? "").split(" ");
-  return (
-    <text x={x} y={y} textAnchor={textAnchor as "start" | "middle" | "end" | undefined} style={{ ...AXIS_TICK, fontSize: 10 }}>
-      {words.map((w, i) => (
-        <tspan key={i} x={x} dy={i === 0 ? "0.32em" : "1.1em"}>
-          {w}
-        </tspan>
-      ))}
-    </text>
-  );
-}
-
-/** Category averages: the web chart in a frame, the exact figures beside it. */
-function CategoryProfile({ data }: { data: CategoryAverage[] }) {
-  const rated = data.filter((c) => c.count > 0);
-  const best = rated.reduce((a, b) => (b.avg > a.avg ? b : a), rated[0]);
-  const worst = rated.reduce((a, b) => (b.avg < a.avg ? b : a), rated[0]);
-  return (
-    <div className="grid items-start gap-x-10 gap-y-6 md:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-      <div className="min-w-0 max-w-[420px]">
-        <ChartFigure
-          title="Average by category"
-          summary={`Highest: ${best.full} at ${best.avg.toFixed(1)} out of 5. Lowest: ${worst.full} at ${worst.avg.toFixed(1)}.`}
-        >
-          <ResponsiveContainer width="100%" aspect={1} minWidth={0}>
-            <RadarChart data={data} cx="50%" cy="50%" outerRadius="54%">
-              <PolarGrid stroke={GRID_STROKE} />
-              <PolarAngleAxis dataKey="full" tick={RadarLabel} tickLine={false} stroke={GRID_STROKE} />
-              <PolarRadiusAxis angle={90} domain={[0, 5]} tickCount={6} tick={false} axisLine={false} />
-              <RechartsRadar
-                dataKey="avg"
-                name="Average"
-                stroke={CHART[0]}
-                fill={CHART[0]}
-                fillOpacity={0.2}
-                strokeWidth={1.5}
-                isAnimationActive={false}
-              />
-              <Tooltip {...TOOLTIP_PROPS} formatter={(value) => [Number(value).toFixed(1), "Average"]} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </ChartFigure>
-      </div>
-      <div className="min-w-0">
-        <SubHeading>Averages out of 5</SubHeading>
-        {data.map((c) => (
-          <LeaderRow key={c.full} truncate label={c.full} value={c.count > 0 ? c.avg.toFixed(1) : "—"} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** One logged title on a ruled line: artwork, title, rating. */
-function TitleRow({
-  label,
-  title,
-  meta,
-  image,
-  aspect,
-  rating,
-  fallbackIcon: FallbackIcon,
-}: {
-  label?: string;
-  title: string;
-  meta?: string | null;
-  image: string | null;
-  aspect: "poster" | "square";
-  rating: number;
-  fallbackIcon: LucideIcon;
-}) {
-  const box = aspect === "poster" ? "h-[60px] w-10" : "size-10";
-  return (
-    <li className="hairline flex items-center gap-4 py-3">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className={`${box} shrink-0 border border-border object-cover`} />
-      ) : (
-        <div className={`well flex ${box} shrink-0 items-center justify-center`}>
-          <FallbackIcon className="size-4 text-dim" aria-hidden="true" />
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
-        {label && <p className="t-label mb-0.5">{label}</p>}
-        <p className="t-card truncate">{title}</p>
-        {meta && <p className="t-meta truncate">{meta}</p>}
-      </div>
-      <Stars value={Number(rating)} showValue className="shrink-0" />
-    </li>
-  );
 }
 
 function CrowdPick({ pick, kind }: { pick: ControversialPick; kind: "gem" | "unpopular" }) {
@@ -523,7 +289,6 @@ function CrowdPick({ pick, kind }: { pick: ControversialPick; kind: "gem" | "unp
       </p>
       <div className="mt-4 flex items-start gap-4">
         {pick.posterUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={pick.posterUrl}
             alt=""
@@ -573,51 +338,25 @@ function DetailsNotice({
   );
 }
 
+
 // ─── Film mode ──────────────────────────────────────────────────
-
-type FilmTab = "overview" | "taste" | "library" | "habits";
-
-const FILM_TABS: { value: FilmTab; label: string }[] = [
-  { value: "overview", label: "Overview" },
-  { value: "taste", label: "Taste" },
-  { value: "library", label: "What you watch" },
-  { value: "habits", label: "Habits" },
-];
-
-const FILM_CATEGORIES = [
-  { key: "plot_rating", label: "Plot", full: "Plot" },
-  { key: "cinematography_rating", label: "Cinema", full: "Cinematography" },
-  { key: "acting_rating", label: "Acting", full: "Acting" },
-  { key: "soundtrack_rating", label: "Sound", full: "Soundtrack" },
-  { key: "pacing_rating", label: "Pacing", full: "Pacing" },
-  { key: "casting_rating", label: "Casting", full: "Casting" },
-] as const;
 
 function FilmAnalytics({
   watchLogs,
   tmdbDetails,
-  totalRuntime,
-  totalSeasons,
-  totalEpisodes,
   detailsLoading,
   detailsFailed,
   onRetry,
 }: {
   watchLogs: WatchLog[];
   tmdbDetails: Map<string, TmdbDetail>;
-  totalRuntime: number | null;
-  totalSeasons: number | null;
-  totalEpisodes: number | null;
   detailsLoading: boolean;
   detailsFailed: number;
   onRetry: () => void;
 }) {
-  const [tab, setTab] = useState<FilmTab>("overview");
-  const idBase = "analytics-film";
   const now = new Date();
 
   const movieCount = watchLogs.filter((l) => l.media_type === "movie").length;
-  const tvCount = watchLogs.filter((l) => l.media_type === "tv").length;
   // Unrated entries still count as logged, but never as a rating of zero
   const ratedLogs = watchLogs.filter(isRated);
   const avgRating =
@@ -634,60 +373,26 @@ function FilmAnalytics({
   }, 0);
   const hasRewatches = totalViews > watchLogs.length;
 
-  // Rating distribution: every half-star from 0.5 to 5, highest first
-  const allRatings = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.5);
-  const ratingBuckets: Record<string, number> = {};
-  allRatings.forEach((r) => { ratingBuckets[String(r)] = 0; });
-  ratedLogs.forEach((l) => {
-    const key = String(Number(l.rating));
-    if (key in ratingBuckets) ratingBuckets[key]++;
-  });
-  const ratingData: Tally[] = allRatings
-    .map((r) => ({ name: String(r), count: ratingBuckets[String(r)] }))
-    .reverse();
-  const commonRating = ratingData.reduce((a, b) => (b.count > a.count ? b : a), ratingData[0]);
-
-  // Monthly activity, stacked by films (a) and TV (b)
-  const monthlyData = lastTwelveMonths(now);
-  watchLogs.forEach((l) => {
-    const ym = (l.watched_date || l.created_at).slice(0, 7);
-    const bucket = monthlyData.find((m) => m.key === ym);
-    if (bucket) {
-      if (l.media_type === "movie") bucket.a++;
-      else bucket.b++;
-    }
-  });
-
-  const platformData = tally(watchLogs.map((l) => l.watched_on));
-  const rewatchData = tally(watchLogs.map((l) => l.rewatchability));
-  const discoveryData = tally(watchLogs.map((l) => l.discovered_via));
-
-  // Category averages
-  const categoryData: CategoryAverage[] = FILM_CATEGORIES.map(({ key, label, full }) => {
-    const values = watchLogs.map((l) => l[key]).filter((v): v is number => v !== null && v > 0);
-    const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-    return { label, full, avg: Math.round(avg * 10) / 10, count: values.length };
-  });
-  const categoryLogCount = watchLogs.filter((l) =>
-    FILM_CATEGORIES.some(({ key }) => (l[key] ?? 0) > 0),
-  ).length;
-
-  // Highest and lowest rated (earliest log wins a tie)
-  const sortedByDate = [...ratedLogs].sort((a, b) =>
-    (a.watched_date || a.created_at).localeCompare(b.watched_date || b.created_at),
-  );
-  const highestRated = sortedByDate.reduce<WatchLog | null>(
-    (best, l) => (!best || Number(l.rating) > Number(best.rating) ? l : best),
-    null,
-  );
-  const lowestRated = sortedByDate.reduce<WatchLog | null>(
-    (worst, l) => (!worst || Number(l.rating) < Number(worst.rating) ? l : worst),
-    null,
-  );
-
   // Everything below depends on the film and TV details fetched per title
   const detailFor = (l: WatchLog) =>
     l.tmdb_id ? tmdbDetails.get(detailKey(l.media_type, l.tmdb_id)) : undefined;
+
+  // Watch time and seasons are derived from the logs and the details; a dash until they arrive
+  let runtimeSum = 0;
+  let seasonSum = 0;
+  let episodeSum = 0;
+  watchLogs.forEach((l) => {
+    const d = detailFor(l);
+    if (!d) return;
+    if (l.media_type === "movie" && d.runtime) runtimeSum += d.runtime;
+    if (l.media_type === "tv") {
+      if (d.seasons) seasonSum += d.seasons;
+      if (d.episodes) episodeSum += d.episodes;
+    }
+  });
+  const totalRuntime = runtimeSum > 0 ? runtimeSum : null;
+  const totalSeasons = seasonSum > 0 ? seasonSum : null;
+  const totalEpisodes = episodeSum > 0 ? episodeSum : null;
 
   const genreData = tally(watchLogs.flatMap((l) => detailFor(l)?.genres ?? [])).slice(0, 10);
 
@@ -735,8 +440,6 @@ function FilmAnalytics({
   const yearTicks: number[] = [];
   for (let y = yearMin; y <= yearMax; y += yearStep) yearTicks.push(y);
 
-  const topDirectors = tally(watchLogs.flatMap((l) => detailFor(l)?.directors ?? [])).slice(0, 5);
-  const topActors = tally(watchLogs.flatMap((l) => detailFor(l)?.topCast ?? [])).slice(0, 5);
 
   // Where your rating sits furthest from the public average
   const controversialPicks = watchLogs.reduce<{ gem: ControversialPick | null; unpopular: ControversialPick | null }>(
@@ -762,11 +465,6 @@ function FilmAnalytics({
   const hiddenGem = controversialPicks.gem;
   const unpopularOpinion = controversialPicks.unpopular;
 
-  const split = [
-    { name: "Films", count: movieCount, color: CHART[0] },
-    { name: "TV", count: tvCount, color: CHART[1] },
-  ].filter((p) => p.count > 0);
-
   return (
     <>
       <div className="grid grid-cols-2 gap-x-8 gap-y-8 md:grid-cols-4">
@@ -784,7 +482,6 @@ function FilmAnalytics({
           label="Film watch time"
           value={totalRuntime ? formatRuntime(totalRuntime) : "—"}
           hint={`${movieCount} ${plural(movieCount, "film", "films")}`}
-          loading={detailsLoading}
         />
         <StatBlock
           label={`${totalSeasons === 1 ? "Season" : "Seasons"} of TV`}
@@ -794,110 +491,12 @@ function FilmAnalytics({
               ? `${totalEpisodes} ${plural(totalEpisodes, "episode", "episodes")}`
               : undefined
           }
-          loading={detailsLoading}
         />
       </div>
 
-      <TabBar
-        className="mt-12"
-        label="Analytics sections"
-        idBase={idBase}
-        value={tab}
-        onChange={setTab}
-        tabs={FILM_TABS}
-      />
-
-      {tab === "overview" && (
-        <TabPanel key="overview" idBase={idBase} value="overview">
-          <Section title="Ratings and activity" note="How you rate and when you watch.">
-            <div className="grid gap-6 md:grid-cols-2">
-              <ChartFigure
-                title="Logged per month"
-                summary={monthlySummary(monthlyData, "logged")}
-              >
-                <MonthlyBars data={monthlyData} nameA="Films" nameB="TV" />
-              </ChartFigure>
-              {ratedLogs.length > 0 ? (
-                <ChartFigure
-                  title="How you rate"
-                  summary={`Your most common rating is ${commonRating.name} out of 5, given ${commonRating.count} of ${ratedLogs.length} times.`}
-                >
-                  <TallyBars data={ratingData} seriesName="Logs" labelWidth={32} />
-                </ChartFigure>
-              ) : (
-                <Hint>Rate at least 1 watch to see how you rate.</Hint>
-              )}
-            </div>
-          </Section>
-
-          {highestRated && lowestRated && (
-            <Section title="Highs and lows">
-              <ul>
-                <TitleRow
-                  label="Highest rated"
-                  title={highestRated.title}
-                  image={highestRated.poster_url}
-                  aspect="poster"
-                  rating={Number(highestRated.rating)}
-                  fallbackIcon={Film}
-                />
-                <TitleRow
-                  label="Lowest rated"
-                  title={lowestRated.title}
-                  image={lowestRated.poster_url}
-                  aspect="poster"
-                  rating={Number(lowestRated.rating)}
-                  fallbackIcon={Film}
-                />
-              </ul>
-            </Section>
-          )}
-        </TabPanel>
-      )}
-
-      {tab === "taste" && (
-        <TabPanel key="taste" idBase={idBase} value="taste">
-          <Section
-            title="Category ratings"
-            note="When you log a watch you can also score its plot, acting and so on. These are your averages for each, out of 5."
-          >
-            {categoryLogCount >= MIN_POINTS ? (
-              <CategoryProfile data={categoryData} />
-            ) : (
-              <Hint>
-                Score the categories on {MIN_POINTS - categoryLogCount} more{" "}
-                {plural(MIN_POINTS - categoryLogCount, "watch", "watches")} to see this.
-              </Hint>
-            )}
-          </Section>
-
-          <Section
-            title="You and the crowd"
-            note="Your rating next to the public average on TMDB, the film database this app uses. TMDB scores are out of 10, so your rating is doubled to compare."
-          >
-            {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} onRetry={onRetry} className="mb-5" />}
-            {detailsLoading ? (
-              <div className="grid gap-6 md:grid-cols-2">
-                <ChartSkeleton label="Loading comparisons" className="h-[190px]" />
-                <ChartSkeleton label="Loading comparisons" className="h-[190px]" />
-              </div>
-            ) : hiddenGem || unpopularOpinion ? (
-              <div className="grid gap-6 md:grid-cols-2">
-                {hiddenGem && <CrowdPick pick={hiddenGem} kind="gem" />}
-                {unpopularOpinion && <CrowdPick pick={unpopularOpinion} kind="unpopular" />}
-              </div>
-            ) : (
-              <Hint>{needsDetails(1, true)}</Hint>
-            )}
-          </Section>
-        </TabPanel>
-      )}
-
-      {tab === "library" && (
-        <TabPanel key="library" idBase={idBase} value="library">
-          {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} onRetry={onRetry} />}
-
-          <Section title="Genres and decades" note="What you watch and when it was made.">
+      <Section title="Content profile" note="What you watch, how long it runs and when it was made.">
+        {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} onRetry={onRetry} className="mb-6" />}
+        <div className="flex flex-col gap-10">
             <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
               <div className="min-w-0">
                 <SubHeading>Top genres</SubHeading>
@@ -933,9 +532,6 @@ function FilmAnalytics({
                 <Hint>{needsDetails(1)}</Hint>
               )}
             </div>
-          </Section>
-
-          <Section title="Length and age" note="How long your films run, and how old they were when you got to them.">
             <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
               <div className="min-w-0">
                 {detailsLoading ? (
@@ -1015,125 +611,34 @@ function FilmAnalytics({
                 <Hint>{needsDetails(MIN_POINTS)}</Hint>
               )}
             </div>
-          </Section>
+        </div>
+      </Section>
 
-          <Section title="People" note="The directors and actors you keep coming back to.">
+      <Section
+        title="You and the crowd"
+        note="Your rating next to the public average on TMDB, the film database this app uses. TMDB scores are out of 10, so your rating is doubled to compare."
+      >
             {detailsLoading ? (
-              <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
-                <ListSkeleton label="Loading directors" />
-                <ListSkeleton label="Loading actors" />
+              <div className="grid gap-6 md:grid-cols-2">
+                <ChartSkeleton label="Loading comparisons" className="h-[190px]" />
+                <ChartSkeleton label="Loading comparisons" className="h-[190px]" />
               </div>
-            ) : topDirectors.length > 0 || topActors.length > 0 ? (
-              <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
-                {topDirectors.length > 0 && (
-                  <div className="min-w-0">
-                    <SubHeading>Top directors</SubHeading>
-                    <RankedList items={topDirectors} unit={(n) => plural(n, "title", "titles")} />
-                  </div>
-                )}
-                {topActors.length > 0 && (
-                  <div className="min-w-0">
-                    <SubHeading>Top actors</SubHeading>
-                    <RankedList items={topActors} unit={(n) => plural(n, "title", "titles")} />
-                  </div>
-                )}
+            ) : hiddenGem || unpopularOpinion ? (
+              <div className="grid gap-6 md:grid-cols-2">
+                {hiddenGem && <CrowdPick pick={hiddenGem} kind="gem" />}
+                {unpopularOpinion && <CrowdPick pick={unpopularOpinion} kind="unpopular" />}
               </div>
             ) : (
-              <Hint>{needsDetails(1)}</Hint>
+              <Hint>{needsDetails(1, true)}</Hint>
             )}
-          </Section>
-        </TabPanel>
-      )}
-
-      {tab === "habits" && (
-        <TabPanel key="habits" idBase={idBase} value="habits">
-          <Section title="What and where" note="The split between films and TV, and where you watch them.">
-            <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
-              <div className="min-w-0">
-                <SubHeading>Films and TV</SubHeading>
-                <div
-                  role="img"
-                  aria-label={`${movieCount} ${plural(movieCount, "film", "films")} and ${tvCount} ${plural(tvCount, "TV show", "TV shows")} logged.`}
-                  className="my-3 flex h-3 w-full border border-border"
-                >
-                  {split.map((p) => (
-                    <div
-                      key={p.name}
-                      style={{ width: `${(p.count / watchLogs.length) * 100}%`, background: p.color }}
-                    />
-                  ))}
-                </div>
-                {split.map((p) => (
-                  <LeaderRow
-                    key={p.name}
-                    label={
-                      <>
-                        <Swatch color={p.color} />
-                        {p.name}
-                      </>
-                    }
-                    value={`${p.count} (${Math.round((p.count / watchLogs.length) * 100)}%)`}
-                  />
-                ))}
-              </div>
-              {platformData.length > 0 ? (
-                <ChartFigure title="Where you watch" summary={tallySummary(platformData, "Where you watch")}>
-                  <TallyBars data={platformData} seriesName="Logs" />
-                </ChartFigure>
-              ) : (
-                <Hint>Add where you watched to 1 more log to see this.</Hint>
-              )}
-            </div>
-          </Section>
-
-          <Section title="Finding and rewatching" note="How you come across things, and whether you would watch them again.">
-            <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
-              {discoveryData.length > 0 ? (
-                <ChartFigure title="How you find things" summary={tallySummary(discoveryData, "How you find things")}>
-                  <TallyBars data={discoveryData} seriesName="Logs" />
-                </ChartFigure>
-              ) : (
-                <Hint>Add how you found it to 1 more log to see this.</Hint>
-              )}
-              {rewatchData.length > 0 ? (
-                <ChartFigure title="Would you rewatch" summary={tallySummary(rewatchData, "Would you rewatch")}>
-                  <TallyBars data={rewatchData} seriesName="Logs" />
-                </ChartFigure>
-              ) : (
-                <Hint>Add whether you would rewatch to 1 more log to see this.</Hint>
-              )}
-            </div>
-          </Section>
-        </TabPanel>
-      )}
+      </Section>
     </>
   );
 }
 
 // ─── Music mode ─────────────────────────────────────────────────
 
-type MusicTab = "overview" | "taste" | "top";
-
-const MUSIC_TABS: { value: MusicTab; label: string }[] = [
-  { value: "overview", label: "Overview" },
-  { value: "taste", label: "Taste" },
-  { value: "top", label: "Top rated" },
-];
-
-const MUSIC_CATEGORIES = [
-  { key: "lyrics_rating", label: "Lyrics", full: "Lyrics" },
-  { key: "production_rating", label: "Production", full: "Production" },
-  { key: "vocals_rating", label: "Vocals", full: "Vocals" },
-  { key: "melody_rating", label: "Melody", full: "Melody" },
-  { key: "replay_rating", label: "Replay", full: "Replay value" },
-  { key: "energy_rating", label: "Energy", full: "Energy" },
-] as const;
-
 function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
-  const [tab, setTab] = useState<MusicTab>("overview");
-  const idBase = "analytics-music";
-  const now = new Date();
-
   const albumCount = listenLogs.filter((l) => l.media_type === "album").length;
   const trackCount = listenLogs.filter((l) => l.media_type === "track").length;
   const ratedLogs = listenLogs.filter(isRated);
@@ -1144,37 +649,6 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
 
   const topArtists = tally(listenLogs.map((l) => l.artist)).slice(0, 10);
 
-  // Monthly activity, stacked by albums (a) and tracks (b)
-  const monthlyData = lastTwelveMonths(now);
-  listenLogs.forEach((l) => {
-    const ym = (l.listened_date || l.created_at).slice(0, 7);
-    const bucket = monthlyData.find((m) => m.key === ym);
-    if (bucket) {
-      if (l.media_type === "album") bucket.a++;
-      else bucket.b++;
-    }
-  });
-
-  const topAlbums = ratedLogs
-    .filter((l) => l.media_type === "album")
-    .sort((a, b) => Number(b.rating) - Number(a.rating))
-    .slice(0, 5);
-  const topTracks = ratedLogs
-    .filter((l) => l.media_type === "track")
-    .sort((a, b) => Number(b.rating) - Number(a.rating))
-    .slice(0, 5);
-
-  const contextData = tally(listenLogs.map((l) => l.listening_context));
-
-  const categoryData: CategoryAverage[] = MUSIC_CATEGORIES.map(({ key, label, full }) => {
-    const values = listenLogs.map((l) => l[key]).filter((v): v is number => v !== null && v > 0);
-    const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-    return { label, full, avg: Math.round(avg * 10) / 10, count: values.length };
-  });
-  const categoryLogCount = listenLogs.filter((l) =>
-    MUSIC_CATEGORIES.some(({ key }) => (l[key] ?? 0) > 0),
-  ).length;
-
   return (
     <>
       <div className="grid grid-cols-2 gap-x-8 gap-y-8 md:grid-cols-4">
@@ -1184,111 +658,15 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
         <StatBlock label="Tracks" value={trackCount} />
       </div>
 
-      <TabBar
-        className="mt-12"
-        label="Analytics sections"
-        idBase={idBase}
-        value={tab}
-        onChange={setTab}
-        tabs={MUSIC_TABS}
-      />
-
-      {tab === "overview" && (
-        <TabPanel key="overview" idBase={idBase} value="overview">
-          <Section title="Listening activity" note="Albums and tracks logged per month.">
-            <ChartFigure title="Logged per month" summary={monthlySummary(monthlyData, "logged")}>
-              <MonthlyBars data={monthlyData} nameA="Albums" nameB="Tracks" />
-            </ChartFigure>
-          </Section>
-
-          <Section title="Top artists" note="The artists you have logged the most.">
-            {topArtists.length > 0 ? (
-              <div className="max-w-xl">
-                <RankedList items={topArtists} unit={(n) => plural(n, "log", "logs")} />
-              </div>
-            ) : (
-              <Hint>Log 1 more album or track with an artist to see this.</Hint>
-            )}
-          </Section>
-        </TabPanel>
-      )}
-
-      {tab === "taste" && (
-        <TabPanel key="taste" idBase={idBase} value="taste">
-          <Section
-            title="Category ratings"
-            note="When you log a listen you can also score its lyrics, production and so on. These are your averages for each, out of 5."
-          >
-            {categoryLogCount >= MIN_POINTS ? (
-              <CategoryProfile data={categoryData} />
-            ) : (
-              <Hint>
-                Score the categories on {MIN_POINTS - categoryLogCount} more{" "}
-                {plural(MIN_POINTS - categoryLogCount, "listen", "listens")} to see this.
-              </Hint>
-            )}
-          </Section>
-
-          <Section title="Where you listen" note="The settings you note down when you log a listen.">
-            {contextData.length > 0 ? (
-              <ChartFigure title="Listens by setting" summary={tallySummary(contextData, "Listens by setting")}>
-                <TallyBars data={contextData} seriesName="Listens" />
-              </ChartFigure>
-            ) : (
-              <Hint>Add where you listened to 1 more log to see this.</Hint>
-            )}
-          </Section>
-        </TabPanel>
-      )}
-
-      {tab === "top" && (
-        <TabPanel key="top" idBase={idBase} value="top">
-          <Section title="Highest rated" note="Your top albums and tracks.">
-            <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
-              <div className="min-w-0">
-                <SubHeading>Top albums</SubHeading>
-                {topAlbums.length > 0 ? (
-                  <ol>
-                    {topAlbums.map((item) => (
-                      <TitleRow
-                        key={item.id}
-                        title={item.title}
-                        meta={item.artist}
-                        image={item.image_url}
-                        aspect="square"
-                        rating={Number(item.rating)}
-                        fallbackIcon={Disc3}
-                      />
-                    ))}
-                  </ol>
-                ) : (
-                  <Hint>Log 1 album to see this.</Hint>
-                )}
-              </div>
-              <div className="min-w-0">
-                <SubHeading>Top tracks</SubHeading>
-                {topTracks.length > 0 ? (
-                  <ol>
-                    {topTracks.map((item) => (
-                      <TitleRow
-                        key={item.id}
-                        title={item.title}
-                        meta={item.artist}
-                        image={item.image_url}
-                        aspect="square"
-                        rating={Number(item.rating)}
-                        fallbackIcon={Music2}
-                      />
-                    ))}
-                  </ol>
-                ) : (
-                  <Hint>Log 1 track to see this.</Hint>
-                )}
-              </div>
-            </div>
-          </Section>
-        </TabPanel>
-      )}
+      <Section title="Top artists" note="The artists you have logged the most.">
+        {topArtists.length > 0 ? (
+          <div className="max-w-xl">
+            <RankedList items={topArtists} unit={(n) => plural(n, "log", "logs")} />
+          </div>
+        ) : (
+          <Hint>Log 1 more album or track with an artist to see this.</Hint>
+        )}
+      </Section>
     </>
   );
 }
@@ -1302,49 +680,97 @@ export default function AnalyticsPage() {
   const [listenLogs, setListenLogs] = useState<ListenLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [detailsLoading, setDetailsLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsFailed, setDetailsFailed] = useState(0);
-  const [totalRuntime, setTotalRuntime] = useState<number | null>(null);
-  const [totalSeasons, setTotalSeasons] = useState<number | null>(null);
-  const [totalEpisodes, setTotalEpisodes] = useState<number | null>(null);
   const [tmdbDetails, setTmdbDetails] = useState<Map<string, TmdbDetail>>(new Map());
   const [attempt, setAttempt] = useState(0);
+  const [detailsAttempt, setDetailsAttempt] = useState(0);
 
-  // Only the current mode's data is fetched. The effect re-runs on a mode change
+  // Only the current mode's table is read. The effect re-runs on a mode change
   // (or a retry); `cancelled` stops the previous run from writing into the new one.
+  // The figures render as soon as the logs arrive; film details load in the next effect.
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchFilm(userId: string) {
-      const supabase = createClient();
-      const result = await supabase
-        .from("watch_logs")
-        .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
-        .eq("user_id", userId)
-        .in("media_type", ["movie", "tv"])
-        .order("watched_date", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false });
-      if (cancelled) return;
-      if (result.error) {
+    async function run() {
+      setLoading(true);
+      setLoadError(false);
+      setWatchLogs([]);
+      setListenLogs([]);
+      setTmdbDetails(new Map());
+      setDetailsLoading(false);
+      setDetailsFailed(0);
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        if (cancelled) return;
+        const user = data.user;
+        if (!user) {
+          setLoadError(true);
+          setLoading(false);
+          return;
+        }
+        if (isMusic) {
+          const result = await supabase
+            .from("listen_logs")
+            .select("media_type, artist, rating")
+            .eq("user_id", user.id)
+            .in("media_type", ["album", "track"]);
+          if (cancelled) return;
+          if (result.error) {
+            setLoadError(true);
+          } else {
+            setListenLogs((result.data as ListenLog[] | null) || []);
+          }
+        } else {
+          const result = await supabase
+            .from("watch_logs")
+            .select("rating, media_type, watched_date, created_at, tmdb_id, title, times_watched, poster_url")
+            .eq("user_id", user.id)
+            .in("media_type", ["movie", "tv"])
+            .order("watched_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false });
+          if (cancelled) return;
+          if (result.error) {
+            setLoadError(true);
+          } else {
+            const logs = (result.data as WatchLog[] | null) || [];
+            setWatchLogs(logs);
+            // Set with the logs so the sections never flash an empty state before the fetch starts
+            setDetailsLoading(logs.some((l) => l.tmdb_id));
+          }
+        }
+        setLoading(false);
+      } catch {
+        if (cancelled) return;
         setLoadError(true);
         setLoading(false);
-        setDetailsLoading(false);
-        return;
       }
-      const logs = (result.data as WatchLog[] | null) || [];
-      setWatchLogs(logs);
-      setLoading(false);
+    }
 
-      // Fetch film and TV details for runtime, seasons, genres, people and public scores
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMusic, attempt]);
+
+  // Film and TV details (runtime, seasons, genres, release year, public score), once the logs are in.
+  useEffect(() => {
+    if (isMusic) return;
+    let cancelled = false;
+
+    async function fetchDetails() {
+      const uniqueIds = new Map<string, { id: number; type: "movie" | "tv" }>();
+      watchLogs.forEach((l) => {
+        if (!l.tmdb_id) return;
+        const key = detailKey(l.media_type, l.tmdb_id);
+        if (!uniqueIds.has(key)) uniqueIds.set(key, { id: l.tmdb_id, type: l.media_type });
+      });
+      if (uniqueIds.size === 0) return;
+
+      setDetailsLoading(true);
+      setDetailsFailed(0);
       try {
-        const uniqueIds = new Map<string, { id: number; type: "movie" | "tv" }>();
-        logs.forEach((l) => {
-          if (!l.tmdb_id) return;
-          const key = detailKey(l.media_type, l.tmdb_id);
-          if (!uniqueIds.has(key)) uniqueIds.set(key, { id: l.tmdb_id, type: l.media_type });
-        });
-        if (uniqueIds.size === 0) return;
-
         const entries = Array.from(uniqueIds.entries());
         // Fetch in batches of 10
         const details = new Map<string, TmdbDetail>();
@@ -1358,13 +784,6 @@ export default function AnalyticsPage() {
                 if (!res.ok) return null;
                 const d = await res.json();
                 const genres = (d.genres || []).map((g: { name: string }) => g.name);
-                const directors = (d.credits?.crew || [])
-                  .filter((c: { job: string }) => c.job === "Director")
-                  .map((c: { name: string }) => c.name);
-                const topCast = (d.credits?.cast || [])
-                  .sort((a: { order: number }, b: { order: number }) => a.order - b.order)
-                  .slice(0, 5)
-                  .map((c: { name: string }) => c.name);
                 const relDate = d.release_date || d.first_air_date || "";
                 const releaseYear = relDate ? parseInt(relDate.slice(0, 4), 10) : null;
                 return {
@@ -1373,8 +792,6 @@ export default function AnalyticsPage() {
                   seasons: d.number_of_seasons || undefined,
                   episodes: d.number_of_episodes || undefined,
                   genres,
-                  directors,
-                  topCast,
                   voteAvg: d.vote_average ?? null,
                   releaseYear: releaseYear && !isNaN(releaseYear) ? releaseYear : null,
                   posterUrl: d.poster_url || null,
@@ -1397,85 +814,19 @@ export default function AnalyticsPage() {
         if (cancelled) return;
         setTmdbDetails(details);
         setDetailsFailed(failed);
-
-        let rtSum = 0;
-        let sSum = 0;
-        let eSum = 0;
-        logs.forEach((l) => {
-          if (!l.tmdb_id) return;
-          const d = details.get(detailKey(l.media_type, l.tmdb_id));
-          if (!d) return;
-          if (l.media_type === "movie" && d.runtime) rtSum += d.runtime;
-          if (l.media_type === "tv") {
-            if (d.seasons) sSum += d.seasons;
-            if (d.episodes) eSum += d.episodes;
-          }
-        });
-        if (rtSum > 0) setTotalRuntime(rtSum);
-        if (sSum > 0) setTotalSeasons(sSum);
-        if (eSum > 0) setTotalEpisodes(eSum);
       } finally {
         if (!cancelled) setDetailsLoading(false);
       }
     }
 
-    async function fetchMusic(userId: string) {
-      const supabase = createClient();
-      const result = await supabase
-        .from("listen_logs")
-        .select("id, media_type, title, artist, album_name, image_url, rating, review, listened_date, created_at, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating, listened_on, listening_context")
-        .eq("user_id", userId)
-        .in("media_type", ["album", "track"])
-        .order("listened_date", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false });
-      if (cancelled) return;
-      if (result.error) {
-        setLoadError(true);
-      } else {
-        setListenLogs((result.data as ListenLog[] | null) || []);
-      }
-      setLoading(false);
-    }
-
-    async function run() {
-      setLoading(true);
-      setLoadError(false);
-      setWatchLogs([]);
-      setListenLogs([]);
-      setTmdbDetails(new Map());
-      setDetailsLoading(!isMusic);
-      setDetailsFailed(0);
-      setTotalRuntime(null);
-      setTotalSeasons(null);
-      setTotalEpisodes(null);
-      try {
-        const supabase = createClient();
-        const { data } = await supabase.auth.getUser();
-        if (cancelled) return;
-        const user = data.user;
-        if (!user) {
-          setLoadError(true);
-          setLoading(false);
-          setDetailsLoading(false);
-          return;
-        }
-        if (isMusic) await fetchMusic(user.id);
-        else await fetchFilm(user.id);
-      } catch {
-        if (cancelled) return;
-        setLoadError(true);
-        setLoading(false);
-        setDetailsLoading(false);
-      }
-    }
-
-    run();
+    fetchDetails();
     return () => {
       cancelled = true;
     };
-  }, [isMusic, attempt]);
+  }, [isMusic, watchLogs, detailsAttempt]);
 
   const retry = () => setAttempt((n) => n + 1);
+  const retryDetails = () => setDetailsAttempt((n) => n + 1);
 
   const header = (
     <PageHeader
@@ -1492,88 +843,73 @@ export default function AnalyticsPage() {
     />
   );
 
+  let body: React.ReactNode;
   if (loading) {
-    return (
-      <div>
-        {header}
+    body = (
+      <>
         <div className="grid grid-cols-2 gap-x-8 gap-y-8 md:grid-cols-4">
           <StatBlock label={isMusic ? "Logged" : "Watched"} value="" loading />
           <StatBlock label="Average rating" value="" loading />
           <StatBlock label={isMusic ? "Albums" : "Film watch time"} value="" loading />
           <StatBlock label={isMusic ? "Tracks" : "Seasons of TV"} value="" loading />
         </div>
-        <div className="mt-16 grid gap-6 md:grid-cols-2">
-          <ChartSkeleton label="Loading your analytics" className="h-[300px]" />
-          <ChartSkeleton label="Loading your analytics" className="h-[300px]" />
-        </div>
-      </div>
+        <ChartSkeleton label="Loading your analytics" className="h-[300px]" />
+      </>
     );
-  }
-
-  if (loadError) {
-    return (
-      <div>
-        {header}
-        <Notice
-          tone="error"
-          title={isMusic ? "Couldn't load your listens" : "Couldn't load your watches"}
-          action={
-            <Button variant="outline" size="sm" onClick={retry}>
-              Try again
-            </Button>
-          }
-        >
-          Check your connection and try again. Nothing you have logged is lost.
-        </Notice>
-      </div>
+  } else if (loadError) {
+    body = (
+      <Notice
+        tone="error"
+        title={isMusic ? "Couldn't load your listens" : "Couldn't load your watches"}
+        action={
+          <Button variant="outline" size="sm" onClick={retry}>
+            Try again
+          </Button>
+        }
+      >
+        Check your connection and try again. Nothing you have logged is lost.
+      </Notice>
     );
-  }
-
-  const isEmpty = isMusic ? listenLogs.length === 0 : watchLogs.length === 0;
-
-  if (isEmpty) {
-    return (
-      <div>
-        {header}
-        <EmptyState
-          icon={isMusic ? Headphones : BarChart3}
-          title="No data yet"
-          description={
-            isMusic
-              ? "Start logging albums and tracks to see your music analytics come to life."
-              : "Start logging films and TV shows to see your analytics come to life."
-          }
-          action={
-            <Button asChild>
-              <Link href="/protected/log">
-                <Plus aria-hidden="true" />
-                {isMusic ? "Log your first listen" : "Log your first watch"}
-              </Link>
-            </Button>
-          }
-        />
-      </div>
+  } else if (isMusic ? listenLogs.length === 0 : watchLogs.length === 0) {
+    body = (
+      <EmptyState
+        icon={isMusic ? Headphones : BarChart3}
+        title="No data yet"
+        description={
+          isMusic
+            ? "Start logging albums and tracks to see your music analytics come to life."
+            : "Start logging films and TV shows to see your analytics come to life."
+        }
+        action={
+          <Button asChild>
+            <Link href="/protected/log">
+              <Plus aria-hidden="true" />
+              {isMusic ? "Log your first listen" : "Log your first watch"}
+            </Link>
+          </Button>
+        }
+      />
+    );
+  } else {
+    body = isMusic ? (
+      <MusicAnalytics key="music" listenLogs={listenLogs} />
+    ) : (
+      <FilmAnalytics
+        key="film"
+        watchLogs={watchLogs}
+        tmdbDetails={tmdbDetails}
+        detailsLoading={detailsLoading}
+        detailsFailed={detailsFailed}
+        onRetry={retryDetails}
+      />
     );
   }
 
   return (
     <div>
       {header}
-      {isMusic ? (
-        <MusicAnalytics key="music" listenLogs={listenLogs} />
-      ) : (
-        <FilmAnalytics
-          key="film"
-          watchLogs={watchLogs}
-          tmdbDetails={tmdbDetails}
-          totalRuntime={totalRuntime}
-          totalSeasons={totalSeasons}
-          totalEpisodes={totalEpisodes}
-          detailsLoading={detailsLoading}
-          detailsFailed={detailsFailed}
-          onRetry={retry}
-        />
-      )}
+      <TasteDNACard />
+      <div className="advance mt-16 flex flex-col gap-16">{body}</div>
     </div>
   );
 }

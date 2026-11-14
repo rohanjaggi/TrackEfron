@@ -1,307 +1,200 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactElement } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  Eye,
-  Film,
-  Headphones,
-  Link2,
-  RefreshCw,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Disclosure } from "@/components/ui/disclosure";
 import { LoadingLine, Skeleton } from "@/components/ui/loading";
-import { LeaderRow, Notice, SectionHeader } from "@/components/ui/page";
+import { Notice, SectionHeader } from "@/components/ui/page";
 import { useToast } from "@/components/ui/toast";
-import { useMode } from "@/lib/mode-context";
+import type { TasteDNA, TasteObservation } from "@/lib/ai/types";
 
-interface Identity {
-  core: string;
-  aspect_lens: string;
-  patterns: string;
-  rating_style: string;
-}
+type TasteCardData = Pick<TasteDNA, "fingerprint" | "pulse" | "observations"> & {
+  logs_since: number;
+  needs_regenerate: boolean;
+};
 
-interface TasteDNAData {
-  fingerprint: string;
-  film_identity: Identity;
-  music_identity: Identity;
-  cross_domain: {
-    thread: string;
-    surprising_connection: string;
-  };
-  blind_spots: string[];
-  guilty_pleasures: string[];
-  generated_at?: string;
-  film_log_count?: number;
-  music_log_count?: number;
-}
+type CardError =
+  | { kind: "no_key" }
+  | { kind: "not_enough" }
+  | { kind: "message"; message: string };
 
-const GENERATE_FAILED = "Couldn't generate your Taste DNA. Try again in a moment.";
+const LOAD_FAILED = "Couldn't load your taste card. Reload the page to try again.";
+const GENERATE_FAILED = "Something went wrong generating your taste card. Try again.";
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
+/** One observation as a single line, with the title it cites picked out in emphasis. */
+function Observation({ observation }: { observation: TasteObservation }) {
+  const { text, cited_title } = observation;
+  if (!cited_title) return <>{text}</>;
 
-const PROSE = "max-w-[68ch]";
-
-/** A ruled, collapsible section of the profile: the shared Disclosure with an icon and optional count. */
-function Section({
-  icon: Icon,
-  title,
-  count,
-  children,
-  defaultOpen = false,
-}: {
-  icon: LucideIcon;
-  title: string;
-  count?: number;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const id = useId();
-
+  const at = text.toLowerCase().indexOf(cited_title.toLowerCase());
+  const cited = <strong className="font-semibold text-foreground">{at === -1 ? cited_title : text.slice(at, at + cited_title.length)}</strong>;
+  if (at === -1) {
+    return (
+      <>
+        {text} {cited}
+      </>
+    );
+  }
   return (
-    <Disclosure
-      id={id}
-      defaultOpen={defaultOpen}
-      title={
-        <span className="inline-flex items-center gap-3">
-          <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
-          {title}
-          {count != null && <Badge variant="outline">{count}</Badge>}
-        </span>
-      }
-    >
-      <div className="flex flex-col gap-3 leading-relaxed text-muted-foreground">{children}</div>
-    </Disclosure>
+    <>
+      {text.slice(0, at)}
+      {cited}
+      {text.slice(at + cited_title.length)}
+    </>
   );
 }
 
-function IdentitySection({ data }: { data: Identity }) {
+function ErrorNotice({ error }: { error: CardError }) {
+  if (error.kind === "no_key") {
+    return (
+      <Notice tone="warning" title="API key required" className="mt-6">
+        Add an Anthropic, OpenAI or Gemini key in{" "}
+        <Link href="/protected/profile" className="text-primary underline underline-offset-4">
+          profile settings
+        </Link>{" "}
+        to generate your taste card.
+      </Notice>
+    );
+  }
+  if (error.kind === "not_enough") {
+    return (
+      <Notice tone="info" title="Not enough logged yet" className="mt-6">
+        Log a few films or albums first, then generate your taste card.
+      </Notice>
+    );
+  }
   return (
-    <>
-      <p className={PROSE}>{data.core}</p>
-      {data.aspect_lens && <p className={PROSE}>{data.aspect_lens}</p>}
-      {data.patterns && <p className={PROSE}>{data.patterns}</p>}
-      {data.rating_style && <p className={`${PROSE} italic`}>{data.rating_style}</p>}
-    </>
+    <Notice tone="error" className="mt-6">
+      {error.message}
+    </Notice>
   );
 }
 
 export function TasteDNACard() {
   const toast = useToast();
-  const { mode } = useMode();
-  const [dna, setDna] = useState<TasteDNAData | null>(null);
+  const [dna, setDna] = useState<TasteCardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadFailed, setLoadFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [noApiKey, setNoApiKey] = useState(false);
+  const [error, setError] = useState<CardError | null>(null);
 
+  // GET only reads what was generated before; generating is always a button press.
   useEffect(() => {
-    async function fetchDNA() {
+    let cancelled = false;
+    async function load() {
       try {
         const res = await fetch("/api/ai/taste-dna");
-        if (!res.ok) {
-          setLoadFailed(true);
-          return;
-        }
-        // `null` means none has been generated yet.
-        const data: TasteDNAData | null = await res.json();
-        setDna(data);
+        if (!res.ok) throw new Error("load failed");
+        // `null` means nothing has been generated yet.
+        const data: TasteCardData | null = await res.json();
+        if (!cancelled) setDna(data);
       } catch {
-        setLoadFailed(true);
+        if (!cancelled) setError({ kind: "message", message: LOAD_FAILED });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    fetchDNA();
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleGenerate() {
     const regenerating = dna !== null;
     setGenerating(true);
     setError(null);
-    setNoApiKey(false);
     try {
       const res = await fetch("/api/ai/taste-dna", { method: "POST" });
+      // A non-JSON body only means there is no server message; the status still decides the error.
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        const data: { error?: string; code?: string } = await res.json();
-        if (data.code === "NO_API_KEY") {
-          setNoApiKey(true);
-          return;
+        if (res.status === 402) {
+          setError({ kind: "no_key" });
+        } else if (res.status === 400) {
+          setError({ kind: "not_enough" });
+        } else {
+          const message = typeof body?.error === "string" && body.error ? body.error : GENERATE_FAILED;
+          setError({ kind: "message", message });
         }
-        // Only the 400 carries a message written for the user (nothing logged yet).
-        setError(res.status === 400 && data.error ? data.error : GENERATE_FAILED);
         return;
       }
-      const data: TasteDNAData = await res.json();
-      setDna({ ...data, generated_at: new Date().toISOString() });
-      setLoadFailed(false);
+      if (!body || typeof body.fingerprint !== "string") {
+        setError({ kind: "message", message: GENERATE_FAILED });
+        return;
+      }
+      setDna({
+        fingerprint: body.fingerprint,
+        pulse: Array.isArray(body.pulse) ? body.pulse : [],
+        observations: Array.isArray(body.observations) ? body.observations : [],
+        logs_since: 0,
+        needs_regenerate: false,
+      });
       toast({
         mark: regenerating ? "Updated" : "Saved",
-        title: regenerating ? "Your Taste DNA has been rewritten" : "Your Taste DNA is ready",
+        title: regenerating ? "Your taste card has been rewritten" : "Your taste card is ready",
       });
     } catch {
-      setError("Couldn't generate your Taste DNA. Check your connection and try again.");
+      setError({ kind: "message", message: GENERATE_FAILED });
     } finally {
       setGenerating(false);
     }
   }
 
-  const apiKeyNotice = noApiKey && (
-    <Notice tone="warning" title="API key required" className="mb-5">
-      Add an Anthropic or OpenAI key in{" "}
-      <Link href="/protected/profile" className="text-primary underline underline-offset-4">
-        profile settings
-      </Link>{" "}
-      to turn on Taste DNA.
-    </Notice>
+  const action = loading ? undefined : (
+    <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
+      {generating ? "Generating" : dna ? "Regenerate" : "Generate"}
+    </Button>
   );
-
-  const errorNotice = error && (
-    <Notice tone="error" className="mb-5">
-      {error}
-    </Notice>
-  );
-
-  if (loading) {
-    return (
-      <section className="frame p-6">
-        <SectionHeader title="Taste DNA" />
-        <LoadingLine label="Loading your Taste DNA" />
-        <div className="mt-5 flex flex-col gap-3">
-          <Skeleton className="h-6 w-3/4" />
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-5/6" />
-        </div>
-      </section>
-    );
-  }
-
-  if (!dna) {
-    return (
-      <section className="frame p-6">
-        <SectionHeader title="Taste DNA" />
-        {loadFailed ? (
-          <Notice tone="error" title="Couldn't load your Taste DNA" className="mb-5">
-            Reload the page to try again. If you have not generated one yet, you can do that below.
-          </Notice>
-        ) : (
-          <p className="mb-5 max-w-[62ch] leading-relaxed text-muted-foreground">
-            A written read of your taste in film and music, generated from what you have logged.
-            Discover patterns you didn&rsquo;t know you had.
-          </p>
-        )}
-        {apiKeyNotice}
-        {errorNotice}
-        {generating ? (
-          <LoadingLine label="Analysing your taste" className="py-2.5" />
-        ) : (
-          <Button variant="outline" onClick={handleGenerate}>
-            Generate Taste DNA
-          </Button>
-        )}
-      </section>
-    );
-  }
-
-  const hasCounts = dna.film_log_count != null || dna.music_log_count != null;
-
-  // Both identities stay available; the current mode's comes first and starts open.
-  const filmSection = dna.film_identity?.core ? (
-    <Section key={`film-${mode}`} icon={Film} title="Film identity" defaultOpen={mode === "film"}>
-      <IdentitySection data={dna.film_identity} />
-    </Section>
-  ) : null;
-  const musicSection = dna.music_identity?.core ? (
-    <Section key={`music-${mode}`} icon={Headphones} title="Music identity" defaultOpen={mode === "music"}>
-      <IdentitySection data={dna.music_identity} />
-    </Section>
-  ) : null;
-  const identities = (mode === "music" ? [musicSection, filmSection] : [filmSection, musicSection])
-    .filter((node): node is ReactElement => node !== null);
 
   return (
-    <section className="frame p-6">
-      <SectionHeader
-        title="Taste DNA"
-        action={
-          generating ? (
-            <LoadingLine label="Analysing your taste" />
-          ) : (
-            <Button variant="ghost" size="sm" onClick={handleGenerate}>
-              <RefreshCw aria-hidden="true" />
-              Regenerate
-            </Button>
-          )
-        }
-      />
+    <section className="frame frame-accent p-6">
+      <SectionHeader title="Your taste" action={action} />
 
-      {apiKeyNotice}
-      {errorNotice}
-
-      <p className="t-voice mb-6">
-        &ldquo;{dna.fingerprint}&rdquo;
-      </p>
-
-      <div className="border-b border-border">
-        {identities}
-
-        {dna.cross_domain?.thread && (
-          <Section icon={Link2} title="The thread between">
-            <p className={PROSE}>{dna.cross_domain.thread}</p>
-            {dna.cross_domain.surprising_connection && (
-              <p className={`${PROSE} italic`}>{dna.cross_domain.surprising_connection}</p>
-            )}
-          </Section>
-        )}
-
-        {dna.blind_spots && dna.blind_spots.length > 0 && (
-          <Section icon={Eye} title="Blind spots" count={dna.blind_spots.length}>
-            <ul className="flex flex-wrap gap-2">
-              {dna.blind_spots.map((spot, i) => (
-                <li key={i} className="max-w-full">
-                  <Badge variant="outline" className="max-w-full whitespace-normal leading-snug">
-                    {spot}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        {dna.guilty_pleasures && dna.guilty_pleasures.length > 0 && (
-          <Section icon={Zap} title="Guilty pleasures" count={dna.guilty_pleasures.length}>
-            <ul className="flex flex-col gap-2">
-              {dna.guilty_pleasures.map((gp, i) => (
-                <li key={i}>{gp}</li>
-              ))}
-            </ul>
-          </Section>
-        )}
-      </div>
-
-      {(dna.generated_at || hasCounts) && (
-        <div className="mt-5">
-          {dna.generated_at && <LeaderRow label="Generated" value={formatDate(dna.generated_at)} />}
-          {dna.film_log_count != null && (
-            <LeaderRow label="Films and shows read" value={dna.film_log_count} />
-          )}
-          {dna.music_log_count != null && (
-            <LeaderRow label="Albums and tracks read" value={dna.music_log_count} />
-          )}
+      {loading ? (
+        <div className="mt-5 flex flex-col gap-3">
+          <LoadingLine label="Loading your taste card" />
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-3 w-1/3" />
         </div>
+      ) : (
+        <>
+          {generating && <LoadingLine label="Generating your taste card" className="mt-5" />}
+
+          {dna ? (
+            <div className="mt-5">
+              <p className="t-voice-lg">&ldquo;{dna.fingerprint}&rdquo;</p>
+              {dna.needs_regenerate ? (
+                <p className="t-meta mt-3">Regenerate to update</p>
+              ) : (
+                <>
+                  {dna.pulse.length > 0 && <p className="t-label mt-3">{dna.pulse.join(" · ")}</p>}
+                  {dna.observations.length > 0 && (
+                    <ul className="mt-5 flex flex-col gap-2 text-muted-foreground">
+                      {dna.observations.map((o, i) => (
+                        <li key={i}>
+                          <Observation observation={o} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+              {dna.logs_since > 0 && (
+                <p className="t-meta mt-4">
+                  {dna.logs_since} {dna.logs_since === 1 ? "log" : "logs"} since this was generated
+                </p>
+              )}
+            </div>
+          ) : (
+            !error &&
+            !generating && (
+              <p className="t-meta mt-5">A short read on your taste, built from what you&apos;ve logged.</p>
+            )
+          )}
+
+          {error && <ErrorNotice error={error} />}
+        </>
       )}
     </section>
   );

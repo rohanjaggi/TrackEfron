@@ -44,7 +44,7 @@ export default function ProtectedLayout({
                 aria-label="TrackEfron home"
                 className="flex flex-shrink-0 items-center gap-2.5"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img src="/images/logo.png" alt="" className="h-9 w-9 object-contain" />
                 <span className="wordmark hidden text-[22px] xl:block">
                   TrackEfron
@@ -77,7 +77,7 @@ export default function ProtectedLayout({
         <footer className="mt-auto w-full border-t border-[var(--border-raw)] pb-20 pt-6 sm:pb-6">
           <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
             <div className="flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img src="/images/logo.png" alt="" className="h-6 w-auto object-contain" />
               <span className="wordmark text-[18px]">
                 TrackEfron

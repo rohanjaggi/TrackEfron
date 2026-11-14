@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/loading";
-import { EmptyState, LeaderRow, SectionHeader } from "@/components/ui/page";
+import { EmptyState, LeaderRow, Notice, SectionHeader } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { useSyncMode } from "@/lib/mode-context";
@@ -232,6 +232,8 @@ function MediaDetailContent() {
   const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
   const [listenLog, setListenLog] = useState<UserListenLog | null>(null);
   const [userDataLoading, setUserDataLoading] = useState(true);
+  // The user's own rows could not be read, so "logged", "saved" and list state are unknown.
+  const [userDataFailed, setUserDataFailed] = useState(false);
 
   // Watchlist (film) or queue (music) membership.
   const [isSaved, setIsSaved] = useState(false);
@@ -311,6 +313,8 @@ function MediaDetailContent() {
               .maybeSingle(),
           ]);
 
+          if (logRes.error) throw logRes.error;
+          if (queueRes.error) throw queueRes.error;
           if (logRes.data) setListenLog(logRes.data);
           if (queueRes.data) {
             setIsSaved(true);
@@ -338,6 +342,8 @@ function MediaDetailContent() {
               .maybeSingle(),
           ]);
 
+          if (logRes.error) throw logRes.error;
+          if (wlRes.error) throw wlRes.error;
           if (logRes.data) setWatchLog(logRes.data);
           if (wlRes.data) {
             setIsSaved(true);
@@ -346,13 +352,14 @@ function MediaDetailContent() {
         }
 
         // Fetch lists filtered by mode
-        const { data: allLists } = await supabase
+        const { data: allLists, error: listsError } = await supabase
           .from("lists")
           .select("id, name, emoji")
           .eq("user_id", user.id)
           .eq("list_type", listMode)
           .order("updated_at", { ascending: false });
 
+        if (listsError) throw listsError;
         if (allLists) {
           // Check which lists already contain this item
           const listIds = allLists.map((l) => l.id);
@@ -363,7 +370,9 @@ function MediaDetailContent() {
           itemQuery = isMusic
             ? itemQuery.eq("spotify_id", id)
             : itemQuery.eq("tmdb_id", Number(id)).eq("media_type", type);
-          const { data: listItemsData } = listIds.length > 0 ? await itemQuery : { data: [] };
+          const { data: listItemsData, error: listItemsError } =
+            listIds.length > 0 ? await itemQuery : { data: [], error: null };
+          if (listItemsError) throw listItemsError;
 
           // Membership is keyed on the full identity of the item, never a bare id.
           const itemKey = isMusic ? `${type}:${id}` : `${type}:${Number(id)}`;
@@ -386,7 +395,8 @@ function MediaDetailContent() {
           );
         }
       } catch {
-        // The page still works without the user's own data; actions report their own failures.
+        // The page still works without the user's own data, but say so: the buttons below depend on it.
+        setUserDataFailed(true);
       } finally {
         setUserDataLoading(false);
       }
@@ -784,7 +794,7 @@ function MediaDetailContent() {
         {/* Backdrop: a quiet strip of its own. No text ever sits on it. */}
         {!isMusic && detail!.backdrop_url && (
           <div className="mb-10 h-32 overflow-hidden border border-border sm:h-44 md:h-56">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img
               src={detail!.backdrop_url}
               alt=""
@@ -798,7 +808,7 @@ function MediaDetailContent() {
           <div className={cn("light-leak", isMusic ? "w-56 md:w-72" : "w-44 md:w-64")}>
             <div className="frame frame-accent frame-raised ticks">
               {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img
                   src={image}
                   alt=""
@@ -846,6 +856,12 @@ function MediaDetailContent() {
               )}
             </div>
 
+            {userDataFailed && (
+              <Notice tone="error" title="Couldn't load your activity for this title" className="mt-6 max-w-md">
+                Whether you&apos;ve logged it or saved it isn&apos;t shown. Reload the page to try again.
+              </Notice>
+            )}
+
             {/* Actions: one solid, the rest outline */}
             <div className="mt-8 flex flex-wrap items-center gap-2.5">
               {userDataLoading ? (
@@ -871,7 +887,7 @@ function MediaDetailContent() {
                     </Button>
                   )}
 
-                  {!log &&
+                  {!log && !userDataFailed &&
                     (isSaved ? (
                       <ConfirmButton
                         size="default"
@@ -886,7 +902,7 @@ function MediaDetailContent() {
                       </Button>
                     ))}
 
-                  {userLists.length > 0 && (
+                  {!userDataFailed && userLists.length > 0 && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline">
@@ -955,7 +971,7 @@ function MediaDetailContent() {
                 <ul className="flex flex-wrap gap-2">
                   {whereToWatch.map((p) => (
                     <li key={p.provider_id}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      { }
                       <img
                         src={`https://image.tmdb.org/t/p/w154${p.logo_path}`}
                         alt={`${p.provider_name} (${p.category})`}

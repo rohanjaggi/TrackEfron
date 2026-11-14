@@ -4,7 +4,10 @@ import { callAI } from "@/lib/ai/provider";
 import { vibeSearchTool } from "@/lib/ai/tools";
 import { VIBE_SEARCH_SYSTEM, buildVibeSearchUserPrompt } from "@/lib/ai/prompts";
 import { searchSpotify } from "@/lib/spotify/spotify";
+import { getPoster, tmdbGet, type TmdbResult } from "@/lib/tmdb/tmdb";
 import type { VibeSearchResult, VibeSearchResponse } from "@/lib/ai/types";
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .order("listened_date", { ascending: false })
       .limit(10);
-    recentItems = (data || []).map((l: any) => `${l.title} by ${l.artist}`);
+    recentItems = (data || []).map((l) => `${l.title} by ${l.artist}`);
   } else {
     const { data } = await supabase
       .from("watch_logs")
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .order("watched_date", { ascending: false })
       .limit(10);
-    recentItems = (data || []).map((w: any) => w.title);
+    recentItems = (data || []).map((w) => w.title);
   }
 
   const userPrompt = buildVibeSearchUserPrompt({
@@ -96,36 +99,27 @@ export async function POST(request: Request) {
           });
         }
       } catch {
-        // skip
+        // A failed lookup drops only that result.
       }
     } else {
       try {
         const mediaType = item.type === "tv" ? "tv" : "movie";
-        const tmdbRes = await fetch(
-          `https://api.themoviedb.org/3/search/${mediaType}?query=${encodeURIComponent(item.title)}${item.year ? `&year=${item.year}` : ""}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.TMDB_BEARER_TOKEN}`,
-            },
-            signal: AbortSignal.timeout(5000),
-          }
+        const data = await tmdbGet<{ results?: TmdbResult[] }>(
+          `/search/${mediaType}`,
+          item.year ? { query: item.title, year: item.year } : { query: item.title },
+          { signal: AbortSignal.timeout(5000) },
         );
-        if (tmdbRes.ok) {
-          const data = await tmdbRes.json();
-          const match = data.results?.[0];
-          if (match) {
-            validated.push({
-              ...item,
-              tmdb_id: match.id,
-              title: match.title || match.name,
-              poster_url: match.poster_path
-                ? `https://image.tmdb.org/t/p/w342${match.poster_path}`
-                : null,
-            });
-          }
+        const match = data.results?.[0];
+        if (match) {
+          validated.push({
+            ...item,
+            tmdb_id: match.id,
+            title: match.title || match.name || item.title,
+            poster_url: match.poster_path ? getPoster(match.poster_path, "w342") : null,
+          });
         }
       } catch {
-        // skip
+        // A failed lookup drops only that result.
       }
     }
   }

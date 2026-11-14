@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bookmark, Disc3, Film, Library, Music2, Plus, Tv } from "lucide-react";
+import { ArrowRight, Bookmark, Disc3, Film, Library, Music2, Plus, Tv, type LucideIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,15 @@ import { MediaCard, MediaGrid } from "@/components/ui/media-card";
 import { EmptyState, Notice, PageHeader, SectionHeader, StatBlock } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
+import type {
+  FilmRecommendation,
+  MusicRecommendation,
+  MusicRecsResponse,
+  RecsResponse,
+} from "@/lib/ai/types";
 import { useMode, type AppMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
+import { resizePoster } from "@/lib/tmdb/poster";
 import { cn } from "@/lib/utils";
 
 type MediaType = "movie" | "tv" | "album" | "track";
@@ -31,29 +38,9 @@ type LogEntry = {
   created_at: string;
 };
 
-type Recommendation = {
-  id: number;
-  media_type: "movie" | "tv";
-  title: string;
-  poster_url: string | null;
-  vote_average: number | null;
-  release_date: string | null;
-};
-
-type MusicRecommendation = {
-  title: string;
-  artist: string;
-  type: "album" | "track";
-  explanation?: string;
-  spotify_id?: string;
-  image_url?: string | null;
-};
-
-type RecsState = {
-  mode: AppMode;
-  status: "ok" | "failed" | "nokey";
-  film: Recommendation[];
-  music: MusicRecommendation[];
+type RecsResult<T> = {
+  status: "ok" | "failed" | "nokey" | "few";
+  items: T[];
 };
 
 type LogsState = {
@@ -79,11 +66,6 @@ const TYPE_LABEL: Record<MediaType, string> = {
 
 const isMusicType = (type: MediaType) => type === "album" || type === "track";
 
-function resizePoster(url: string | null, size: string): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
-
 /** "2026-11-01" is a calendar day, not a moment: format it without shifting time zone. */
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("en-GB", {
@@ -99,9 +81,12 @@ function mediaHref(item: LogEntry): string | null {
   return id ? `/protected/media/${item.media_type}/${id}` : null;
 }
 
-function fallbackIconFor(type: MediaType) {
-  return type === "movie" ? Film : type === "tv" ? Tv : type === "album" ? Disc3 : Music2;
-}
+const FALLBACK_ICON: Record<MediaType, LucideIcon> = {
+  movie: Film,
+  tv: Tv,
+  album: Disc3,
+  track: Music2,
+};
 
 /** Unrated (null or 0) has no rating: no stars, and it is left out of the average. */
 function ratingOf(item: LogEntry): number | null {
@@ -114,7 +99,7 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
   const music = isMusicType(item.media_type);
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w500");
-  const Fallback = fallbackIconFor(item.media_type);
+  const Fallback = FALLBACK_ICON[item.media_type];
   const rating = ratingOf(item);
 
   return (
@@ -127,7 +112,7 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
           )}
         >
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={image} alt="" className="artwork h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
@@ -171,7 +156,7 @@ function RecentRow({ item }: { item: LogEntry }) {
   const music = isMusicType(item.media_type);
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w185");
-  const Fallback = fallbackIconFor(item.media_type);
+  const Fallback = FALLBACK_ICON[item.media_type];
   const rating = ratingOf(item);
   const rowClass = "row-item flex items-center gap-4 py-4";
 
@@ -184,7 +169,7 @@ function RecentRow({ item }: { item: LogEntry }) {
         )}
       >
         {image ? (
-          // eslint-disable-next-line @next/next/no-img-element
+           
           <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
           <Fallback className="size-5 text-dim" aria-hidden="true" />
@@ -213,15 +198,18 @@ function RecentRow({ item }: { item: LogEntry }) {
 }
 
 export function DashboardClient({ userName }: DashboardClientProps) {
-  const { mode } = useMode();
+  const { mode, ready } = useMode();
   const toast = useToast();
 
   const [logsState, setLogsState] = useState<LogsState | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [recsState, setRecsState] = useState<RecsState | null>(null);
-  const [watchlistKeys, setWatchlistKeys] = useState<Set<string>>(new Set());
+  // null until that mode's picks have answered.
+  const [filmRecs, setFilmRecs] = useState<RecsResult<FilmRecommendation> | null>(null);
+  const [musicRecs, setMusicRecs] = useState<RecsResult<MusicRecommendation> | null>(null);
+  const recsRequested = useRef<Record<AppMode, boolean>>({ film: false, music: false });
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
+  const [watchlistKeys, setWatchlistKeys] = useState<Set<string>>(new Set());
   const [addingKey, setAddingKey] = useState<string | null>(null);
 
   // Only the current mode's logs; a response for another mode never lands.
@@ -299,54 +287,48 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     };
   }, [mode, reloadKey]);
 
-  // Recommendations follow the mode: film and TV from the recommendation service, music from the AI route.
+  // Picks follow the mode. Wait until the stored mode is known (the server always renders
+  // film), and ask once per mode: switching back does not call again.
   useEffect(() => {
-    let cancelled = false;
+    if (!ready || recsRequested.current[mode]) return;
+    recsRequested.current[mode] = true;
     const requestMode = mode;
 
-    async function fetchRecs() {
-      const done = (
-        status: RecsState["status"],
-        film: Recommendation[] = [],
-        music: MusicRecommendation[] = [],
-      ) => {
-        if (!cancelled) setRecsState({ mode: requestMode, status, film, music });
-      };
+    async function fetchRecs<T, R extends RecsResponse<T>>(
+      url: string,
+      done: (result: RecsResult<T>) => void,
+    ) {
       try {
-        if (requestMode === "music") {
-          const res = await fetch("/api/ai/recommend?mode=music");
-          const data: unknown = await res.json();
-          if (Array.isArray(data)) {
-            const picks = (data as MusicRecommendation[]).filter((r) => r.spotify_id).slice(0, 5);
-            done("ok", [], picks);
-          } else if ((data as { code?: string } | null)?.code === "NO_API_KEY") {
-            done("nokey");
-          } else {
-            done("failed");
-          }
+        const res = await fetch(url);
+        if (res.status === 402) {
+          done({ status: "nokey", items: [] });
           return;
         }
-
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          done("ok");
+        if (!res.ok) {
+          done({ status: "failed", items: [] });
           return;
         }
-        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
-        if (!res.ok) throw new Error("Recommendations request failed");
-        const data: unknown = await res.json();
-        done("ok", Array.isArray(data) ? (data as Recommendation[]).slice(0, 5) : []);
+        const data: R = await res.json();
+        if (data.status === "not_enough_logs") done({ status: "few", items: [] });
+        else if (data.status === "ok" && Array.isArray(data.items) && data.items.length > 0) {
+          done({ status: "ok", items: data.items });
+        } else done({ status: "failed", items: [] });
       } catch {
-        done("failed");
+        done({ status: "failed", items: [] });
       }
     }
 
-    fetchRecs();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode]);
+    // Each result lands in its own mode's slot, so a late answer never shows in the wrong mode.
+    if (requestMode === "music") {
+      fetchRecs<MusicRecommendation, MusicRecsResponse>("/api/ai/recommend?mode=music", (r) =>
+        setMusicRecs({ ...r, items: r.items.filter((i) => i.spotify_id).slice(0, 5) }),
+      );
+    } else {
+      fetchRecs<FilmRecommendation, RecsResponse<FilmRecommendation>>("/api/ai/recommend?mode=film", (r) =>
+        setFilmRecs({ ...r, items: r.items.slice(0, 6) }),
+      );
+    }
+  }, [ready, mode]);
 
   // What is already saved, so a pick shows its state from the start.
   useEffect(() => {
@@ -359,19 +341,19 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || cancelled) return;
         if (requestMode === "music") {
-          const { data } = await supabase.from("music_queue").select("spotify_id").eq("user_id", user.id);
-          if (!cancelled && data) {
+          const { data, error } = await supabase.from("music_queue").select("spotify_id").eq("user_id", user.id);
+          if (!cancelled && !error && data) {
             const ids = data
               .map((r: { spotify_id: string | null }) => r.spotify_id)
               .filter((id): id is string => Boolean(id));
             setQueuedIds(new Set(ids));
           }
         } else {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from("watchlist")
             .select("tmdb_id, media_type")
             .eq("user_id", user.id);
-          if (!cancelled && data) {
+          if (!cancelled && !error && data) {
             setWatchlistKeys(
               new Set(data.map((r: { tmdb_id: number; media_type: string }) => `${r.media_type}:${r.tmdb_id}`)),
             );
@@ -392,8 +374,8 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     setReloadKey((k) => k + 1);
   }
 
-  async function addToWatchlist(item: Recommendation) {
-    const key = `${item.media_type}:${item.id}`;
+  async function addToWatchlist(item: FilmRecommendation) {
+    const key = `${item.media_type}:${item.tmdb_id}`;
     const failed = () =>
       toast({
         tone: "error",
@@ -416,7 +398,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       }
       const { error } = await supabase.from("watchlist").insert({
         user_id: user.id,
-        tmdb_id: item.id,
+        tmdb_id: item.tmdb_id,
         title: item.title,
         media_type: item.media_type,
         poster_url: item.poster_url,
@@ -495,11 +477,10 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const latest = activeLogs[0] ?? null;
   const recentItems = activeLogs.slice(0, 6);
 
-  const recsLoading = !recsState || recsState.mode !== mode;
-  const filmRecs = !recsLoading && recsState ? recsState.film : [];
-  const musicRecs = !recsLoading && recsState ? recsState.music : [];
-  const recsStatus = recsLoading ? undefined : recsState?.status;
-  const recCount = music ? musicRecs.length : filmRecs.length;
+  const recsSlot = music ? musicRecs : filmRecs;
+  const recsLoading = !ready || recsSlot === null;
+  const recsStatus = recsSlot?.status;
+  const recCount = recsSlot?.items.length ?? 0;
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -653,22 +634,22 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           ) : recsStatus === "nokey" ? (
             <EmptyState
               className="py-10"
-              title="Music picks need an AI key."
-              description="They are written using your own AI key, and none is saved yet."
+              title="Picks need an AI key."
+              description="They are written using an AI key, and none is available yet."
               action={
                 <Button asChild variant="outline" size="sm">
                   <Link href="/protected/profile">Add a key in your profile</Link>
                 </Button>
               }
             />
-          ) : recCount === 0 ? (
+          ) : recsStatus === "few" || recCount === 0 ? (
             <EmptyState
               className="py-10"
               title={`Log more ${music ? "listens" : "watches"} to unlock personalised picks.`}
             />
           ) : music ? (
             <MediaGrid>
-              {musicRecs.map((item) => {
+              {musicRecs!.items.map((item) => {
                 const id = item.spotify_id ?? "";
                 const queued = queuedIds.has(id);
                 return (
@@ -680,7 +661,13 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                     aspect="square"
                     href={`/protected/media/${item.type}/${id}`}
                     fallbackIcon={item.type === "album" ? Disc3 : Music2}
-                    badge={queued ? <Badge variant="solid">In queue</Badge> : undefined}
+                    badge={
+                      queued ? (
+                        <Badge variant="solid">In queue</Badge>
+                      ) : item.confidence === "discovery" ? (
+                        <Badge variant="outline">Stretch</Badge>
+                      ) : undefined
+                    }
                     actions={
                       queued ? undefined : (
                         <Button
@@ -700,23 +687,25 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             </MediaGrid>
           ) : (
             <MediaGrid>
-              {filmRecs.map((item) => {
-                const key = `${item.media_type}:${item.id}`;
+              {filmRecs!.items.map((item) => {
+                const key = `${item.media_type}:${item.tmdb_id}`;
                 const saved = watchlistKeys.has(key);
                 const type = item.media_type === "movie" ? "Film" : "TV";
                 return (
                   <MediaCard
                     key={key}
                     title={item.title}
-                    subtitle={
-                      item.vote_average != null && item.vote_average > 0
-                        ? `${type} · ${item.vote_average.toFixed(1)} TMDB`
-                        : type
-                    }
-                    image={item.poster_url}
-                    href={`/protected/media/${item.media_type}/${item.id}`}
+                    subtitle={item.year ? `${type} · ${item.year}` : type}
+                    image={resizePoster(item.poster_url, "w342")}
+                    href={`/protected/media/${item.media_type}/${item.tmdb_id}`}
                     fallbackIcon={item.media_type === "movie" ? Film : Tv}
-                    badge={saved ? <Badge variant="solid">On watchlist</Badge> : undefined}
+                    badge={
+                      saved ? (
+                        <Badge variant="solid">On watchlist</Badge>
+                      ) : item.confidence === "discovery" ? (
+                        <Badge variant="outline">Stretch</Badge>
+                      ) : undefined
+                    }
                     actions={
                       saved ? undefined : (
                         <Button

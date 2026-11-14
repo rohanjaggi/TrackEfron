@@ -19,6 +19,7 @@ import {
 import { TabBar } from "@/components/ui/segmented-control";
 import { useToast } from "@/components/ui/toast";
 import { useMode } from "@/lib/mode-context";
+import { escapeIlike } from "@/lib/postgrest";
 import { createClient } from "@/lib/supabase/client";
 
 type ActiveTab = "friends" | "requests" | "find";
@@ -45,10 +46,6 @@ type SearchResultUser = Profile & {
 };
 
 const TAB_ID_BASE = "friends";
-
-/** Strips every character that could change the structure of a PostgREST `or` filter. */
-const sanitizeSearchTerm = (raw: string) =>
-  raw.replace(/[,()*%\\"]/g, "").trim().slice(0, 50).trim();
 
 const displayName = (profile: Profile) => profile.full_name || profile.username;
 
@@ -245,8 +242,9 @@ export default function FriendsPage() {
 
   // Debounced search
   useEffect(() => {
-    const q = sanitizeSearchTerm(searchQuery);
+    const q = escapeIlike(searchQuery).trim();
     if (!q || !currentUserId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears results and errors when the search box is emptied
       setSearchResults([]);
       setSearchError(false);
       setIsSearching(false);

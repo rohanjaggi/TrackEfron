@@ -22,10 +22,12 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { RowListSkeleton, Skeleton } from "@/components/ui/loading";
 import { MediaCard, MediaGrid } from "@/components/ui/media-card";
-import { Avatar, EmptyState, SectionHeader, StatBlock } from "@/components/ui/page";
+import { Avatar, EmptyState, Notice, SectionHeader, StatBlock } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
+import { resizePoster } from "@/lib/tmdb/poster";
 import { createClient } from "@/lib/supabase/client";
+import type { WatchLog, WatchlistItem } from "@/lib/types";
 
 type Profile = {
   id: string;
@@ -34,25 +36,6 @@ type Profile = {
   avatar_url: string | null;
   profile_color: string | null;
   created_at: string;
-};
-
-type WatchLog = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv";
-  rating: number;
-  review: string | null;
-  poster_url: string | null;
-  tmdb_id: number | null;
-  created_at: string;
-};
-
-type WatchlistItem = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv";
-  poster_url: string | null;
-  tmdb_id: number;
 };
 
 type UserList = {
@@ -92,11 +75,6 @@ type FriendshipRow = {
   addressee_id: string;
   status: string;
 };
-
-function upscalePoster(url: string | null, size = "w185"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 /** "14 Nov 2026", or "November 2026" when only the month matters. */
 function formatDate(value: string, style: "day" | "month" = "day"): string {
@@ -221,6 +199,8 @@ function UserProfileContent() {
   const [listenLogs, setListenLogs] = useState<ListenLog[]>([]);
   const [musicQueue, setMusicQueue] = useState<QueueItem[]>([]);
   const [friendDataLoading, setFriendDataLoading] = useState(false);
+  // A failed film read must not look like an empty library.
+  const [filmDataFailed, setFilmDataFailed] = useState(false);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
 
   useEffect(() => {
@@ -261,12 +241,14 @@ function UserProfileContent() {
         }
 
         // Check friendship status
-        const { data: friendships } = await supabase
+        const { data: friendships, error: friendshipsError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
           .or(
             `and(requester_id.eq.${user.id},addressee_id.eq.${profileData.id}),and(requester_id.eq.${profileData.id},addressee_id.eq.${user.id})`
           );
+        // Without this the page cannot tell "no friendship" from "couldn't check", so it shows no actions.
+        if (friendshipsError) throw friendshipsError;
 
         if (friendships && friendships.length > 0) {
           const f = friendships[0] as FriendshipRow;
@@ -293,6 +275,7 @@ function UserProfileContent() {
 
     async function fetchFriendData() {
       setFriendDataLoading(true);
+      setFilmDataFailed(false);
       try {
         const supabase = createClient();
 
@@ -324,9 +307,13 @@ function UserProfileContent() {
             .order("added_at", { ascending: false }),
         ]);
 
-        setWatchLogs(logsRes.data || []);
-        setWatchlist(watchlistRes.data || []);
-        setLists((listsRes.data as UserList[]) || []);
+        if (logsRes.error || watchlistRes.error || listsRes.error) {
+          console.error("Failed to fetch friend film data:", logsRes.error ?? watchlistRes.error ?? listsRes.error);
+          setFilmDataFailed(true);
+        }
+        setWatchLogs(logsRes.error ? [] : (logsRes.data as WatchLog[]) || []);
+        setWatchlist(watchlistRes.error ? [] : (watchlistRes.data as WatchlistItem[]) || []);
+        setLists(listsRes.error ? [] : (listsRes.data as UserList[]) || []);
         // Music reads may be refused by database rules; that just means nothing to show.
         setListenLogs(listensRes.error ? [] : ((listensRes.data as ListenLog[]) ?? []));
         setMusicQueue(queueRes.error ? [] : ((queueRes.data as QueueItem[]) ?? []));
@@ -340,6 +327,7 @@ function UserProfileContent() {
         if (dnaData?.fingerprint) setFingerprint(dnaData.fingerprint);
       } catch (err) {
         console.error("Failed to fetch friend data:", err);
+        setFilmDataFailed(true);
       } finally {
         setFriendDataLoading(false);
       }
@@ -384,12 +372,17 @@ function UserProfileContent() {
         setRelationship("pending_sent");
       } else {
         // 23505: a friendship row already exists. Read it so the page shows where things really stand.
-        const { data: existing } = await supabase
+        const { data: existing, error: existingError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
           .or(
             `and(requester_id.eq.${user.id},addressee_id.eq.${profile.id}),and(requester_id.eq.${profile.id},addressee_id.eq.${user.id})`
           );
+        if (existingError) {
+          console.error("Failed to read existing friendship:", existingError);
+          actionFailed(`Couldn't confirm your friendship status with ${displayName}`);
+          return;
+        }
         const row = existing?.[0] as FriendshipRow | undefined;
         if (row) {
           setFriendshipId(row.id);
@@ -611,7 +604,11 @@ function UserProfileContent() {
             <div className="mode-film flex flex-col gap-10">
               <SectionHeader title="Film & TV" />
 
-              {filmEmpty ? (
+              {filmDataFailed ? (
+                <Notice tone="error" title="Couldn't load their films and shows">
+                  Reload the page to try again.
+                </Notice>
+              ) : filmEmpty ? (
                 <p className="t-meta">No films or shows to show yet.</p>
               ) : (
                 <>
@@ -628,13 +625,13 @@ function UserProfileContent() {
                       <SectionHeader title="Recent reviews" as="h3" />
                       <ul className="advance">
                         {recentReviews.map((log) => {
-                          const poster = upscalePoster(log.poster_url);
+                          const poster = resizePoster(log.poster_url, "w185");
                           const FallbackIcon = log.media_type === "movie" ? Film : Tv;
                           const row = (
                             <>
                               <span className="flex h-[72px] w-12 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
                                 {poster ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
+                                   
                                   <img src={poster} alt="" className="h-full w-full object-cover" />
                                 ) : (
                                   <FallbackIcon className="size-5 text-dim" aria-hidden="true" />
@@ -682,9 +679,9 @@ function UserProfileContent() {
                             key={item.id}
                             title={item.title}
                             subtitle={item.media_type === "movie" ? "Film" : "TV"}
-                            image={upscalePoster(item.poster_url, "w342")}
+                            image={resizePoster(item.poster_url, "w342")}
                             aspect="poster"
-                            href={`/protected/media/${item.media_type}/${item.tmdb_id}`}
+                            href={item.tmdb_id ? `/protected/media/${item.media_type}/${item.tmdb_id}` : undefined}
                             fallbackIcon={item.media_type === "movie" ? Film : Tv}
                           />
                         ))}
@@ -724,7 +721,7 @@ function UserProfileContent() {
                             <>
                               <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
                                 {log.image_url ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
+                                   
                                   <img src={log.image_url} alt="" className="h-full w-full object-cover" />
                                 ) : (
                                   <Music2 className="size-5 text-dim" aria-hidden="true" />
@@ -793,7 +790,7 @@ function UserProfileContent() {
             </div>
 
             {/* Nothing in either domain */}
-            {filmEmpty && musicEmpty && (
+            {filmEmpty && musicEmpty && !filmDataFailed && (
               <EmptyState
                 icon={Film}
                 title={<>{displayName} hasn&apos;t logged anything yet.</>}

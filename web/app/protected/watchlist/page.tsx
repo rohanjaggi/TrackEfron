@@ -41,6 +41,10 @@ import { SegmentedControl, TabBar } from "@/components/ui/segmented-control";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { WatchlistItem } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
+import { useClickOutside } from "@/hooks/use-click-outside";
+import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ViewType = "grid" | "list";
 type ActiveTab = "watchlist" | "lists";
@@ -48,18 +52,6 @@ type FilmType = "movie" | "tv";
 type MusicType = "album" | "track";
 type MediaType = FilmType | MusicType;
 type TypeFilter = "all" | MediaType;
-
-/** A row of the `watchlist` table. Older rows may hold music; those are ignored. */
-type WatchlistItem = {
-  id: string;
-  tmdb_id: number | null;
-  spotify_id: string | null;
-  artist: string | null;
-  title: string;
-  media_type: string;
-  poster_url: string | null;
-  added_at: string;
-};
 
 /** A row of the `music_queue` table. */
 type MusicQueueItem = {
@@ -142,12 +134,8 @@ const TYPE_META: Record<MediaType, { label: string; icon: LucideIcon }> = {
 
 const LOG_HREF = "/protected/log";
 
-function upscalePoster(url: string | null, size = "w500"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
-
 function formatDate(iso: string): string {
+  if (!iso) return "";
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
@@ -226,7 +214,7 @@ function watchlistEntry(row: WatchlistItem): FilmEntry[] {
       source: "watchlist",
       kind: "film",
       title: row.title,
-      addedAt: row.added_at,
+      addedAt: row.added_at ?? "",
       mediaType: row.media_type,
       tmdbId: row.tmdb_id,
       image: row.poster_url,
@@ -278,7 +266,7 @@ function Thumb({
       }`}
     >
       {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
       ) : (
         <Icon className="size-4 text-dim" aria-hidden="true" />
@@ -311,11 +299,25 @@ function WatchlistPageContent() {
   const listsRequest = useRef(0);
 
   // Add search state
-  const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchFailed, setSearchFailed] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const {
+    query: addQuery,
+    setQuery: setAddQuery,
+    results: addResults,
+    loading: isSearching,
+    error: searchError,
+  } = useDebouncedSearch<SearchResult>(async (q) => {
+    const url =
+      mode === "music"
+        ? `/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`
+        : `/api?action=search&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Search request failed");
+    const raw: unknown = await res.json();
+    setShowAddDropdown(true);
+    return mode === "music" ? parseMusicResults(raw) : parseFilmResults(raw);
+  }, [mode]);
+  const searchFailed = searchError !== null;
   const [addingKey, setAddingKey] = useState<string | null>(null);
 
   // Lists state
@@ -415,15 +417,13 @@ function WatchlistPageContent() {
   // When the mode changes: drop the other mode's transient state and refetch.
   useEffect(() => {
     modeRef.current = mode;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a mode switch resets the page state and starts the new mode's fetches
     setFilter("all");
     setViewType("grid");
     setNewListEmoji(mode === "music" ? "🎵" : "🎬");
     setSearchQuery("");
     setAddQuery("");
-    setAddResults([]);
     setShowAddDropdown(false);
-    setSearchFailed(false);
-    setIsSearching(false);
     setShowCreateForm(false);
     setEntries([]);
     setEntriesLoading(true);
@@ -431,60 +431,9 @@ function WatchlistPageContent() {
     setListsLoading(true);
     void loadEntries(mode);
     void fetchLists(mode);
-  }, [mode, loadEntries, fetchLists]);
+  }, [mode, loadEntries, fetchLists, setAddQuery]);
 
-  // Debounced search for adding
-  useEffect(() => {
-    const q = addQuery.trim();
-    if (!q) {
-      setAddResults([]);
-      setShowAddDropdown(false);
-      setSearchFailed(false);
-      setIsSearching(false);
-      return;
-    }
-
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      setIsSearching(true);
-      setSearchFailed(false);
-      try {
-        const url =
-          mode === "music"
-            ? `/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`
-            : `/api?action=search&q=${encodeURIComponent(q)}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Search request failed");
-        const raw: unknown = await res.json();
-        if (cancelled) return;
-        setAddResults(mode === "music" ? parseMusicResults(raw) : parseFilmResults(raw));
-        setShowAddDropdown(true);
-      } catch {
-        if (cancelled) return;
-        setAddResults([]);
-        setShowAddDropdown(false);
-        setSearchFailed(true);
-      } finally {
-        if (!cancelled) setIsSearching(false);
-      }
-    }, 350);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [addQuery, mode]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && e.target instanceof Node && !searchRef.current.contains(e.target)) {
-        setShowAddDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(searchRef, () => setShowAddDropdown(false));
 
   async function handleAdd(result: SearchResult) {
     const noun = result.kind === "music" ? "queue" : "watchlist";
@@ -774,12 +723,15 @@ function WatchlistPageContent() {
                   autoComplete="off"
                   placeholder={isMusicMode ? "Search for an album or track" : "Search for a film or TV show"}
                   value={addQuery}
-                  onChange={(e) => setAddQuery(e.target.value)}
+                  onChange={(e) => {
+                    setAddQuery(e.target.value);
+                    if (!e.target.value.trim()) setShowAddDropdown(false);
+                  }}
                   onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
                   className="pl-9"
                 />
 
-                {showAddDropdown && (
+                {showAddDropdown && !searchFailed && (
                   <div className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
                     {addResults.length === 0 ? (
                       <p className="t-meta px-3 py-4">
@@ -802,7 +754,7 @@ function WatchlistPageContent() {
                             .join(" · ");
                           const body = (
                             <>
-                              <Thumb image={result.image} square={result.kind === "music"} icon={meta.icon} />
+                              <Thumb image={resizePoster(result.image, "w185")} square={result.kind === "music"} icon={meta.icon} />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-foreground">{result.title}</span>
                                 <span className="t-meta block truncate">{details}</span>
@@ -846,7 +798,7 @@ function WatchlistPageContent() {
             <div className="mt-2 min-h-[18px]">
               {isSearching && <LoadingLine label="Searching" />}
             </div>
-            {searchFailed && (
+            {searchFailed && !isSearching && (
               <Notice tone="error" title="Search didn't go through" className="mt-1 max-w-xl">
                 Check your connection, then type the title again.
               </Notice>
@@ -953,7 +905,7 @@ function WatchlistPageContent() {
                       key={entry.id}
                       title={entry.title}
                       subtitle={entrySubtitle(entry)}
-                      image={entry.kind === "film" ? upscalePoster(entry.image) : entry.image}
+                      image={resizePoster(entry.image, "w342")}
                       aspect={entry.kind === "music" ? "square" : "poster"}
                       href={entryHref(entry)}
                       fallbackIcon={TYPE_META[entry.mediaType].icon}
@@ -997,7 +949,7 @@ function WatchlistPageContent() {
                   return (
                     <li key={entry.id} className="row-item relative flex items-center gap-4 px-2 py-3">
                       <Thumb
-                        image={entry.kind === "film" ? upscalePoster(entry.image, "w185") : entry.image}
+                        image={resizePoster(entry.image, "w185")}
                         square={entry.kind === "music"}
                         icon={meta.icon}
                       />
@@ -1012,7 +964,8 @@ function WatchlistPageContent() {
                           )}
                         </h3>
                         <p className="t-meta mt-1 truncate">
-                          {entrySubtitle(entry)} · Added {formatDate(entry.addedAt)}
+                          {entrySubtitle(entry)}
+                          {entry.addedAt && ` · Added ${formatDate(entry.addedAt)}`}
                         </p>
                       </div>
                       <div className="relative z-[2] flex shrink-0 items-center gap-1">
