@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { matchMusicPicks, normalise } from "./match";
+import { matchMusicPicks } from "./match";
+import { normalise } from "../normalise";
 import type { MusicRecommendation } from "@/lib/ai/types";
 import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 

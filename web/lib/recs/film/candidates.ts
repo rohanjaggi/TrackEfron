@@ -23,7 +23,7 @@ const GENRE_NAMES: Record<number, string> = {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toCandidate(r: any, type: "movie" | "tv"): FilmCandidate | null {
+export function toCandidate(r: any, type: "movie" | "tv"): FilmCandidate | null {
   const title = type === "movie" ? r.title : r.name;
   if (r.id == null || !title) return null;
   const date: string | undefined = type === "movie" ? r.release_date : r.first_air_date;

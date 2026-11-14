@@ -1,15 +1,6 @@
 import type { MusicRecommendation } from "@/lib/ai/types";
+import { normalise } from "../normalise";
 import type { searchSpotify } from "@/lib/spotify/spotify";
-
-export function normalise(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N} ]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function overlaps(a: string, b: string): boolean {
   const x = normalise(a);
