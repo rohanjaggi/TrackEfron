@@ -189,8 +189,8 @@ function MediaDetailContent() {
             setProviders(regionData);
           }
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch details");
       } finally {
         setLoading(false);
       }
@@ -269,7 +269,7 @@ function MediaDetailContent() {
             .select("list_id")
             .eq(matchCol, matchVal);
 
-          const listsWithItem = new Set((listItemsData || []).map((li: any) => li.list_id));
+          const listsWithItem = new Set((listItemsData || []).map((li) => li.list_id));
 
           setUserLists(
             allLists.map((l) => ({

@@ -22,6 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import type { MediaSearchResult } from "@/lib/types";
+import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 import { resizePoster } from "@/lib/tmdb/poster";
 
 type MediaType = "movie" | "tv" | "album" | "track";
@@ -241,7 +242,7 @@ function LogWatchForm() {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=${mediaType}`);
           const raw = await res.json();
           data = Array.isArray(raw)
-            ? raw.map((r: any, idx: number) => ({
+            ? (raw as SpotifySearchResult[]).map((r, idx) => ({
                 id: idx + 1,
                 media_type: mediaType as "album" | "track",
                 spotify_id: r.id,
@@ -503,7 +504,7 @@ function LogWatchForm() {
               className="mt-1 max-h-64 overflow-auto"
               style={{ background: "var(--surface)", border: "1px solid var(--border-raw)" }}
             >
-              {results.slice(0, 8).map((r: any, idx: number) => {
+              {results.slice(0, 8).map((r, idx) => {
                 const lbl = r.title || r.name || "Untitled";
                 const yr = (r.release_date || r.first_air_date || "").slice(0, 4);
                 const isFilmResult = mediaType === "movie" || mediaType === "tv";

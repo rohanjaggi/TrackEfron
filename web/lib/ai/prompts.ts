@@ -264,14 +264,14 @@ export function buildVibeSearchUserPrompt(data: {
 
 // ── Helpers ──
 
-function computeAspectAverages(items: any[], aspectKeys: string[]): string | null {
+function computeAspectAverages(items: object[], aspectKeys: string[]): string | null {
   const sums: Record<string, { total: number; count: number }> = {};
   for (const key of aspectKeys) {
     sums[key] = { total: 0, count: 0 };
   }
   for (const item of items) {
     for (const key of aspectKeys) {
-      const val = item[key];
+      const val = (item as Record<string, unknown>)[key];
       if (typeof val === "number" && val > 0) {
         sums[key].total += val;
         sums[key].count += 1;
@@ -300,10 +300,10 @@ function computeRatingDistribution(items: { rating: number }[]): string {
     .join(", ");
 }
 
-function formatAspects(item: any, keys: string[]): string {
+function formatAspects(item: object, keys: string[]): string {
   const parts: string[] = [];
   for (const key of keys) {
-    const val = item[key];
+    const val = (item as Record<string, unknown>)[key];
     if (typeof val === "number" && val > 0) {
       const label = key.replace("_rating", "");
       parts.push(`${label}:${val}`);

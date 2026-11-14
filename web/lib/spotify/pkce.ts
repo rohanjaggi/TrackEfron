@@ -140,9 +140,10 @@ export async function getValidToken(
       const refreshed = await refreshAccessToken(row.refresh_token);
       await saveTokens(supabase, userId, refreshed);
       return refreshed.access_token;
-    } catch (err: any) {
+    } catch (err) {
       // invalid_grant means the token was revoked — clean up
-      if (err.message?.includes("invalid_grant") || err.message?.includes("400")) {
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("invalid_grant") || message.includes("400")) {
         await supabase.from("spotify_tokens").delete().eq("user_id", userId);
       }
       return null;

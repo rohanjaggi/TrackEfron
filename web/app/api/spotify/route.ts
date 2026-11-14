@@ -16,8 +16,8 @@ export async function GET(request: Request) {
     try {
       const results = await searchSpotify(query, type);
       return NextResponse.json(results);
-    } catch (error: any) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Spotify request failed" }, { status: 500 });
     }
   }
 
@@ -30,8 +30,8 @@ export async function GET(request: Request) {
     try {
       const item = await getSpotifyItem(id, type);
       return NextResponse.json(item);
-    } catch (error: any) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Spotify request failed" }, { status: 500 });
     }
   }
 
@@ -39,8 +39,8 @@ export async function GET(request: Request) {
     try {
       const results = await getNewReleases(20);
       return NextResponse.json(results);
-    } catch (error: any) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Spotify request failed" }, { status: 500 });
     }
   }
 

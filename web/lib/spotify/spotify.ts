@@ -48,11 +48,27 @@ export type SpotifySearchResult = {
   type: "album" | "track";
 };
 
-function normaliseAlbum(a: any): SpotifySearchResult {
+type RawArtist = { name: string };
+type RawImage = { url: string };
+export type RawAlbum = {
+  id: string;
+  name: string;
+  artists?: RawArtist[];
+  images?: RawImage[];
+  release_date?: string;
+};
+export type RawTrack = {
+  id: string;
+  name: string;
+  artists?: RawArtist[];
+  album?: RawAlbum;
+};
+
+function normaliseAlbum(a: RawAlbum): SpotifySearchResult {
   return {
     id: a.id,
     name: a.name,
-    artist: (a.artists || []).map((ar: any) => ar.name).join(", "),
+    artist: (a.artists || []).map((ar) => ar.name).join(", "),
     album_name: a.name,
     image_url: a.images?.[0]?.url ?? null,
     release_date: a.release_date || "",
@@ -60,11 +76,11 @@ function normaliseAlbum(a: any): SpotifySearchResult {
   };
 }
 
-export function normaliseTrack(t: any): SpotifySearchResult {
+export function normaliseTrack(t: RawTrack): SpotifySearchResult {
   return {
     id: t.id,
     name: t.name,
-    artist: (t.artists || []).map((ar: any) => ar.name).join(", "),
+    artist: (t.artists || []).map((ar) => ar.name).join(", "),
     album_name: t.album?.name || "",
     image_url: t.album?.images?.[0]?.url ?? null,
     release_date: t.album?.release_date || "",

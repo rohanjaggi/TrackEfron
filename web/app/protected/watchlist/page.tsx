@@ -25,6 +25,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import type { MediaSearchResult, WatchlistItem } from "@/lib/types";
+import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 import { resizePoster } from "@/lib/tmdb/poster";
 import { useClickOutside } from "@/hooks/use-click-outside";
 import { useDebouncedSearch } from "@/hooks/use-debounced-search";
@@ -102,7 +103,7 @@ function WatchlistPageContent() {
       const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
       const raw = await res.json();
       return Array.isArray(raw)
-        ? raw.map((r: any) => ({
+        ? (raw as SpotifySearchResult[]).map((r) => ({
             id: r.id,
             spotify_id: r.id,
             artist: r.artist,
@@ -333,12 +334,15 @@ function WatchlistPageContent() {
         total: musicQueue.length,
         albums: musicQueue.filter((i) => i.media_type === "album").length,
         tracks: musicQueue.filter((i) => i.media_type === "track").length,
+        movies: 0,
+        tvShows: 0,
       }
     : {
         total: watchlist.length,
         movies: watchlist.filter((i) => i.media_type === "movie").length,
         tvShows: watchlist.filter((i) => i.media_type === "tv").length,
         albums: 0,
+        tracks: 0,
       };
 
   const watchlistTmdbIds = new Set(watchlist.map((i) => i.tmdb_id));
@@ -509,7 +513,7 @@ function WatchlistPageContent() {
                     <Disc3 className="w-5 h-5 text-accent" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{(stats as any).albums}</div>
+                    <div className="text-2xl font-bold">{stats.albums}</div>
                     <p className="text-sm text-muted-foreground">Albums</p>
                   </div>
                 </div>
@@ -520,7 +524,7 @@ function WatchlistPageContent() {
                     <Music2 className="w-5 h-5 text-secondary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{(stats as any).tracks}</div>
+                    <div className="text-2xl font-bold">{stats.tracks}</div>
                     <p className="text-sm text-muted-foreground">Tracks</p>
                   </div>
                 </div>
@@ -532,8 +536,8 @@ function WatchlistPageContent() {
                     <Film className="w-5 h-5 text-accent" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{(stats as any).movies}</div>
-                    <p className="text-sm text-muted-foreground">{(stats as any).movies === 1 ? "Movie" : "Movies"}</p>
+                    <div className="text-2xl font-bold">{stats.movies}</div>
+                    <p className="text-sm text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
                   </div>
                 </div>
               </div>
@@ -543,8 +547,8 @@ function WatchlistPageContent() {
                     <Tv className="w-5 h-5 text-secondary" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{(stats as any).tvShows}</div>
-                    <p className="text-sm text-muted-foreground">{(stats as any).tvShows === 1 ? "TV Show" : "TV Shows"}</p>
+                    <div className="text-2xl font-bold">{stats.tvShows}</div>
+                    <p className="text-sm text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
                   </div>
                 </div>
               </div>

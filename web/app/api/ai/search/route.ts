@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .order("listened_date", { ascending: false })
       .limit(10);
-    recentItems = (data || []).map((l: any) => `${l.title} by ${l.artist}`);
+    recentItems = (data || []).map((l) => `${l.title} by ${l.artist}`);
   } else {
     const { data } = await supabase
       .from("watch_logs")
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .order("watched_date", { ascending: false })
       .limit(10);
-    recentItems = (data || []).map((w: any) => w.title);
+    recentItems = (data || []).map((w) => w.title);
   }
 
   const userPrompt = buildVibeSearchUserPrompt({

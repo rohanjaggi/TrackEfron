@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { MediaSearchResult } from "@/lib/types";
+import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 import { resizePoster } from "@/lib/tmdb/poster";
 import { useClickOutside } from "@/hooks/use-click-outside";
 import { useDebouncedSearch } from "@/hooks/use-debounced-search";
@@ -89,7 +90,7 @@ function ListDetailContent() {
       const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
       const raw = await res.json();
       return Array.isArray(raw)
-        ? raw.map((r: any) => ({
+        ? (raw as SpotifySearchResult[]).map((r) => ({
             id: r.id,
             spotify_id: r.id,
             name: r.name,

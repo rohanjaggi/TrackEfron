@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getValidToken } from "@/lib/spotify/pkce";
-import { normaliseTrack } from "@/lib/spotify/spotify";
+import { normaliseTrack, type RawTrack } from "@/lib/spotify/spotify";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       if (!res.ok) throw new Error(`Spotify top-tracks error: ${res.statusText}`);
 
       const data = await res.json();
-      const tracks = (data.items || []).map((t: any) => normaliseTrack(t));
+      const tracks = (data.items || []).map((t: RawTrack) => normaliseTrack(t));
       return NextResponse.json(tracks);
     }
 
