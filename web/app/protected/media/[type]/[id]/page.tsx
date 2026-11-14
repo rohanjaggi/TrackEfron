@@ -211,6 +211,7 @@ function MediaDetailContent() {
               .from("listen_logs")
               .select("id, rating, review, listened_date, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating")
               .eq("spotify_id", id)
+              .eq("user_id", user.id)
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle(),
@@ -218,6 +219,7 @@ function MediaDetailContent() {
               .from("music_queue")
               .select("id")
               .eq("spotify_id", id)
+              .eq("user_id", user.id)
               .maybeSingle(),
           ]);
 
@@ -234,6 +236,7 @@ function MediaDetailContent() {
               .from("watch_logs")
               .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
               .eq("tmdb_id", tmdbId)
+              .eq("user_id", user.id)
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle(),
@@ -241,6 +244,7 @@ function MediaDetailContent() {
               .from("watchlist")
               .select("id")
               .eq("tmdb_id", tmdbId)
+              .eq("user_id", user.id)
               .maybeSingle(),
           ]);
 
@@ -255,6 +259,7 @@ function MediaDetailContent() {
         const { data: allLists, error: listsError } = await supabase
           .from("lists")
           .select("id, name, emoji")
+          .eq("user_id", user.id)
           .eq("list_type", listMode)
           .order("updated_at", { ascending: false });
 
