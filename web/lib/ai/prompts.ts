@@ -1,3 +1,5 @@
+import type { SpotifyRange, SpotifyTops } from "@/lib/ai/types";
+
 export const TASTE_DNA_SYSTEM = `You are a perceptive cultural critic analyzing someone's taste in film and music. You notice patterns that the person themselves might not see — what connects their highest-rated works, what they consistently value or dismiss, and the thread that ties their film and music taste together.
 
 Rules:
@@ -11,17 +13,18 @@ Rules:
 
 Use the generate_taste_dna tool to return your analysis.`;
 
-export const MUSIC_RECOMMEND_SYSTEM = `You are a music recommendation engine for a personal media tracking app. The user has logged their listening history with detailed ratings and aspect scores (lyrics, production, vocals, melody, replay value, energy).
+export const MUSIC_RECOMMEND_SYSTEM = `You are a music recommendation engine for a personal media tracking app. The user has logged their listening history (and may share their Spotify top artists and tracks) with detailed ratings and aspect scores (lyrics, production, vocals, melody, replay value, energy).
 
 Rules:
 - Only recommend real albums and tracks that actually exist. Do not invent or hallucinate titles.
 - Never recommend items already in their listen history or queue.
-- Each explanation must reference something specific from their data — a title they loved, an aspect they value, a pattern in their ratings.
-- Mix recommendations: ~60% safe bets (high confidence), ~25% moderate matches, ~15% discovery picks that stretch their taste.
+- Each explanation is one sentence of at most 25 words and references something specific from their data — a title they loved, an aspect they value, a pattern in their ratings, or their Spotify top artists and tracks.
+- Mix recommendations: about 75% high or medium confidence, about 25% discovery picks that stretch their taste.
+- Do not recommend an artist's best-known album when they already appear in the person's long-term top artists.
 - Consider their aspect ratings deeply: if they consistently rate production 5/5 but lyrics 2/5, recommend production-focused music even if it has weak lyrics.
 - Vary across artists — don't recommend 5 albums from the same artist.
 - Include a mix of well-known and lesser-known artists.
-- Recommend 25 items (we validate against Spotify and drop misses, so we need a buffer).
+- Recommend 30 items (we validate against Spotify and drop misses, so we need a buffer).
 
 Use the recommend_music tool to return your recommendations.`;
 
@@ -128,35 +131,67 @@ export function buildTasteDNAUserPrompt(data: {
   return parts.join("\n");
 }
 
+const MUSIC_REVIEW_MAX = 300;
+
+const TOP_WINDOWS: { key: SpotifyRange; label: string }[] = [
+  { key: "short_term", label: "LAST 4 WEEKS" },
+  { key: "medium_term", label: "LAST 6 MONTHS" },
+  { key: "long_term", label: "LONG TERM" },
+];
+
 export function buildMusicRecommendUserPrompt(data: {
-  tasteDNA?: { fingerprint: string; music_identity?: any } | null;
-  listenLogs: { title: string; artist?: string | null; rating: number; media_type: string; lyrics_rating?: number | null; production_rating?: number | null; vocals_rating?: number | null; melody_rating?: number | null; replay_rating?: number | null; energy_rating?: number | null; }[];
-  musicQueue: { title: string; artist?: string | null; }[];
+  tasteDNA?: {
+    fingerprint?: string;
+    music_profile?: { core?: string; aspect_lens?: string } | null;
+  } | null;
+  listenLogs: {
+    title: string;
+    artist?: string | null;
+    rating: number | null;
+    review?: string | null;
+    media_type: string;
+    lyrics_rating?: number | null;
+    production_rating?: number | null;
+    vocals_rating?: number | null;
+    melody_rating?: number | null;
+    replay_rating?: number | null;
+    energy_rating?: number | null;
+  }[];
+  musicQueue: { title: string; artist?: string | null }[];
+  tops?: SpotifyTops | null;
 }): string {
   const parts: string[] = [];
+  const dna = data.tasteDNA;
 
-  if (data.tasteDNA) {
-    parts.push(`USER TASTE PROFILE: ${data.tasteDNA.fingerprint}`);
-    if (data.tasteDNA.music_identity?.core) {
-      parts.push(`Music identity: ${data.tasteDNA.music_identity.core}`);
-    }
-    if (data.tasteDNA.music_identity?.aspect_lens) {
-      parts.push(`What they value: ${data.tasteDNA.music_identity.aspect_lens}`);
+  if (dna) {
+    if (dna.fingerprint) parts.push(`USER TASTE PROFILE: ${dna.fingerprint}`);
+    if (dna.music_profile?.core) parts.push(`Music identity: ${dna.music_profile.core}`);
+    if (dna.music_profile?.aspect_lens) parts.push(`What they value: ${dna.music_profile.aspect_lens}`);
+  }
+
+  if (data.tops) {
+    for (const { key, label } of TOP_WINDOWS) {
+      parts.push(`\n${label} (Spotify):`);
+      const artists = data.tops.artists[key].map((a) => (a.genres.length ? `${a.name} (${a.genres.join(", ")})` : a.name));
+      parts.push(`  Top artists: ${artists.join("; ") || "none"}`);
+      const tracks = data.tops.tracks[key].map((t) => `${t.name} by ${t.artist}`);
+      parts.push(`  Top tracks: ${tracks.join("; ") || "none"}`);
     }
   }
 
-  parts.push(`\nLISTEN HISTORY (${data.listenLogs.length} entries, most recent first):`);
-  const sorted = [...data.listenLogs].sort((a, b) => b.rating - a.rating);
+  parts.push(`\nLISTEN HISTORY (${data.listenLogs.length} entries, best rated first):`);
+  const sorted = [...data.listenLogs].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
   sorted.slice(0, 50).forEach((l) => {
     const aspects = formatAspects(l, ["lyrics_rating", "production_rating", "vocals_rating", "melody_rating", "replay_rating", "energy_rating"]);
-    parts.push(`  "${l.title}" by ${l.artist || "unknown"} — ${l.rating}/5${aspects ? ` [${aspects}]` : ""}`);
+    const review = l.review?.trim() ? ` review: "${l.review.trim().slice(0, MUSIC_REVIEW_MAX)}"` : "";
+    parts.push(`  "${l.title}" by ${l.artist || "unknown"} — ${l.rating ?? "unrated"}/5${aspects ? ` [${aspects}]` : ""}${review}`);
   });
 
   if (data.musicQueue.length > 0) {
-    parts.push(`\nALREADY IN QUEUE (do not recommend these): ${data.musicQueue.map((m) => `"${m.title}" by ${m.artist}`).join(", ")}`);
+    parts.push(`\nALREADY IN QUEUE (do not recommend these): ${data.musicQueue.map((m) => `"${m.title}" by ${m.artist || "unknown"}`).join(", ")}`);
   }
 
-  const listened = data.listenLogs.map((l) => `"${l.title}" by ${l.artist}`).join(", ");
+  const listened = data.listenLogs.map((l) => `"${l.title}" by ${l.artist || "unknown"}`).join(", ");
   if (listened) {
     parts.push(`\nALREADY LISTENED (do not recommend these): ${listened}`);
   }
