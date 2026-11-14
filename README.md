@@ -86,6 +86,7 @@ A user's own key is always used first. A server key set in `ANTHROPIC_API_KEY`, 
 ## Deployment
 
 - **Web (`web/`)** — [Vercel](https://vercel.com). Import the repo, set root directory to `web/`, add the env vars from `web/.env.local.example`, deploy.
+- **Function duration** — The AI routes call an LLM and TMDB or Spotify several times per request. `/api/ai/recommend` and `/api/ai/taste-dna` set `maxDuration = 300` and `/api/ai/search` sets 60, so the host must allow function durations of up to 300 seconds.
 
 ## TMDB Attribution
 

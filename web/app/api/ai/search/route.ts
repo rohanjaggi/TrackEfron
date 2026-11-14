@@ -7,6 +7,8 @@ import { searchSpotify } from "@/lib/spotify/spotify";
 import { getPoster, tmdbGet, type TmdbResult } from "@/lib/tmdb/tmdb";
 import type { VibeSearchResult, VibeSearchResponse } from "@/lib/ai/types";
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

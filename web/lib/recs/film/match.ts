@@ -6,6 +6,22 @@ export type Lookup = (
   year: number | null,
 ) => Promise<FilmCandidate | null>;
 
+const LOOKUP_CONCURRENCY = 5;
+
+/** Runs `fn` over `items` with at most `limit` in flight, returning results in input order. */
+async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function matchFilmPicks(
   raw: RawFilmPick[],
   candidates: FilmCandidate[],
@@ -19,26 +35,30 @@ export async function matchFilmPicks(
   let older = 0;
   let lookupFailed = false;
 
-  for (const pick of raw) {
-    if (out.length >= limits.max) break;
-
-    let match: FilmCandidate | null =
+  // Resolve every pick first, with bounded concurrency, then apply the rules in input order.
+  const resolved = await mapBounded(raw, LOOKUP_CONCURRENCY, async (pick) => {
+    const fromCandidates =
       pick.tmdb_id != null ? (byKey.get(`${pick.media_type}:${pick.tmdb_id}`) ?? null) : null;
-    if (!match) {
-      let found: FilmCandidate | null = null;
-      try {
-        found = await lookup(pick.media_type, pick.title, pick.year);
-      } catch (e) {
-        // a failed lookup means no match for this pick only; warn once per batch
-        if (!lookupFailed) {
-          lookupFailed = true;
-          console.warn("TMDB lookup failed while matching film picks:", e instanceof Error ? e.message : e);
-        }
-      }
-      if (found && !(pick.year != null && found.year != null && Math.abs(found.year - pick.year) > 1)) {
-        match = found;
+    if (fromCandidates) return fromCandidates;
+    let found: FilmCandidate | null = null;
+    try {
+      found = await lookup(pick.media_type, pick.title, pick.year);
+    } catch (e) {
+      // a failed lookup means no match for this pick only; warn once per batch
+      if (!lookupFailed) {
+        lookupFailed = true;
+        console.warn("TMDB lookup failed while matching film picks:", e instanceof Error ? e.message : e);
       }
     }
+    if (found && !(pick.year != null && found.year != null && Math.abs(found.year - pick.year) > 1)) {
+      return found;
+    }
+    return null;
+  });
+
+  for (const [index, pick] of raw.entries()) {
+    if (out.length >= limits.max) break;
+    const match = resolved[index];
     if (!match) continue;
 
     const k = `${match.media_type}:${match.tmdb_id}`;

@@ -23,6 +23,8 @@ import { getValidToken } from "@/lib/spotify/pkce";
 import { searchSpotify } from "@/lib/spotify/spotify";
 import { getMovieDetails, getTvDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
 
+export const maxDuration = 300;
+
 // The film cache keeps its existing mode value because the repo has no schema file to confirm a new one is allowed.
 const FILM_MODE = "film_explanations";
 const MUSIC_MODE = "music";

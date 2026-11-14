@@ -86,4 +86,40 @@ describe("matchFilmPicks", () => {
     expect(r).toEqual([]);
     expect(warn).toHaveBeenCalledTimes(1);
   });
+  test("lookups run at most 5 at a time", async () => {
+    let active = 0;
+    let peak = 0;
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return cand(Number(title.slice(1)), 2020);
+    };
+    const ids = Array.from({ length: 12 }, (_, i) => i + 1);
+    const r = await matchFilmPicks(ids.map((i) => pick(null, { title: `T${i}` })), [], new Set(), lookup, limits);
+    expect(r).toHaveLength(12);
+    expect(peak).toBeLessThanOrEqual(5);
+    expect(peak).toBeGreaterThan(1);
+  });
+  test("keeps input order even when later lookups finish first", async () => {
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      const n = Number(title.slice(1));
+      await new Promise((r) => setTimeout(r, (6 - n) * 5));
+      return cand(n, 2020);
+    };
+    const r = await matchFilmPicks([1, 2, 3, 4, 5].map((i) => pick(null, { title: `T${i}` })), [],
+      new Set(), lookup, limits);
+    expect(r.map((x) => x.tmdb_id)).toEqual([1, 2, 3, 4, 5]);
+  });
+  test("applies de-duplication, cap and older limit in input order over concurrent results", async () => {
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      const n = Number(title.slice(1));
+      await new Promise((r) => setTimeout(r, (8 - n) * 3));
+      return cand(n % 4, 1990);
+    };
+    const r = await matchFilmPicks([1, 2, 3, 4, 5, 6].map((i) => pick(null, { title: `T${i}`, year: 1990 })), [],
+      new Set(), lookup, { ...limits, maxOlder: 2 });
+    expect(r.map((x) => x.tmdb_id)).toEqual([1, 2]);
+  });
 });

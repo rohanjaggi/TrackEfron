@@ -6,6 +6,8 @@ import { TASTE_DNA_SYSTEM, buildTasteDNAUserPrompt } from "@/lib/ai/prompts";
 import type { TasteDNA } from "@/lib/ai/types";
 import { validateObservations, limitTasteDNA } from "@/lib/taste/validate";
 
+export const maxDuration = 300;
+
 export async function POST() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
