@@ -24,6 +24,7 @@ import {
   Music2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useClickOutside } from "@/hooks/use-click-outside";
 
 type Genre = { id: number; name: string };
 
@@ -405,15 +406,7 @@ function MediaDetailContent() {
   }
 
   // Close list dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target as Node)) {
-        setShowListDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(listDropdownRef, () => setShowListDropdown(false));
 
   async function handleToggleList(listId: string, currentlyHasItem: boolean) {
     setTogglingListId(listId);

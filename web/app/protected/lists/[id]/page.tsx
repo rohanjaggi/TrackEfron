@@ -22,6 +22,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { MediaSearchResult } from "@/lib/types";
 import { resizePoster } from "@/lib/tmdb/poster";
+import { useClickOutside } from "@/hooks/use-click-outside";
+import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ListMeta = {
   id: string;
@@ -77,10 +79,36 @@ function ListDetailContent() {
   const [deleting, setDeleting] = useState(false);
 
   // Add items search state
-  const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<MediaSearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const {
+    query: addQuery,
+    setQuery: setAddQuery,
+    results: addResults,
+    loading: isSearching,
+  } = useDebouncedSearch<MediaSearchResult>(async (q) => {
+    if (isMusic) {
+      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+      const raw = await res.json();
+      return Array.isArray(raw)
+        ? raw.map((r: any) => ({
+            id: r.id,
+            spotify_id: r.id,
+            name: r.name,
+            artist: r.artist,
+            album_name: r.album_name,
+            media_type: r.type as "album" | "track",
+            release_date: r.release_date,
+            image_url: r.image_url,
+          }))
+        : [];
+    }
+    const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  }, [isMusic]);
+  useEffect(() => {
+    setShowAddDropdown(addResults.length > 0);
+  }, [addResults]);
   const [addingId, setAddingId] = useState<number | string | null>(null);
 
   useEffect(() => {
@@ -114,62 +142,9 @@ function ListDetailContent() {
     }
   }
 
-  // Debounced search
-  useEffect(() => {
-    const q = addQuery.trim();
-    if (!q) {
-      setAddResults([]);
-      setShowAddDropdown(false);
-      return;
-    }
-
-    const t = setTimeout(async () => {
-      try {
-        setIsSearching(true);
-        if (isMusic) {
-          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-          const raw = await res.json();
-          const data: MediaSearchResult[] = Array.isArray(raw)
-            ? raw.map((r: any) => ({
-                id: r.id,
-                spotify_id: r.id,
-                name: r.name,
-                artist: r.artist,
-                album_name: r.album_name,
-                media_type: r.type as "album" | "track",
-                release_date: r.release_date,
-                image_url: r.image_url,
-              }))
-            : [];
-          setAddResults(data);
-        } else {
-          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setAddResults(data);
-          }
-        }
-        setShowAddDropdown(true);
-      } catch {
-        // silently fail
-      } finally {
-        setIsSearching(false);
-      }
-    }, 350);
-
-    return () => clearTimeout(t);
-  }, [addQuery, isMusic]);
 
   // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowAddDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(searchRef, () => setShowAddDropdown(false));
 
   async function handleAddItem(result: MediaSearchResult) {
     setAddingId(result.spotify_id || result.id);

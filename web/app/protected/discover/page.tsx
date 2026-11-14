@@ -42,6 +42,7 @@ import type {
   VibeSearchResult,
 } from "@/lib/ai/types";
 import type { MediaSearchResult } from "@/lib/types";
+import { useClickOutside } from "@/hooks/use-click-outside";
 
 // ─── Types ───
 
@@ -118,14 +119,7 @@ function ExplanationTooltip({ explanation, children }: { explanation?: string; c
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+  useClickOutside(ref, () => setOpen(false), open);
 
   if (!explanation) return <>{children}</>;
 
@@ -976,15 +970,7 @@ export default function DiscoverPage() {
     return () => clearTimeout(t);
   }, [searchQuery, mode]);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  useClickOutside(searchRef, () => setShowDropdown(false));
 
   // ─── Handlers ───
 
