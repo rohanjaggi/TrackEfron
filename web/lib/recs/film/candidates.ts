@@ -39,6 +39,64 @@ function toCandidate(r: any, type: "movie" | "tv"): FilmCandidate | null {
   };
 }
 
+const DISCOVER_SHARE = 20;
+
+const keyOf = (c: FilmCandidate) => `${c.media_type}:${c.tmdb_id}`;
+
+/**
+ * Merge candidate pools into at most `max` unique, non-excluded titles.
+ * Up to DISCOVER_SHARE slots go to discover results (at least half from the
+ * low-vote pool when it has enough); recommendations fill the rest
+ * round-robin across seeds. Unused slots in either share go to the other.
+ */
+export function mergeCandidates(
+  recsBySeed: FilmCandidate[][],
+  discover: FilmCandidate[],
+  lowVoteDiscover: FilmCandidate[],
+  exclude: Set<string>,
+  max = MAX_CANDIDATES,
+): FilmCandidate[] {
+  const seen = new Set<string>();
+  const out: FilmCandidate[] = [];
+  const take = (c: FilmCandidate): boolean => {
+    const k = keyOf(c);
+    if (out.length >= max || seen.has(k) || exclude.has(k)) return false;
+    seen.add(k);
+    out.push(c);
+    return true;
+  };
+
+  const share = Math.min(DISCOVER_SHARE, max);
+  const lowTarget = Math.ceil(share / 2);
+  let discoverTaken = 0;
+  for (const c of lowVoteDiscover) {
+    if (discoverTaken >= lowTarget) break;
+    if (take(c)) discoverTaken++;
+  }
+  for (const c of discover) {
+    if (discoverTaken >= share) break;
+    if (take(c)) discoverTaken++;
+  }
+  for (const c of lowVoteDiscover) {
+    if (discoverTaken >= share) break;
+    if (take(c)) discoverTaken++;
+  }
+
+  const recBudget = max - discoverTaken;
+  let recsTaken = 0;
+  const longest = Math.max(0, ...recsBySeed.map((r) => r.length));
+  for (let i = 0; i < longest && recsTaken < recBudget; i++) {
+    for (const list of recsBySeed) {
+      if (recsTaken >= recBudget) break;
+      if (i < list.length && take(list[i])) recsTaken++;
+    }
+  }
+
+  // Unused recommendation slots go back to discover results.
+  for (const c of [...lowVoteDiscover, ...discover]) take(c);
+  return out;
+}
+
 export async function gatherFilmCandidates(
   logs: WatchLogRow[],
   exclude: Set<string>,
@@ -73,30 +131,23 @@ export async function gatherFilmCandidates(
 
   const movieSeeds = seeds.filter((s) => s.media_type === "movie").length;
   const discoverType = movieSeeds * 2 >= seeds.length ? "movie" : "tv";
-  const discovered = genreIds.length
-    ? await discoverFiltered(discoverType, { genreIds, maxVoteCount: 500, minVoteAverage: 7 }).catch(
-        () => [],
-      )
-    : [];
+  const [discovered, lowVote] = genreIds.length
+    ? await Promise.all([
+        discoverFiltered(discoverType, { genreIds }).catch(() => []),
+        discoverFiltered(discoverType, { genreIds, maxVoteCount: 500, minVoteAverage: 7 }).catch(
+          () => [],
+        ),
+      ])
+    : [[], []];
 
-  const all: (FilmCandidate | null)[] = [
-    ...recLists.flatMap((list, i) =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (list as any[]).map((r) => toCandidate(r, seeds[i].media_type)),
-    ),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ...(discovered as any[]).map((r) => toCandidate(r, discoverType)),
-  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const convert = (list: any[], type: "movie" | "tv") =>
+    list.map((r) => toCandidate(r, type)).filter((c): c is FilmCandidate => c !== null);
 
-  const seen = new Set<string>();
-  const out: FilmCandidate[] = [];
-  for (const c of all) {
-    if (!c) continue;
-    const k = `${c.media_type}:${c.tmdb_id}`;
-    if (seen.has(k) || exclude.has(k)) continue;
-    seen.add(k);
-    out.push(c);
-    if (out.length >= MAX_CANDIDATES) break;
-  }
-  return out;
+  return mergeCandidates(
+    recLists.map((list, i) => convert(list, seeds[i].media_type)),
+    convert(discovered, discoverType),
+    convert(lowVote, discoverType),
+    exclude,
+  );
 }
