@@ -21,6 +21,7 @@ export const tasteDNATool: Tool = {
           rating_style: { type: "string", description: "1-2 sentences: how generous/harsh they are, their rating distribution tendencies" },
         },
         required: ["core", "aspect_lens", "patterns", "rating_style"],
+        additionalProperties: false,
       },
       music_identity: {
         type: "object",
@@ -31,6 +32,7 @@ export const tasteDNATool: Tool = {
           rating_style: { type: "string", description: "1-2 sentences: how generous/harsh they are" },
         },
         required: ["core", "aspect_lens", "patterns", "rating_style"],
+        additionalProperties: false,
       },
       cross_domain: {
         type: "object",
@@ -39,6 +41,7 @@ export const tasteDNATool: Tool = {
           surprising_connection: { type: "string", description: "1-2 sentences: a non-obvious connection between their film and music preferences" },
         },
         required: ["thread", "surprising_connection"],
+        additionalProperties: false,
       },
       blind_spots: {
         type: "array",
@@ -52,6 +55,7 @@ export const tasteDNATool: Tool = {
       },
     },
     required: ["fingerprint", "film_identity", "music_identity", "cross_domain", "blind_spots", "guilty_pleasures"],
+    additionalProperties: false,
   },
 };
 
@@ -73,11 +77,13 @@ export const musicRecommendTool: Tool = {
             confidence: { type: "string", enum: ["high", "medium", "discovery"], description: "high=safe bet, medium=likely match, discovery=stretch pick for exploration" },
           },
           required: ["artist", "title", "type", "explanation", "confidence"],
+          additionalProperties: false,
         },
         description: "25 music recommendations ordered by relevance",
       },
     },
     required: ["recommendations"],
+    additionalProperties: false,
   },
 };
 
@@ -94,17 +100,19 @@ export const filmVerifyTool: Tool = {
           properties: {
             title: { type: "string" },
             media_type: { type: "string", enum: ["movie", "tv"] },
-            tmdb_id: { type: "number", description: "TMDB ID from the ML candidate list, or 0 if this is a new AI suggestion" },
+            tmdb_id: { anyOf: [{ type: "number" }, { type: "null" }], description: "TMDB ID from the ML candidate list, or null if this is a new AI suggestion" },
             explanation: { type: "string", description: "2-3 sentences: personalized reason this matches their taste" },
             source: { type: "string", enum: ["ml", "ai"], description: "ml=from ML pipeline, ai=new suggestion" },
-            year: { type: "number", description: "Release year, for TMDB validation of AI suggestions" },
+            year: { anyOf: [{ type: "number" }, { type: "null" }], description: "Release year, for TMDB validation of AI suggestions" },
           },
-          required: ["title", "media_type", "explanation", "source"],
+          required: ["title", "media_type", "tmdb_id", "explanation", "source", "year"],
+          additionalProperties: false,
         },
         description: "Final 20 recommendations, ordered by relevance. Mix of ML-verified picks and AI suggestions.",
       },
     },
     required: ["verified"],
+    additionalProperties: false,
   },
 };
 
@@ -124,16 +132,18 @@ export const vibeSearchTool: Tool = {
           type: "object",
           properties: {
             title: { type: "string" },
-            artist: { type: "string", description: "Artist name (music only)" },
-            year: { type: "number", description: "Release year (film only)" },
+            artist: { anyOf: [{ type: "string" }, { type: "null" }], description: "Artist name (music only; null for film)" },
+            year: { anyOf: [{ type: "number" }, { type: "null" }], description: "Release year (film only; null for music)" },
             type: { type: "string", enum: ["album", "track", "movie", "tv"] },
             why: { type: "string", description: "One sentence: why this matches the vibe" },
           },
-          required: ["title", "type", "why"],
+          required: ["title", "artist", "year", "type", "why"],
+          additionalProperties: false,
         },
         description: "10-15 results matching the vibe query",
       },
     },
     required: ["interpretation", "results"],
+    additionalProperties: false,
   },
 };
