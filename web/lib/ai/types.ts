@@ -41,9 +41,9 @@ export interface MusicRecommendation {
   type: "album" | "track";
   explanation: string;
   confidence: "high" | "medium" | "discovery";
-  spotify_id?: string;
+  spotify_id?: string | null;
   image_url?: string | null;
-  album_name?: string;
+  album_name?: string | null;
 }
 
 export type Confidence = "high" | "medium" | "discovery";
@@ -98,3 +98,17 @@ export interface VibeSearchResponse {
   interpretation: string;
   results: VibeSearchResult[];
 }
+
+export type SpotifyRange = "short_term" | "medium_term" | "long_term";
+
+export interface SpotifyTops {
+  artists: Record<SpotifyRange, { id: string; name: string; genres: string[]; image_url: string | null }[]>;
+  tracks: Record<SpotifyRange, { name: string; artist: string }[]>;
+}
+
+export interface RightNow {
+  rising: { id: string; name: string; image_url: string | null }[];
+  dropped_off: { id: string; name: string; image_url: string | null }[];
+}
+
+export type MusicRecsResponse = RecsResponse<MusicRecommendation> & { right_now: RightNow | null };
