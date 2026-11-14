@@ -11,8 +11,6 @@ import {
   Tv,
   TrendingUp,
   Loader2,
-  ChevronRight,
-  ChevronLeft,
   Clapperboard,
   Calendar,
   Crown,
@@ -42,6 +40,7 @@ import type {
   VibeSearchResult,
 } from "@/lib/ai/types";
 import type { MediaSearchResult } from "@/lib/types";
+import { PosterSkeleton, ScrollRow } from "@/components/media/scroll-row";
 import { useClickOutside } from "@/hooks/use-click-outside";
 
 // ─── Types ───
@@ -266,20 +265,10 @@ function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaIt
   );
 }
 
-function SkeletonCard({ className }: { className?: string } = {}) {
-  return (
-    <div className={className ?? "shrink-0 w-[130px] md:w-[150px]"}>
-      <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border animate-pulse" />
-      <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
-      <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
-    </div>
-  );
-}
-
 function MediaRow({
   title,
   subtitle,
-  icon: Icon,
+  icon,
   items,
   loading,
   onItemClick,
@@ -291,74 +280,12 @@ function MediaRow({
   loading?: boolean;
   onItemClick: (item: MediaItem) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    checkScroll();
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener("scroll", checkScroll, { passive: true });
-      return () => el.removeEventListener("scroll", checkScroll);
-    }
-  }, [checkScroll, items]);
-
-  const scroll = (dir: "left" | "right") => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const amount = el.clientWidth * 0.75;
-    el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
-  };
-
-  if (!loading && items.length === 0) return null;
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {Icon && <Icon className="w-4 h-4 text-primary shrink-0" />}
-          <div className="min-w-0">
-            <h2 className="font-display text-base md:text-lg font-bold truncate">{title}</h2>
-            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {canScrollLeft && (
-            <button onClick={() => scroll("left")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-          {canScrollRight && (
-            <button onClick={() => scroll("right")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div
-        ref={scrollRef}
-        className="flex gap-3 overflow-x-auto pb-1"
-        style={{ scrollbarWidth: "none" }}
-      >
-        {loading
-          ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
-          : items.map((item) => (
-              <MediaCard
-                key={`${item.media_type}-${item.id}`}
-                item={item}
-                onClick={onItemClick}
-              />
-            ))}
-      </div>
-    </div>
+    <ScrollRow title={title} subtitle={subtitle} icon={icon} aspect="poster" items={items} loading={loading}>
+      {items.map((item) => (
+        <MediaCard key={`${item.media_type}-${item.id}`} item={item} onClick={onItemClick} />
+      ))}
+    </ScrollRow>
   );
 }
 
@@ -424,20 +351,10 @@ function MusicCard({
   );
 }
 
-function SkeletonMusicCard() {
-  return (
-    <div className="shrink-0 w-[130px] md:w-[150px]">
-      <div className="w-full aspect-square bg-muted/20 border-2 border-border animate-pulse" />
-      <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
-      <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
-    </div>
-  );
-}
-
 function MusicRow({
   title,
   subtitle,
-  icon: Icon,
+  icon,
   items,
   loading,
   onQueue,
@@ -451,65 +368,12 @@ function MusicRow({
   onQueue: (item: MusicMediaItem) => void;
   queuedIds: Set<string>;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 0);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  }, []);
-
-  useEffect(() => {
-    checkScroll();
-    const el = scrollRef.current;
-    if (el) {
-      el.addEventListener("scroll", checkScroll, { passive: true });
-      return () => el.removeEventListener("scroll", checkScroll);
-    }
-  }, [checkScroll, items]);
-
-  const scroll = (dir: "left" | "right") => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: dir === "left" ? -el.clientWidth * 0.75 : el.clientWidth * 0.75, behavior: "smooth" });
-  };
-
-  if (!loading && items.length === 0) return null;
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {Icon && <Icon className="w-4 h-4 text-[var(--music)] shrink-0" />}
-          <div className="min-w-0">
-            <h2 className="font-display text-base md:text-lg font-bold truncate">{title}</h2>
-            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {canScrollLeft && (
-            <button onClick={() => scroll("left")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          )}
-          {canScrollRight && (
-            <button onClick={() => scroll("right")} className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-      <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-        {loading
-          ? Array.from({ length: 8 }).map((_, i) => <SkeletonMusicCard key={i} />)
-          : items.map((item) => (
-              <MusicCard key={item.id} item={item} onQueue={onQueue} queued={queuedIds.has(item.id)} />
-            ))}
-      </div>
-    </div>
+    <ScrollRow title={title} subtitle={subtitle} icon={icon} iconClassName="text-[var(--music)]" aspect="square" items={items} loading={loading}>
+      {items.map((item) => (
+        <MusicCard key={item.id} item={item} onQueue={onQueue} queued={queuedIds.has(item.id)} />
+      ))}
+    </ScrollRow>
   );
 }
 
@@ -1279,7 +1143,7 @@ export default function DiscoverPage() {
 
               {aiMusicLoading || !aiMusicFetched ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
+                  {Array.from({ length: 14 }).map((_, i) => <PosterSkeleton key={i} aspect="square" />)}
                 </div>
               ) : aiMusicRecs.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
@@ -1453,7 +1317,7 @@ export default function DiscoverPage() {
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
+                {Array.from({ length: 20 }).map((_, i) => <PosterSkeleton key={i} aspect="poster" className="w-full" />)}
               </div>
             </div>
           ) : aiFilmRecs.length === 0 ? (
@@ -1536,7 +1400,7 @@ export default function DiscoverPage() {
               </div>
               {genreLoading ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonCard key={i} />)}
+                  {Array.from({ length: 14 }).map((_, i) => <PosterSkeleton key={i} aspect="poster" />)}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
