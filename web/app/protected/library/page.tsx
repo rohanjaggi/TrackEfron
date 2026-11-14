@@ -203,7 +203,6 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
@@ -274,11 +273,9 @@ export default function LibraryPage() {
         )}
       </div>
 
-      {/* Filters & Search */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         {/* Filter Tabs — context-sensitive chips */}
         <div className="flex items-center gap-1 border-2 border-border p-1 flex-wrap">
-          {/* Mode-specific primary filters */}
           {mode === "music" ? (
             <>
               <button
@@ -367,7 +364,6 @@ export default function LibraryPage() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          {/* Search */}
           <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -378,7 +374,6 @@ export default function LibraryPage() {
             />
           </div>
 
-          {/* Sort Icon */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -454,7 +449,6 @@ export default function LibraryPage() {
         </p>
       )}
 
-      {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -486,10 +480,8 @@ export default function LibraryPage() {
           )}
         </div>
       ) : effectiveViewType === "grid" ? (
-        /* ── GRID VIEW ─────────────────────────────────────────────
-           Film filters → portrait 2:3 cards (5-col)
-           Music filters → square 1:1 cards (5-col, slightly larger)
-        ────────────────────────────────────────────────────────── */
+        /* Film filters: portrait 2:3 cards (5-col).
+           Music filters: square 1:1 cards (5-col, slightly larger). */
         <div className={`grid gap-4 ${
           isMusicFilter
             ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
@@ -523,10 +515,8 @@ export default function LibraryPage() {
                   }
                 }}
               >
-                {/* Accent top line */}
                 <div className="absolute top-0 left-0 right-0 h-px z-20" style={{ background: accent }} />
 
-                {/* Art */}
                 <div
                   className={isMusic ? "aspect-square" : "aspect-[2/3]"}
                   style={{ position: "relative", overflow: "hidden", background: "var(--surface-2)" }}
@@ -547,13 +537,11 @@ export default function LibraryPage() {
                     </div>
                   )}
 
-                  {/* Permanent bottom gradient */}
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{ background: "linear-gradient(to top, rgba(10,10,8,0.97) 0%, rgba(10,10,8,0.5) 38%, transparent 65%)" }}
                   />
 
-                  {/* Info overlaid at bottom */}
                   <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
                     <StarDisplay rating={item.rating} accent={accent} />
                     <h3
@@ -573,7 +561,6 @@ export default function LibraryPage() {
                     </p>
                   </div>
 
-                  {/* Review hover overlay */}
                   {item.review && (
                     <div
                       className="absolute inset-0 flex items-end p-3 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
@@ -620,12 +607,8 @@ export default function LibraryPage() {
           })}
         </div>
       ) : (
-        /* ── LIST VIEW ─────────────────────────────────────────────
-           Used for "All" mode and manually selected list view.
-           Film thumbnails: portrait (w-14 h-20)
-           Music thumbnails: square (w-14 h-14)
-           Both coexist cleanly in list layout.
-        ────────────────────────────────────────────────────────── */
+        /* Used for "All" mode and manually selected list view.
+           Film thumbnails are portrait (w-14 h-20), music thumbnails square (w-14 h-14). */
         <div style={{ display: "flex", flexDirection: "column" }}>
           {filteredItems.map((item) => {
             const isMusic = item.media_type === "album" || item.media_type === "track";
@@ -654,7 +637,6 @@ export default function LibraryPage() {
                   }
                 }}
               >
-                {/* Thumbnail */}
                 <div
                   className="flex-shrink-0 overflow-hidden"
                   style={{
@@ -675,7 +657,6 @@ export default function LibraryPage() {
                   )}
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 min-w-0">
                   <h3
                     className="font-display truncate mb-0.5"

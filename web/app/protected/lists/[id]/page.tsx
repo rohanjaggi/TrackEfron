@@ -68,18 +68,15 @@ function ListDetailContent() {
 
   const isMusic = list?.list_type === "music";
 
-  // Edit state
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Delete list state
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Add items search state
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const {
     query: addQuery,
@@ -146,7 +143,6 @@ function ListDetailContent() {
     fetchListData();
   }, [fetchListData]);
 
-  // Close dropdown on outside click
   useClickOutside(searchRef, () => setShowAddDropdown(false));
 
   async function handleAddItem(result: MediaSearchResult) {
@@ -266,7 +262,6 @@ function ListDetailContent() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Back Link */}
       <button
         onClick={() => router.push("/protected/watchlist?tab=lists")}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
@@ -281,7 +276,6 @@ function ListDetailContent() {
         </div>
       )}
 
-      {/* List Header */}
       <div className="border-2 border-border p-6">
         {isEditing ? (
           <div className="space-y-4">
@@ -382,7 +376,6 @@ function ListDetailContent() {
         )}
       </div>
 
-      {/* Add Items Search */}
       <div ref={searchRef} className="relative border-2 border-primary/30 bg-primary/5 p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Plus className="w-4 h-4 text-primary" />
@@ -481,7 +474,6 @@ function ListDetailContent() {
         )}
       </div>
 
-      {/* Items Grid */}
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
@@ -525,7 +517,6 @@ function ListDetailContent() {
                   ) : (
                     <Tv className="w-12 h-12 text-white/50" />
                   )}
-                  {/* Remove button on hover */}
                   <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button
                       size="sm"

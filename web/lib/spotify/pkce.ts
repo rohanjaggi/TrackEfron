@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SpotifyTokenResponse = {
   access_token: string;
@@ -9,7 +8,6 @@ export type SpotifyTokenResponse = {
   expires_in: number;
 };
 
-// ── PKCE crypto ───────────────────────────────────────────────────────────────
 
 export function generateCodeVerifier(): string {
   return crypto.randomBytes(64).toString("base64url");
@@ -33,7 +31,6 @@ export function buildAuthorizeUrl(codeChallenge: string): string {
   return `https://accounts.spotify.com/authorize?${params.toString()}`;
 }
 
-// ── Token exchange ────────────────────────────────────────────────────────────
 
 export async function exchangeCodeForTokens(
   code: string,
@@ -100,7 +97,6 @@ export async function refreshAccessToken(
   };
 }
 
-// ── DB helpers ────────────────────────────────────────────────────────────────
 
 export async function saveTokens(
   supabase: SupabaseClient,

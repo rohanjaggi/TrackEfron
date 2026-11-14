@@ -166,7 +166,6 @@ export default function AnalyticsPage() {
 
     const entries = Array.from(uniqueIds.entries());
     const details = new Map<number, TmdbDetail>();
-    // Fetch in batches of 10
     for (let i = 0; i < entries.length; i += 10) {
       const batch = entries.slice(i, i + 10);
       const results = await Promise.all(
@@ -326,7 +325,6 @@ export default function AnalyticsPage() {
   const totalSeasons = seasonSum > 0 ? seasonSum : null;
   const totalEpisodes = episodeSum > 0 ? episodeSum : null;
 
-  // Genre breakdown
   const genreCounts: Record<string, number> = {};
   watchLogs.forEach((l) => {
     if (!l.tmdb_id) return;
@@ -339,7 +337,6 @@ export default function AnalyticsPage() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  // Decade distribution
   const decadeCounts: Record<string, number> = {};
   watchLogs.forEach((l) => {
     if (!l.tmdb_id) return;
@@ -352,7 +349,6 @@ export default function AnalyticsPage() {
     .map(([decade, count]) => ({ decade, count }))
     .sort((a, b) => a.decade.localeCompare(b.decade));
 
-  // Average movie length & runtime distribution
   const movieRuntimes: number[] = [];
   watchLogs.forEach((l) => {
     if (l.media_type !== "movie" || !l.tmdb_id) return;
@@ -369,7 +365,6 @@ export default function AnalyticsPage() {
     { label: "150m+", count: movieRuntimes.filter((r) => r >= 150).length },
   ];
 
-  // Release year vs watch date (scatter)
   const scatterData: { watchDate: number; releaseYear: number; title: string }[] = [];
   watchLogs.forEach((l) => {
     if (!l.tmdb_id) return;
@@ -379,7 +374,6 @@ export default function AnalyticsPage() {
     const watchTs = new Date(dateStr).getTime();
     scatterData.push({ watchDate: watchTs, releaseYear: d.releaseYear, title: l.title });
   });
-  // Controversial picks
   const controversialPicks = watchLogs.reduce<{ gem: ControversialPick | null; unpopular: ControversialPick | null }>(
     (acc, l) => {
       if (!l.tmdb_id) return acc;
@@ -403,7 +397,6 @@ export default function AnalyticsPage() {
   const hiddenGem = controversialPicks.gem;
   const unpopularOpinion = controversialPicks.unpopular;
 
-  // ── Music analytics computations ──────────────────────────────
   const musicAlbumCount = listenLogs.filter((l) => l.media_type === "album").length;
   const musicTrackCount = listenLogs.filter((l) => l.media_type === "track").length;
   const musicAvgRating = listenLogs.length > 0
@@ -426,9 +419,7 @@ export default function AnalyticsPage() {
 
       <TasteDNACard />
 
-      {/* ─── MUSIC MODE ─── */}
       {mode === "music" && (<>
-        {/* Music Overview */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Card className="text-center">
             <Headphones className="w-4 h-4 text-primary mx-auto mb-2" />
@@ -453,7 +444,6 @@ export default function AnalyticsPage() {
         </div>
 
 
-        {/* Top Artists */}
         {topArtists.length > 0 && (<>
           <SectionHeader icon={Mic2} title="Top Artists" subtitle="Artists you've logged the most" />
           <Card>
@@ -480,10 +470,8 @@ export default function AnalyticsPage() {
         </>)}
       </>)}
 
-      {/* ─── FILM MODE ─── */}
       {mode !== "music" && (<>
 
-      {/* ─── OVERVIEW ─── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="text-center">
           <Film className="w-4 h-4 text-primary mx-auto mb-2" />
@@ -525,7 +513,6 @@ export default function AnalyticsPage() {
         </Card>
       </div>
 
-      {/* ─── CONTENT PROFILE ─── */}
       {detailsLoading ? (
         <>
           <SectionHeader icon={Film} title="Content Profile" subtitle="What you watch and where it comes from" />
@@ -536,7 +523,6 @@ export default function AnalyticsPage() {
           <SectionHeader icon={Film} title="Content Profile" subtitle="What you watch and where it comes from" />
 
           <div className="grid md:grid-cols-2 gap-3">
-            {/* Genre Breakdown */}
             {genreData.length > 0 && (
               <Card>
                 <CardTitle icon={Film} title="Genre Breakdown" />
@@ -552,7 +538,6 @@ export default function AnalyticsPage() {
               </Card>
             )}
 
-            {/* Decade Distribution */}
             {decadeData.length > 0 && (
               <Card className="flex flex-col">
                 <CardTitle icon={Clock} title="Decade Distribution" />
@@ -570,7 +555,6 @@ export default function AnalyticsPage() {
               </Card>
             )}
 
-            {/* Average Movie Length */}
             {avgMovieRuntime !== null && (
               <Card>
                 <CardTitle icon={Clock} title="Movie Length" />
@@ -590,7 +574,6 @@ export default function AnalyticsPage() {
               </Card>
             )}
 
-            {/* Release Year vs Watch Date */}
             {scatterData.length > 0 && (
               <Card className="flex flex-col">
                 <CardTitle icon={Clapperboard} title="Release Year vs Watch Date" />
@@ -632,7 +615,6 @@ export default function AnalyticsPage() {
         </>
       )}
 
-      {/* ─── YOU VS THE CROWD ─── */}
       {detailsLoading ? (
         <>
           <SectionHeader icon={Star} title="You vs The Crowd" subtitle="Where your taste diverges from the mainstream" />

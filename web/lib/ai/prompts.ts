@@ -64,7 +64,6 @@ export function buildTasteDNAUserPrompt(data: {
 }): string {
   const parts: string[] = [];
 
-  // Film data
   parts.push(`FILM DATA (${data.watchLogs.length} logged):`);
   if (data.watchLogs.length > 0) {
     const sorted = [...data.watchLogs].sort((a, b) => b.rating - a.rating);
@@ -96,7 +95,6 @@ export function buildTasteDNAUserPrompt(data: {
     }
   }
 
-  // Music data
   parts.push(`\nMUSIC DATA (${data.listenLogs.length} logged):`);
   if (data.listenLogs.length > 0) {
     const sorted = [...data.listenLogs].sort((a, b) => b.rating - a.rating);
@@ -121,7 +119,6 @@ export function buildTasteDNAUserPrompt(data: {
     }
   }
 
-  // Intent signals
   if (data.watchlist.length > 0) {
     parts.push(`\nFILM WATCHLIST (${data.watchlist.length}): ${data.watchlist.slice(0, 15).map((w) => w.title).join(", ")}`);
   }
@@ -262,7 +259,6 @@ export function buildVibeSearchUserPrompt(data: {
   return parts.join("\n");
 }
 
-// ── Helpers ──
 
 function computeAspectAverages(items: object[], aspectKeys: string[]): string | null {
   const sums: Record<string, { total: number; count: number }> = {};

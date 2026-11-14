@@ -3,7 +3,7 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
 const BASE_URL = "https://api.spotify.com/v1";
 
-// ── Token cache (module-level, persists within a warm server instance) ──
+// Module-level, so it persists within a warm server instance.
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
 export async function getSpotifyToken(): Promise<string> {
@@ -37,7 +37,6 @@ export async function getSpotifyToken(): Promise<string> {
   return tokenCache.token;
 }
 
-// ── Normalised result shape ──────────────────────────────────────
 export type SpotifySearchResult = {
   id: string;
   name: string;
@@ -88,7 +87,6 @@ export function normaliseTrack(t: RawTrack): SpotifySearchResult {
   };
 }
 
-// ── Search ───────────────────────────────────────────────────────
 export async function searchSpotify(
   query: string,
   type: "album" | "track" | "album,track" = "album,track",
@@ -127,7 +125,6 @@ export async function searchSpotify(
   return results.slice(0, limit);
 }
 
-// ── Item detail ──────────────────────────────────────────────────
 export async function getSpotifyItem(
   id: string,
   type: "album" | "track"
@@ -142,7 +139,6 @@ export async function getSpotifyItem(
   return type === "album" ? normaliseAlbum(data) : normaliseTrack(data);
 }
 
-// ── New releases ─────────────────────────────────────────────────
 export async function getNewReleases(limit = 20): Promise<SpotifySearchResult[]> {
   const token = await getSpotifyToken();
   const res = await fetch(`${BASE_URL}/browse/new-releases?limit=${limit}&country=US`, {

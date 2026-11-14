@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Retrieve the PKCE verifier from the cookie
   const verifier = request.cookies.get("spotify_pkce_verifier")?.value;
   if (!verifier) {
     return NextResponse.redirect(
@@ -25,7 +24,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Verify Supabase session
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
@@ -33,10 +31,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Exchange code for tokens
     const tokenResponse = await exchangeCodeForTokens(code, verifier);
 
-    // Fetch Spotify user ID
     const meRes = await fetch("https://api.spotify.com/v1/me", {
       headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
     });
@@ -44,10 +40,8 @@ export async function GET(request: NextRequest) {
       ? (await meRes.json()).id
       : undefined;
 
-    // Persist tokens
     await saveTokens(supabase, user.id, tokenResponse, spotifyUserId);
 
-    // Clear the PKCE verifier cookie and redirect to profile
     const response = NextResponse.redirect(
       new URL("/protected/profile?spotify=connected", request.url)
     );

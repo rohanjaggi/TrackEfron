@@ -138,7 +138,6 @@ function MediaDetailContent() {
   // A failed action or user-data load; unlike `error` it keeps the page visible.
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // User-specific state (film)
   const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
   const [isOnWatchlist, setIsOnWatchlist] = useState(false);
   const [watchlistItemId, setWatchlistItemId] = useState<string | null>(null);
@@ -146,21 +145,17 @@ function MediaDetailContent() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
 
-  // User-specific state (music)
   const [listenLog, setListenLog] = useState<UserListenLog | null>(null);
   const [isInQueue, setIsInQueue] = useState(false);
   const [queueItemId, setQueueItemId] = useState<string | null>(null);
 
-  // Lists state
   const [userLists, setUserLists] = useState<UserListInfo[]>([]);
   const [showListDropdown, setShowListDropdown] = useState(false);
   const [togglingListId, setTogglingListId] = useState<string | null>(null);
   const listDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Watch providers (film only)
   const [providers, setProviders] = useState<WatchProviders | null>(null);
 
-  // Fetch detail
   useEffect(() => {
     if (!isFilm && !isMusic) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reports an unsupported media type from the route params
@@ -201,7 +196,6 @@ function MediaDetailContent() {
     fetchDetail();
   }, [type, id, isFilm, isMusic]);
 
-  // Fetch user data
   useEffect(() => {
     async function fetchUserData() {
       try {
@@ -258,7 +252,6 @@ function MediaDetailContent() {
           }
         }
 
-        // Fetch lists filtered by mode
         const { data: allLists, error: listsError } = await supabase
           .from("lists")
           .select("id, name, emoji")
@@ -267,7 +260,6 @@ function MediaDetailContent() {
 
         if (listsError) throw listsError;
         if (allLists) {
-          // Check which lists already contain this item
           const matchCol = isMusic ? "spotify_id" : "tmdb_id";
           const matchVal = isMusic ? id : Number(id);
           const { data: listItemsData, error: listItemsError } = await supabase
@@ -296,7 +288,6 @@ function MediaDetailContent() {
     fetchUserData();
   }, [id, isMusic]);
 
-  // Film: add/remove watchlist
   async function handleAddToWatchlist() {
     if (!detail) return;
     setWatchlistLoading(true);
@@ -348,7 +339,6 @@ function MediaDetailContent() {
     }
   }
 
-  // Music: add/remove queue
   async function handleAddToQueue() {
     if (!musicDetail) return;
     setWatchlistLoading(true);
@@ -400,7 +390,6 @@ function MediaDetailContent() {
     }
   }
 
-  // Delete log
   async function handleDeleteLog() {
     setActionError(null);
     if (isMusic && listenLog) {
@@ -426,7 +415,6 @@ function MediaDetailContent() {
     }
   }
 
-  // Close list dropdown on outside click
   useClickOutside(listDropdownRef, () => setShowListDropdown(false));
 
   async function handleToggleList(listId: string, currentlyHasItem: boolean) {
@@ -535,7 +523,6 @@ function MediaDetailContent() {
     />;
   }
 
-  // ─── Film Detail View ───
   const displayTitle = detail!.title || detail!.name || "Unknown";
   const year = (detail!.release_date || detail!.first_air_date || "").slice(0, 4);
   const isMovie = type === "movie";
@@ -559,7 +546,6 @@ function MediaDetailContent() {
 
   return (
     <div className="flex flex-col gap-0 max-w-5xl mx-auto w-full">
-      {/* Back button */}
       <div className="mb-6">
         <Link
           href="/protected/discover"
@@ -576,7 +562,6 @@ function MediaDetailContent() {
         </div>
       )}
 
-      {/* Backdrop */}
       {detail!.backdrop_url && (
         <div className="relative w-full h-48 md:h-72 overflow-hidden border-2 border-border mb-8">
           <img
@@ -588,9 +573,7 @@ function MediaDetailContent() {
         </div>
       )}
 
-      {/* Main content grid */}
       <div className="grid md:grid-cols-[auto,1fr] gap-8">
-        {/* Poster column */}
         <div className="flex flex-col gap-4 w-44 md:w-56">
           <div className="border-2 border-border overflow-hidden shrink-0">
             {detail!.poster_url ? (
@@ -639,7 +622,6 @@ function MediaDetailContent() {
             </div>
           )}
 
-          {/* Add to List */}
           {!userDataLoading && userLists.length > 0 && (
             <div className="relative" ref={listDropdownRef}>
               <Button
@@ -673,7 +655,6 @@ function MediaDetailContent() {
             </div>
           )}
 
-          {/* Where to Watch */}
           {providers && (providers.flatrate || providers.rent || providers.buy) && (() => {
             const seen = new Set<number>();
             const allProviders: (WatchProvider & { category: string })[] = [];
@@ -720,7 +701,6 @@ function MediaDetailContent() {
           })()}
         </div>
 
-        {/* Info column */}
         <div className="flex flex-col gap-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -819,7 +799,6 @@ function MediaDetailContent() {
         </div>
       </div>
 
-      {/* Cast */}
       {topCast.length > 0 && (
         <div className="mt-8">
           <h2 className="font-semibold mb-3 flex items-center gap-2">
@@ -842,7 +821,6 @@ function MediaDetailContent() {
         </div>
       )}
 
-      {/* Your Review */}
       {!userDataLoading && watchLog && (
         <div className="border-2 border-primary/30 bg-primary/5 p-6 md:p-8 mt-8">
           <div className="flex items-center justify-between mb-4">
@@ -923,7 +901,6 @@ function MediaDetailContent() {
   );
 }
 
-// ─── Music Detail View ──────────────────────────────────────────────────────────
 
 function MusicDetailView({
   musicDetail,
@@ -982,7 +959,6 @@ function MusicDetailView({
 
   return (
     <div className="flex flex-col gap-0 max-w-5xl mx-auto w-full">
-      {/* Back button */}
       <div className="mb-6">
         <Link
           href="/protected/discover"
@@ -999,9 +975,7 @@ function MusicDetailView({
         </div>
       )}
 
-      {/* Main content grid */}
       <div className="grid md:grid-cols-[auto,1fr] gap-8">
-        {/* Art column */}
         <div className="flex flex-col gap-4 w-56 md:w-64">
           <div className="border-2 border-border overflow-hidden shrink-0">
             {musicDetail.image_url ? (
@@ -1017,7 +991,6 @@ function MusicDetailView({
             )}
           </div>
 
-          {/* Action Buttons */}
           {!userDataLoading && !listenLog && (
             <div className="flex flex-col gap-2">
               <Button
@@ -1048,7 +1021,6 @@ function MusicDetailView({
             </div>
           )}
 
-          {/* Add to List */}
           {!userDataLoading && userLists.length > 0 && (
             <div className="relative" ref={listDropdownRef}>
               <Button
@@ -1083,7 +1055,6 @@ function MusicDetailView({
           )}
         </div>
 
-        {/* Info column */}
         <div className="flex flex-col gap-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -1116,7 +1087,6 @@ function MusicDetailView({
             )}
           </div>
 
-          {/* Spotify link */}
           <div className="border-2 border-border p-4 bg-muted/10">
             <h2 className="font-semibold mb-2">Listen On</h2>
             <a
@@ -1134,7 +1104,6 @@ function MusicDetailView({
         </div>
       </div>
 
-      {/* Your Review */}
       {!userDataLoading && listenLog && (
         <div className="border-2 border-primary/30 bg-primary/5 p-6 md:p-8 mt-8">
           <div className="flex items-center justify-between mb-4">

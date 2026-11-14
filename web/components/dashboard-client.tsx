@@ -31,7 +31,6 @@ interface DashboardClientProps {
   userName: string;
 }
 
-// ─── Featured Latest Entry card ───────────────────────────────
 function FeaturedCard({
   item,
   loading,
@@ -61,7 +60,6 @@ function FeaturedCard({
     );
   }
 
-  // No entries yet — show an invitation
   if (!item) {
     return (
       <div
@@ -74,7 +72,6 @@ function FeaturedCard({
           overflow: "hidden",
         }}
       >
-        {/* Decorative grid lines */}
         <div
           className="absolute inset-0 opacity-5"
           style={{
@@ -103,7 +100,6 @@ function FeaturedCard({
     );
   }
 
-  // Has an entry — show it as a featured poster card
   return (
     <div
       style={{
@@ -112,10 +108,8 @@ function FeaturedCard({
         border: "2px solid var(--border-raw)",
       }}
     >
-      {/* Accent top line */}
       <div className="absolute top-0 left-0 right-0 h-px z-10" style={{ background: accentColor }} />
 
-      {/* Label */}
       <div className="absolute top-3 left-3 z-20">
         <span
           className="label-upper px-2 py-1"
@@ -129,7 +123,6 @@ function FeaturedCard({
         </span>
       </div>
 
-      {/* Art */}
       {isMusic ? (
         /* Square album art */
         <div
@@ -143,7 +136,6 @@ function FeaturedCard({
               <Disc3 className="w-16 h-16" style={{ color: "var(--text-dim)" }} />
             </div>
           )}
-          {/* Gradient overlay */}
           <div
             className="absolute inset-0"
             style={{ background: "linear-gradient(to top, rgba(10,10,8,0.95) 0%, rgba(10,10,8,0.3) 50%, transparent 100%)" }}
@@ -162,7 +154,6 @@ function FeaturedCard({
               <Film className="w-16 h-16" style={{ color: "var(--text-dim)" }} />
             </div>
           )}
-          {/* Gradient overlay */}
           <div
             className="absolute inset-0"
             style={{ background: "linear-gradient(to top, rgba(10,10,8,0.95) 0%, rgba(10,10,8,0.1) 55%, transparent 100%)" }}
@@ -170,7 +161,6 @@ function FeaturedCard({
         </div>
       )}
 
-      {/* Info overlay */}
       <div
         className="absolute bottom-0 left-0 right-0 p-4 z-20"
       >
@@ -325,7 +315,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     }).length,
   };
 
-  // Filter recent items by mode
   const recentItems = (
     mode === "music" ? musicLogs : filmLogs
   ).slice(0, 6);
@@ -342,7 +331,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </div>
       )}
 
-      {/* ── Hero ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 items-start">
 
         {/* Left: greeting + stats + CTAs */}
@@ -372,7 +360,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             </em>
           </h1>
 
-          {/* Stat row */}
           <div className="flex gap-8 mb-8">
             {[
               { value: mode === "music" ? stats.musicCount : stats.filmCount, label: mode === "music" ? "Logged" : "Watched" },
@@ -392,7 +379,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             ))}
           </div>
 
-          {/* CTAs */}
           <div className="flex gap-3 flex-wrap">
             <Link
               href="/protected/log"
@@ -430,7 +416,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           </div>
         </div>
 
-        {/* Right: featured latest entry */}
         <FeaturedCard
           item={loading ? null : (mode === "music" ? musicLogs[0] : filmLogs[0]) ?? null}
           loading={loading}
@@ -440,7 +425,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         />
       </div>
 
-      {/* ── Recent activity ────────────────────────────────────── */}
       <div>
         <div
           className="flex items-baseline justify-between pb-3 mb-0"
@@ -521,7 +505,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                   className="flex items-start gap-4 py-4 cursor-pointer transition-all duration-150 activity-item group"
                   style={{ paddingLeft: "0", paddingRight: "0" }}
                 >
-                  {/* Thumbnail */}
                   <div
                     className="flex-shrink-0 flex items-center justify-center overflow-hidden"
                     style={{
@@ -546,7 +529,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                     )}
                   </div>
 
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <h3
                       className="font-display text-base font-semibold truncate mb-0.5 transition-colors duration-150"
@@ -564,7 +546,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                     </p>
                   </div>
 
-                  {/* Rating */}
                   <div className="flex-shrink-0 text-right">
                     <StarDisplay rating={item.rating} size="md" />
                     <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)", letterSpacing: "0.06em" }}>
@@ -578,7 +559,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         )}
       </div>
 
-      {/* ── Recommendations ────────────────────────────────────── */}
       {modeReady && mode === "film" && (recsLoading || recs.length > 0) && (
       <div>
         <div

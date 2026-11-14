@@ -47,19 +47,16 @@ export default function FriendsPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("friends");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Friends state
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
   const [unfriendingId, setUnfriendingId] = useState<string | null>(null);
   const [confirmUnfriendId, setConfirmUnfriendId] = useState<string | null>(null);
 
-  // Requests state
   const [incoming, setIncoming] = useState<Friendship[]>([]);
   const [sent, setSent] = useState<Friendship[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResultUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -84,14 +81,12 @@ export default function FriendsPage() {
       setFriendsLoading(true);
       const supabase = createClient();
 
-      // Get accepted friendships where I'm requester
       const { data: asRequester, error: requesterError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", userId)
         .eq("status", "accepted");
 
-      // Get accepted friendships where I'm addressee
       const { data: asAddressee, error: addresseeError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
@@ -102,7 +97,6 @@ export default function FriendsPage() {
 
       const allFriendships = [...(asRequester || []), ...(asAddressee || [])];
 
-      // Get friend profile ids
       const friendIds = allFriendships.map((f) =>
         f.requester_id === userId ? f.addressee_id : f.requester_id
       );
@@ -142,7 +136,6 @@ export default function FriendsPage() {
       setRequestsLoading(true);
       const supabase = createClient();
 
-      // Incoming
       const { data: incomingData, error: incomingError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
@@ -169,7 +162,6 @@ export default function FriendsPage() {
         }))
       );
 
-      // Sent
       const { data: sentData, error: sentError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
@@ -203,7 +195,6 @@ export default function FriendsPage() {
     }
   }
 
-  // Debounced search
   useEffect(() => {
     const q = escapeIlike(searchQuery).trim();
     if (!q || !currentUserId) {
@@ -229,7 +220,6 @@ export default function FriendsPage() {
           return;
         }
 
-        // Check relationship status for each result
         const resultIds = profiles.map((p) => p.id);
 
         const { data: friendships } = await supabase
@@ -285,13 +275,11 @@ export default function FriendsPage() {
       });
       if (error && error.code !== "23505") throw error;
 
-      // Update search results
       setSearchResults((prev) =>
         prev.map((r) =>
           r.id === targetId ? { ...r, relationshipStatus: "pending_sent" } : r
         )
       );
-      // Refresh sent requests
       fetchRequests(currentUserId);
     } catch (err) {
       console.error("handleSendRequest failed:", err);
@@ -359,7 +347,6 @@ export default function FriendsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Header */}
       <div>
         <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Friends</h1>
         <p className="text-muted-foreground">
@@ -367,7 +354,6 @@ export default function FriendsPage() {
         </p>
       </div>
 
-      {/* Tab Bar */}
       <div className="flex items-center gap-1 border-2 border-border p-1 w-fit">
         <button
           onClick={() => setActiveTab("friends")}
@@ -419,7 +405,6 @@ export default function FriendsPage() {
         </div>
       )}
 
-      {/* ============ FRIENDS TAB ============ */}
       {activeTab === "friends" && (
         <>
           {friendsLoading ? (
@@ -465,7 +450,6 @@ export default function FriendsPage() {
                     </div>
                   </div>
 
-                  {/* Unfriend button */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -496,7 +480,6 @@ export default function FriendsPage() {
         </>
       )}
 
-      {/* ============ REQUESTS TAB ============ */}
       {activeTab === "requests" && (
         <>
           {requestsLoading ? (
@@ -505,7 +488,6 @@ export default function FriendsPage() {
             </div>
           ) : (
             <div className="space-y-8">
-              {/* Incoming */}
               <div>
                 <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-primary" />
@@ -571,7 +553,6 @@ export default function FriendsPage() {
                 )}
               </div>
 
-              {/* Sent */}
               <div>
                 <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
                   <Clock className="w-5 h-5 text-muted-foreground" />
@@ -635,7 +616,6 @@ export default function FriendsPage() {
         </>
       )}
 
-      {/* ============ FIND FRIENDS TAB ============ */}
       {activeTab === "find" && (
         <>
           <div className="relative max-w-xl">

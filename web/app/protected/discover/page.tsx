@@ -44,7 +44,6 @@ import { PosterCard } from "@/components/media/poster-card";
 import { PosterSkeleton, ScrollRow } from "@/components/media/scroll-row";
 import { useClickOutside } from "@/hooks/use-click-outside";
 
-// ─── Types ───
 
 type MediaItem = {
   id: number;
@@ -101,7 +100,6 @@ type RecsEmpty = "not_enough_logs" | "error" | null;
 const NOT_ENOUGH_LOGS_COPY = "Log and rate at least 5 titles to get recommendations.";
 const RECS_ERROR_COPY = "Couldn't build recommendations. Try again.";
 
-// ─── Constants ───
 
 const DEFAULT_GENRE_PILLS = [
   { id: 28, name: "Action" },
@@ -115,7 +113,6 @@ const DEFAULT_GENRE_PILLS = [
 ];
 
 
-// ─── Explanation Tooltip ───
 
 function ExplanationTooltip({ explanation, children }: { explanation?: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -151,7 +148,6 @@ function ExplanationTooltip({ explanation, children }: { explanation?: string; c
   );
 }
 
-// ─── Stretch tag — marks a deliberate reach pick ───
 
 function StretchTag() {
   return (
@@ -161,7 +157,6 @@ function StretchTag() {
   );
 }
 
-// ─── RecMediaCard — MediaCard variant with inline watchlist button ───
 
 function RecMediaCard({
   item,
@@ -229,7 +224,6 @@ function RecMediaCard({
   );
 }
 
-// ─── Shared Components ───
 
 function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaItem) => void }) {
   const title = item.title || item.name || "Untitled";
@@ -295,7 +289,6 @@ function SectionDivider({ icon: Icon, title, subtitle }: { icon: React.ElementTy
   );
 }
 
-// ─── Music Components ───
 
 function MusicCard({
   item,
@@ -358,7 +351,6 @@ function MusicRow({
   );
 }
 
-// ─── Page ───
 
 type Tab = "for-you" | "browse";
 
@@ -368,7 +360,6 @@ export default function DiscoverPage() {
   const searchRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("for-you");
 
-  // Music state
   const [musicFetched, setMusicFetched] = useState(false);
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const [musicSearchResults, setMusicSearchResults] = useState<MusicMediaItem[]>([]);
@@ -380,13 +371,11 @@ export default function DiscoverPage() {
   const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(false);
   const [spotifyOAuthFetched, setSpotifyOAuthFetched] = useState(false);
 
-  // Search (shared across tabs)
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Browse tab state
   const [trending, setTrending] = useState<MediaItem[]>([]);
   const [nowPlaying, setNowPlaying] = useState<MediaItem[]>([]);
   const [upcoming, setUpcoming] = useState<MediaItem[]>([]);
@@ -396,15 +385,12 @@ export default function DiscoverPage() {
   const [genreResults, setGenreResults] = useState<MediaItem[]>([]);
   const [genreLoading, setGenreLoading] = useState(false);
 
-  // Personalized rows (browse tab, "Picked For You" section)
   const [forYouRows, setForYouRows] = useState<ForYouRow[]>([]);
   const [personalLoading, setPersonalLoading] = useState(true);
   const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
 
-  // Browse data fetched flag
   const [browseFetched, setBrowseFetched] = useState(false);
 
-  // AI recommendations
   const [aiMusicRecs, setAiMusicRecs] = useState<(MusicMediaItem & { explanation?: string; confidence?: Confidence })[]>([]);
   const [aiMusicLoading, setAiMusicLoading] = useState(false);
   const [aiMusicFetched, setAiMusicFetched] = useState(false);
@@ -416,7 +402,6 @@ export default function DiscoverPage() {
   const [aiFilmEmpty, setAiFilmEmpty] = useState<RecsEmpty>(null);
   const [filmWatchlistedIds, setFilmWatchlistedIds] = useState<Set<number>>(new Set());
 
-  // Vibe search
   const vibeRequestRef = useRef(0);
   const [vibeResults, setVibeResults] = useState<VibeSearchResult[]>([]);
   const [vibeInterpretation, setVibeInterpretation] = useState<string>("");
@@ -426,10 +411,8 @@ export default function DiscoverPage() {
   // Failed user action or section load, shown in a banner under the header
   const [error, setError] = useState<string | null>(null);
 
-  // AI key status
   const [aiNotConfigured, setAiNotConfigured] = useState(false);
 
-  // ─── Fetch the music queue (lazy — only when mode is music) ───
   useEffect(() => {
     if (mode !== "music" || musicFetched) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
@@ -453,7 +436,6 @@ export default function DiscoverPage() {
     fetchQueuedIds();
   }, [mode, musicFetched]);
 
-  // ─── Personalised music rows (lazy — top artists from listen_logs) ───
   useEffect(() => {
     if (mode !== "music" || personalMusicFetched) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
@@ -471,7 +453,6 @@ export default function DiscoverPage() {
           .not("artist", "is", null);
         if (!logs || logs.length === 0) return;
 
-        // Count artist frequency and take top 3
         const freq = new Map<string, number>();
         logs.forEach((l: { artist: string | null }) => {
           if (!l.artist) return;
@@ -507,7 +488,6 @@ export default function DiscoverPage() {
     fetchPersonalMusic();
   }, [mode, personalMusicFetched]);
 
-  // ─── Fetch Spotify OAuth personalised data (lazy — top tracks) ───
   useEffect(() => {
     if (mode !== "music" || spotifyOAuthFetched) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
@@ -536,7 +516,6 @@ export default function DiscoverPage() {
     fetchSpotifyOAuth();
   }, [mode, spotifyOAuthFetched]);
 
-  // ─── AI recommendations ───
 
   const fetchAiMusicRecs = useCallback(async (refresh = false) => {
     setAiMusicLoading(true);
@@ -590,7 +569,6 @@ export default function DiscoverPage() {
     setAiFilmLoading(false);
   }, []);
 
-  // Music: lazy, only when mode is music.
   useEffect(() => {
     if (mode !== "music" || aiMusicFetched) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
@@ -606,7 +584,6 @@ export default function DiscoverPage() {
     fetchAiFilmRecs();
   }, [mode, modeReady, activeTab, aiFilmFetched, fetchAiFilmRecs]);
 
-  // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
     if (activeTab !== "browse" || browseFetched) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
@@ -691,7 +668,6 @@ export default function DiscoverPage() {
           results.forEach((r) => { if (r) details.push(r); });
         }
 
-        // Top genres
         const genreCount = new Map<number, { name: string; count: number }>();
         details.forEach((d) => {
           d.genres.forEach((g) => {
@@ -705,7 +681,6 @@ export default function DiscoverPage() {
           .sort((a, b) => b.count - a.count)
           .slice(0, 2);
 
-        // Top directors
         const dirCount = new Map<number, { name: string; count: number }>();
         details.forEach((d) => {
           d.directors.forEach((dir) => {
@@ -719,12 +694,10 @@ export default function DiscoverPage() {
           .sort((a, b) => b.count - a.count)
           .slice(0, 2);
 
-        // Highest rated for "similar to"
         const topTitles = details
           .sort((a, b) => b.rating - a.rating)
           .slice(0, 2);
 
-        // Fetch all personalized rows in parallel
         const rowPromises: Promise<ForYouRow | null>[] = [];
 
         topGenres.forEach((genre) => {
@@ -797,7 +770,6 @@ export default function DiscoverPage() {
     fetchPersonalized();
   }, [activeTab, browseFetched]);
 
-  // ─── Search (title search only; vibe search runs on Enter) ───
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
@@ -838,7 +810,6 @@ export default function DiscoverPage() {
 
   useClickOutside(searchRef, () => setShowDropdown(false));
 
-  // ─── Handlers ───
 
   async function handleAddRecToWatchlist(item: MediaItem) {
     setError(null);
@@ -952,7 +923,6 @@ export default function DiscoverPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ─── Header ─── */}
       <div>
         <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">Discover</h1>
         <p className="text-muted-foreground">
@@ -968,7 +938,6 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ─── Search ─── */}
       <div className="max-w-xl w-full" ref={searchRef}>
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -998,7 +967,6 @@ export default function DiscoverPage() {
             <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
           )}
           {isVibeQuery && <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-primary flex items-center gap-1"><Sparkles className="w-3 h-3" />Vibe</span>}
-          {/* Vibe search dropdown */}
           {showDropdown && isVibeQuery && (vibeResults.length > 0 || vibeLoading) && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-96 overflow-auto shadow-lg">
               {vibeInterpretation && (
@@ -1063,7 +1031,6 @@ export default function DiscoverPage() {
               )}
             </div>
           )}
-          {/* Film search dropdown */}
           {mode !== "music" && !isVibeQuery && showDropdown && searchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
               {searchResults.slice(0, 8).map((result) => {
@@ -1098,7 +1065,6 @@ export default function DiscoverPage() {
               })}
             </div>
           )}
-          {/* Music search dropdown */}
           {mode === "music" && !isVibeQuery && showDropdown && musicSearchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
               {musicSearchResults.slice(0, 8).map((result) => (
@@ -1136,7 +1102,6 @@ export default function DiscoverPage() {
         </div>
       </div>
 
-      {/* ─── MUSIC MODE ─── */}
       {mode === "music" && (
         <div className="flex flex-col gap-6">
           {/* Right now — Spotify listening movement */}
@@ -1268,7 +1233,6 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ─── FILM MODE — Tabs ─── */}
       {mode !== "music" && (
       <div className="flex items-center gap-1 border-b-2 border-border">
         <button
@@ -1302,7 +1266,6 @@ export default function DiscoverPage() {
       </div>
       )}
 
-      {/* ─── FOR YOU TAB ─── */}
       {mode !== "music" && activeTab === "for-you" && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -1376,10 +1339,8 @@ export default function DiscoverPage() {
         </div>
       )}
 
-      {/* ─── BROWSE TAB ─── */}
       {mode !== "music" && activeTab === "browse" && (
         <div className="flex flex-col gap-6">
-          {/* Genre Pills */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0 mr-1">Genre</span>
             {DEFAULT_GENRE_PILLS.map((genre) => (
@@ -1397,7 +1358,6 @@ export default function DiscoverPage() {
             ))}
           </div>
 
-          {/* Genre Browse Results */}
           {selectedGenre && (
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -1426,7 +1386,6 @@ export default function DiscoverPage() {
             </div>
           )}
 
-          {/* Browse Rows */}
           {!selectedGenre && (
             <>
               <MediaRow
@@ -1454,7 +1413,6 @@ export default function DiscoverPage() {
                 onItemClick={handleItemClick}
               />
 
-              {/* Picked For You */}
               {(personalLoading || forYouRows.length > 0) && (
                 <>
                   <SectionDivider icon={Sparkles} title="Picked For You" subtitle="Based on your watch history" />
@@ -1483,7 +1441,6 @@ export default function DiscoverPage() {
                 </>
               )}
 
-              {/* All-Time Greats */}
               <SectionDivider icon={Crown} title="All-Time Greats" subtitle="The highest rated of all time" />
 
               <MediaRow

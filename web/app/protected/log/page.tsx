@@ -71,7 +71,6 @@ function LogWatchForm() {
   const [pacingRating, setPacingRating] = useState(0);
   const [castingRating, setCastingRating] = useState(0);
   const [hoverCategory, setHoverCategory] = useState<{ [key: string]: number }>({});
-  // Music-specific state
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [artist, setArtist] = useState("");
   const [albumName, setAlbumName] = useState("");
@@ -182,7 +181,6 @@ function LogWatchForm() {
         }
       }
 
-      // Reset form
       setMediaType(null);
       setTitle("");
       setRating(0);
@@ -385,7 +383,6 @@ function LogWatchForm() {
 
   return (
     <div className="flex flex-col gap-8 max-w-5xl mx-auto w-full">
-      {/* ── Header ── */}
       <div>
         <Link
           href={isEditMode ? "/protected/library" : "/protected"}
@@ -414,10 +411,8 @@ function LogWatchForm() {
         </h1>
       </div>
 
-      {/* ── Two-column layout ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 items-start">
 
-        {/* ── LEFT: Form ── */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
 
           {/* Type selector — 2 options per mode, compact pill row */}
@@ -475,7 +470,6 @@ function LogWatchForm() {
           </div>
 
         {mediaType && (<>
-        {/* ── Search ── */}
         <div className="flex flex-col gap-2">
           <p className="label-upper">
             Title <span style={{ color: "hsl(var(--destructive))" }}>*</span>
@@ -505,7 +499,6 @@ function LogWatchForm() {
             )}
           </div>
 
-          {/* Search results dropdown */}
           {results.length > 0 && (
             <div
               className="mt-1 max-h-64 overflow-auto"
@@ -586,7 +579,6 @@ function LogWatchForm() {
           )}
         </div>
 
-        {/* Rating */}
         <div className="space-y-3">
           <Label className="text-base">
             Your Rating <span className="text-destructive">*</span>
@@ -598,7 +590,6 @@ function LogWatchForm() {
 
               return (
                 <div key={value} className="relative flex">
-                  {/* Left half (for .5 rating) */}
                   <button
                     type="button"
                     onClick={() => setRating(value - 0.5)}
@@ -622,7 +613,6 @@ function LogWatchForm() {
                     )}
                   </button>
 
-                  {/* Right half (for full rating) */}
                   <button
                     type="button"
                     onClick={() => setRating(value)}
@@ -656,7 +646,6 @@ function LogWatchForm() {
           )}
         </div>
 
-        {/* Date Watched / Listened */}
         <div className="space-y-2">
           <Label htmlFor="watchedDate" className="text-base flex items-center gap-2">
             <Calendar className="w-4 h-4" />
@@ -672,7 +661,6 @@ function LogWatchForm() {
           />
         </div>
 
-        {/* Review */}
         <div className="space-y-2">
           <Label htmlFor="review" className="text-base flex items-center gap-2">
             <FileText className="w-4 h-4" />
@@ -741,7 +729,6 @@ function LogWatchForm() {
           </div>
         </div>
 
-        {/* More Details (Optional) */}
         <div>
           <button
             type="button"
@@ -900,14 +887,12 @@ function LogWatchForm() {
           )}
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
             {error}
           </div>
         )}
 
-        {/* ── Submit ── */}
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
@@ -939,7 +924,6 @@ function LogWatchForm() {
         </>)}
         </form>
 
-        {/* ── RIGHT: Sticky preview panel ── */}
         <div className="hidden lg:block">
           <div
             className="sticky"
@@ -953,12 +937,10 @@ function LogWatchForm() {
                 overflow: "hidden",
               }}
             >
-              {/* Mode-accent top line */}
               <div className="absolute top-0 left-0 right-0 h-px" style={{ background: "var(--mode-accent)" }} />
 
               {selectedMovie ? (
                 <>
-                  {/* Poster / cover art */}
                   <div
                     style={{
                       aspectRatio: isSelectedMusic ? "1 / 1" : "2 / 3",
@@ -1001,7 +983,6 @@ function LogWatchForm() {
                     </div>
                   </div>
 
-                  {/* Overview */}
                   {selectedMovie.overview && (
                     <div className="p-4">
                       <p
@@ -1013,7 +994,6 @@ function LogWatchForm() {
                     </div>
                   )}
 
-                  {/* Current rating preview */}
                   {rating > 0 && (
                     <div
                       className="px-4 pb-4"

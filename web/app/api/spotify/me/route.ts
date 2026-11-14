@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
   const action = searchParams.get("action");
   const timeRange = searchParams.get("time_range") || "medium_term";
 
-  // Verify Supabase session
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) {

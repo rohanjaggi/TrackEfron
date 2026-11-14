@@ -242,7 +242,6 @@ export function ProfileClient({ profile }: ProfileProps) {
 
       if (error) throw error;
 
-      // Keep profiles table in sync
       await syncProfile(supabase);
 
       setSuccess(true);
@@ -305,7 +304,6 @@ export function ProfileClient({ profile }: ProfileProps) {
 
       if (updateError) throw updateError;
 
-      // Keep profiles table in sync
       await syncProfile(supabase);
 
       setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
@@ -337,9 +335,7 @@ export function ProfileClient({ profile }: ProfileProps) {
         />
       </div>
 
-      {/* Header */}
       <div className="flex flex-col items-center text-center gap-6 pb-8 border-b-2 border-border">
-        {/* Avatar */}
         <div className="relative group">
           <input
             ref={fileInputRef}
@@ -372,7 +368,6 @@ export function ProfileClient({ profile }: ProfileProps) {
           </button>
         </div>
 
-        {/* Name & Username */}
         <div>
           <h1 className="font-display text-3xl font-bold mb-1">{fullName || "Set your name"}</h1>
           <p className="text-muted-foreground">
@@ -387,14 +382,12 @@ export function ProfileClient({ profile }: ProfileProps) {
         </div>
       </div>
 
-      {/* Stats */}
       {statsLoading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Row 1: Core stats */}
           <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
             <StatTile icon={Film} iconClassName="text-primary" value={stats.watched} label="Watched" />
             <StatTile icon={Film} iconClassName="text-accent" value={stats.movies} label={stats.movies === 1 ? "Movie" : "Movies"} />
@@ -406,7 +399,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         </div>
       )}
 
-      {/* Profile Details */}
       <div className="border-2 border-border p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-display text-xl font-semibold">Profile Details</h2>
@@ -457,7 +449,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         )}
 
         <div className="space-y-6">
-          {/* Full Name */}
           <div className="grid gap-2">
             <Label htmlFor="fullName" className="flex items-center gap-2 text-muted-foreground">
               <User className="w-4 h-4" />
@@ -475,7 +466,6 @@ export function ProfileClient({ profile }: ProfileProps) {
             )}
           </div>
 
-          {/* Username */}
           <div className="grid gap-2">
             <Label htmlFor="username" className="flex items-center gap-2 text-muted-foreground">
               <AtSign className="w-4 h-4" />
@@ -512,7 +502,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         </div>
       </div>
 
-      {/* Connected Services */}
       <div className="border-2 border-border p-6">
         <h2 className="font-display text-xl font-semibold mb-4">Connected Services</h2>
 
@@ -574,7 +563,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         </div>
       </div>
 
-      {/* AI Settings */}
       <div className="border-2 border-border p-6">
         <h2 className="font-display text-xl font-semibold mb-4">AI Settings</h2>
 
@@ -676,7 +664,6 @@ export function ProfileClient({ profile }: ProfileProps) {
         )}
       </div>
 
-      {/* Danger Zone */}
       <div className="bg-destructive/5 border-2 border-destructive p-6">
         <h2 className="font-display text-xl font-semibold text-destructive mb-2">Danger Zone</h2>
         <p className="text-sm text-muted-foreground mb-4">

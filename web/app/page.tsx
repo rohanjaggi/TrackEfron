@@ -115,7 +115,6 @@ export default function Home() {
       <div className="fixed inset-0 opacity-[0.015] pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,hsl(var(--foreground))_2px,hsl(var(--foreground))_4px)]" />
 
       <div className="flex-1 w-full flex flex-col relative z-10">
-        {/* ── Navigation ──────────────────────────────────────── */}
         <nav className="w-full flex justify-center border-b-2 border-border py-5">
           <div className="w-full max-w-6xl flex justify-between items-center px-6">
             <Link href="/" className="flex items-center gap-3 group">
@@ -137,9 +136,7 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* ── Hero ────────────────────────────────────────────── */}
         <section className="relative flex flex-col items-center justify-center px-6 pt-12 pb-32 md:pt-16 md:pb-40 text-center">
-          {/* Radial glow behind hero */}
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] pointer-events-none"
             style={{
@@ -148,7 +145,6 @@ export default function Home() {
           />
 
           <div className="max-w-4xl mx-auto space-y-8 relative">
-            {/* Dual badges */}
             <FadeIn className="flex items-center justify-center gap-3">
               <span className="badge-film">Film</span>
               <span className="text-[10px] text-muted-foreground tracking-widest">×</span>
@@ -162,7 +158,6 @@ export default function Home() {
               </span>
             </FadeIn>
 
-            {/* Logo */}
             <FadeIn delay={0.05} className="flex items-center justify-center">
               <img
                 src="/images/logo.png"
@@ -171,7 +166,6 @@ export default function Home() {
               />
             </FadeIn>
 
-            {/* Heading */}
             <FadeIn delay={0.1}>
               <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] text-foreground">
                 Track everything you{" "}
@@ -185,7 +179,6 @@ export default function Home() {
               </h1>
             </FadeIn>
 
-            {/* Subtitle */}
             <FadeIn delay={0.2}>
               <p className="text-base md:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
                 A personal diary for every film, show, and album.
@@ -193,7 +186,6 @@ export default function Home() {
               </p>
             </FadeIn>
 
-            {/* CTA */}
             <FadeIn delay={0.3} className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
               <Button asChild size="lg" className="group font-semibold text-base px-8 py-6 h-auto border-2">
                 <Link href="/auth/sign-up" className="flex items-center gap-2">
@@ -206,14 +198,12 @@ export default function Home() {
               </Button>
             </FadeIn>
 
-            {/* Scroll hint */}
             <FadeIn delay={0.5} className="pt-8">
               <ChevronDown className="w-5 h-5 text-muted-foreground mx-auto animate-bounce" />
             </FadeIn>
           </div>
         </section>
 
-        {/* ── Dual-mode Showcase ─────────────────────────────── */}
         <section className="w-full border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-6 py-20 md:py-28">
             <FadeIn>
@@ -230,7 +220,6 @@ export default function Home() {
             </FadeIn>
 
             <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-              {/* Film Card */}
               <FadeIn delay={0.1} className="h-full">
                 <div className="border-2 border-border p-8 md:p-10 relative group hover:border-[var(--film)]/30 transition-colors duration-500 h-full">
                   <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: "var(--film)" }} />
@@ -253,7 +242,6 @@ export default function Home() {
                 </div>
               </FadeIn>
 
-              {/* Music Card */}
               <FadeIn delay={0.2} className="h-full">
                 <div className="border-2 border-border p-8 md:p-10 relative group hover:border-[var(--music)]/30 transition-colors duration-500 h-full">
                   <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: "var(--music)" }} />
@@ -279,9 +267,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── AI Section ─────────────────────────────────────── */}
         <section className="w-full border-t-2 border-border relative">
-          {/* Subtle purple glow */}
           <div
             className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none"
             style={{
@@ -307,7 +293,6 @@ export default function Home() {
             </FadeIn>
 
             <div className="grid md:grid-cols-3 gap-6">
-              {/* Taste DNA */}
               <FadeIn delay={0.1} className="h-full">
                 <div className="border-2 border-border p-8 relative group h-full">
                   <div
@@ -337,7 +322,6 @@ export default function Home() {
                 </div>
               </FadeIn>
 
-              {/* Smart Recs */}
               <FadeIn delay={0.2} className="h-full">
                 <div className="border-2 border-border p-8 relative group h-full">
                   <div
@@ -367,7 +351,6 @@ export default function Home() {
                 </div>
               </FadeIn>
 
-              {/* Vibe Search */}
               <FadeIn delay={0.3} className="h-full">
                 <div className="border-2 border-border p-8 relative group h-full">
                   <div
@@ -391,7 +374,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Features Grid ──────────────────────────────────── */}
         <section className="w-full border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-6 py-20 md:py-28">
             <FadeIn>
@@ -428,7 +410,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── How It Works ───────────────────────────────────── */}
         <section className="w-full border-t-2 border-border bg-[var(--surface)]">
           <div className="max-w-6xl mx-auto px-6 py-20 md:py-28">
             <FadeIn>
@@ -463,12 +444,10 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── CTA ─────────────────────────────────────────────── */}
         <section className="w-full border-t-2 border-border">
           <div className="max-w-4xl mx-auto px-6 py-20 md:py-28">
             <FadeIn>
               <div className="border-2 border-border p-12 md:p-16 text-center space-y-6 relative overflow-hidden">
-                {/* Gradient top bar */}
                 <div
                   className="absolute top-0 left-0 w-full h-[2px]"
                   style={{ background: "linear-gradient(90deg, var(--film), hsl(280 60% 65%), var(--music))" }}
@@ -496,7 +475,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Footer ──────────────────────────────────────────── */}
         <footer className="w-full border-t-2 border-border py-8">
           <div className="max-w-6xl mx-auto px-6">
             <div className="flex flex-col md:flex-row justify-between items-center gap-6">

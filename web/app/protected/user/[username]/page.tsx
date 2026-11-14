@@ -61,7 +61,6 @@ function UserProfileContent() {
   const [friendshipId, setFriendshipId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Friend-visible data
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [lists, setLists] = useState<UserList[]>([]);
@@ -74,7 +73,6 @@ function UserProfileContent() {
       setLoading(true);
       const supabase = createClient();
 
-      // Get target user's profile
       const { data: profileData, error } = await supabase
         .from("profiles")
         .select("*")
@@ -89,20 +87,16 @@ function UserProfileContent() {
 
       setProfile(profileData);
 
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 
-      // Check if viewing own profile
       if (user.id === profileData.id) {
         setRelationship("self");
         setLoading(false);
-        // Redirect to own profile
         router.replace("/protected/profile");
         return;
       }
 
-      // Check friendship status
       const { data: friendships } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status")
@@ -135,7 +129,6 @@ function UserProfileContent() {
     fetchProfile();
   }, [fetchProfile]);
 
-  // Fetch friend data when relationship is "friends"
   useEffect(() => {
     if (relationship !== "friends" || !profile) return;
 
@@ -293,7 +286,6 @@ function UserProfileContent() {
 
   return (
     <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
-      {/* Back link */}
       <Link
         href="/protected/friends"
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
@@ -302,7 +294,6 @@ function UserProfileContent() {
         Back to Friends
       </Link>
 
-      {/* Backdrop Banner */}
       <div className="relative -mb-20 h-44 w-screen left-1/2 -translate-x-1/2">
         <div
           className="absolute inset-0"
@@ -314,9 +305,7 @@ function UserProfileContent() {
         />
       </div>
 
-      {/* Profile Header */}
       <div className="flex flex-col items-center text-center gap-6 pb-8 border-b-2 border-border">
-        {/* Avatar */}
         <div className="w-28 h-28 border-4 border-primary p-1 bg-card">
           <div className="w-full h-full bg-card flex items-center justify-center overflow-hidden">
             {profile.avatar_url ? (
@@ -333,7 +322,6 @@ function UserProfileContent() {
           </div>
         </div>
 
-        {/* Name & Username */}
         <div>
           <h1 className="font-display text-3xl font-bold mb-1">
             {profile.full_name || profile.username}
@@ -350,14 +338,12 @@ function UserProfileContent() {
           <span>Member since {memberSince}</span>
         </div>
 
-        {/* Error Banner */}
         {actionError && (
           <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2 w-full max-w-md">
             {actionError}
           </div>
         )}
 
-        {/* Friendship Action */}
         {relationship === "none" && (
           <Button onClick={handleSendRequest} disabled={actionLoading}>
             {actionLoading ? (
@@ -399,7 +385,6 @@ function UserProfileContent() {
           </div>
         ) : (
           <>
-            {/* Stats */}
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
               <StatTile icon={Film} iconClassName="text-primary" value={stats.watched} label="Watched" />
               <StatTile icon={Film} iconClassName="text-accent" value={stats.movies} label="Movies" />
@@ -408,7 +393,6 @@ function UserProfileContent() {
               <StatTile icon={Star} iconClassName="text-accent fill-accent" value={stats.avgRating} label="Avg Rating" />
             </div>
 
-            {/* Recent Reviews */}
             {recentReviews.length > 0 && (
               <div className="border-2 border-border p-6">
                 <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
@@ -451,7 +435,6 @@ function UserProfileContent() {
               </div>
             )}
 
-            {/* Watchlist */}
             {watchlist.length > 0 && (
               <div className="border-2 border-border p-6">
                 <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
@@ -495,7 +478,6 @@ function UserProfileContent() {
               </div>
             )}
 
-            {/* Lists */}
             {lists.length > 0 && (
               <div className="border-2 border-border p-6">
                 <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
@@ -527,7 +509,6 @@ function UserProfileContent() {
               </div>
             )}
 
-            {/* No activity */}
             {watchLogs.length === 0 && watchlist.length === 0 && lists.length === 0 && (
               <div className="border-2 border-border p-8 text-center">
                 <p className="text-muted-foreground">
