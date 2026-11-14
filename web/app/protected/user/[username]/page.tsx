@@ -22,6 +22,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { WatchLog, WatchlistItem } from "@/lib/types";
 import { resizePoster } from "@/lib/tmdb/poster";
+import { StatTile } from "@/components/media/stat-tile";
 
 type Profile = {
   id: string;
@@ -394,31 +395,11 @@ function UserProfileContent() {
           <>
             {/* Stats */}
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
-              <div className="border-2 border-border p-5 text-center">
-                <Film className="w-5 h-5 text-primary mx-auto mb-2" />
-                <div className="text-2xl font-bold">{stats.watched}</div>
-                <p className="text-xs text-muted-foreground">Watched</p>
-              </div>
-              <div className="border-2 border-border p-5 text-center">
-                <Film className="w-5 h-5 text-accent mx-auto mb-2" />
-                <div className="text-2xl font-bold">{stats.movies}</div>
-                <p className="text-xs text-muted-foreground">Movies</p>
-              </div>
-              <div className="border-2 border-border p-5 text-center">
-                <Tv className="w-5 h-5 text-secondary mx-auto mb-2" />
-                <div className="text-2xl font-bold">{stats.tvShows}</div>
-                <p className="text-xs text-muted-foreground">TV Shows</p>
-              </div>
-              <div className="border-2 border-border p-5 text-center">
-                <BookOpen className="w-5 h-5 text-accent mx-auto mb-2" />
-                <div className="text-2xl font-bold">{stats.reviews}</div>
-                <p className="text-xs text-muted-foreground">Reviews</p>
-              </div>
-              <div className="border-2 border-border p-5 text-center">
-                <Star className="w-5 h-5 text-accent fill-accent mx-auto mb-2" />
-                <div className="text-2xl font-bold">{stats.avgRating}</div>
-                <p className="text-xs text-muted-foreground">Avg Rating</p>
-              </div>
+              <StatTile icon={Film} iconClassName="text-primary" value={stats.watched} label="Watched" />
+              <StatTile icon={Film} iconClassName="text-accent" value={stats.movies} label="Movies" />
+              <StatTile icon={Tv} iconClassName="text-secondary" value={stats.tvShows} label="TV Shows" />
+              <StatTile icon={BookOpen} iconClassName="text-accent" value={stats.reviews} label="Reviews" />
+              <StatTile icon={Star} iconClassName="text-accent fill-accent" value={stats.avgRating} label="Avg Rating" />
             </div>
 
             {/* Recent Reviews */}

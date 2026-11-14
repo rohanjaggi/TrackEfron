@@ -26,6 +26,7 @@ import {
   Trash2
 } from "lucide-react";
 import type { WatchLog as SharedWatchLog } from "@/lib/types";
+import { StatTile } from "@/components/media/stat-tile";
 
 type WatchLog = Pick<SharedWatchLog, "rating" | "review" | "media_type" | "created_at">;
 
@@ -384,36 +385,12 @@ export function ProfileClient({ profile }: ProfileProps) {
         <div className="space-y-4">
           {/* Row 1: Core stats */}
           <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
-            <div className="border-2 border-border p-5 text-center">
-              <Film className="w-5 h-5 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.watched}</div>
-              <p className="text-xs text-muted-foreground">Watched</p>
-            </div>
-            <div className="border-2 border-border p-5 text-center">
-              <Film className="w-5 h-5 text-accent mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.movies}</div>
-              <p className="text-xs text-muted-foreground">{stats.movies === 1 ? "Movie" : "Movies"}</p>
-            </div>
-            <div className="border-2 border-border p-5 text-center">
-              <Film className="w-5 h-5 text-secondary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.tvShows}</div>
-              <p className="text-xs text-muted-foreground">{stats.tvShows === 1 ? "TV Show" : "TV Shows"}</p>
-            </div>
-            <div className="border-2 border-border p-5 text-center">
-              <BookOpen className="w-5 h-5 text-accent mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.reviews}</div>
-              <p className="text-xs text-muted-foreground">{stats.reviews === 1 ? "Review" : "Reviews"}</p>
-            </div>
-            <div className="border-2 border-border p-5 text-center">
-              <Star className="w-5 h-5 text-accent fill-accent mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.avgRating}</div>
-              <p className="text-xs text-muted-foreground">Avg Rating</p>
-            </div>
-            <div className="border-2 border-border p-5 text-center">
-              <Clock className="w-5 h-5 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.watchlist}</div>
-              <p className="text-xs text-muted-foreground">Watchlist</p>
-            </div>
+            <StatTile icon={Film} iconClassName="text-primary" value={stats.watched} label="Watched" />
+            <StatTile icon={Film} iconClassName="text-accent" value={stats.movies} label={stats.movies === 1 ? "Movie" : "Movies"} />
+            <StatTile icon={Film} iconClassName="text-secondary" value={stats.tvShows} label={stats.tvShows === 1 ? "TV Show" : "TV Shows"} />
+            <StatTile icon={BookOpen} iconClassName="text-accent" value={stats.reviews} label={stats.reviews === 1 ? "Review" : "Reviews"} />
+            <StatTile icon={Star} iconClassName="text-accent fill-accent" value={stats.avgRating} label="Avg Rating" />
+            <StatTile icon={Clock} iconClassName="text-primary" value={stats.watchlist} label="Watchlist" />
           </div>
         </div>
       )}
