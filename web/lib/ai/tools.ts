@@ -87,31 +87,31 @@ export const musicRecommendTool: Tool = {
   },
 };
 
-export const filmVerifyTool: Tool = {
-  name: "verify_film_recommendations",
-  description: "Verify, re-rank, and enrich ML-generated film recommendations",
+export const filmRecommendTool: Tool = {
+  name: "recommend_films",
+  description: "Return personalized film and TV picks for the user",
   input_schema: {
     type: "object" as const,
     properties: {
-      verified: {
+      picks: {
         type: "array",
         items: {
           type: "object",
           properties: {
+            tmdb_id: { anyOf: [{ type: "number" }, { type: "null" }], description: "TMDB id from the candidate list, or null for a title outside it" },
             title: { type: "string" },
+            year: { anyOf: [{ type: "number" }, { type: "null" }], description: "Release year, needed when tmdb_id is null" },
             media_type: { type: "string", enum: ["movie", "tv"] },
-            tmdb_id: { anyOf: [{ type: "number" }, { type: "null" }], description: "TMDB ID from the ML candidate list, or null if this is a new AI suggestion" },
-            explanation: { type: "string", description: "2-3 sentences: personalized reason this matches their taste" },
-            source: { type: "string", enum: ["ml", "ai"], description: "ml=from ML pipeline, ai=new suggestion" },
-            year: { anyOf: [{ type: "number" }, { type: "null" }], description: "Release year, for TMDB validation of AI suggestions" },
+            explanation: { type: "string", description: "One sentence, at most 25 words, naming something they logged" },
+            confidence: { type: "string", enum: ["high", "medium", "discovery"], description: "high=safe bet, medium=likely match, discovery=stretch pick" },
           },
-          required: ["title", "media_type", "tmdb_id", "explanation", "source", "year"],
+          required: ["tmdb_id", "title", "year", "media_type", "explanation", "confidence"],
           additionalProperties: false,
         },
-        description: "Final 20 recommendations, ordered by relevance. Mix of ML-verified picks and AI suggestions.",
+        description: "30 picks ordered by relevance",
       },
     },
-    required: ["verified"],
+    required: ["picks"],
     additionalProperties: false,
   },
 };

@@ -65,6 +65,15 @@ describe("matchFilmPicks", () => {
       new Set(), noLookup, { ...limits, maxOlder: 0 });
     expect(r).toHaveLength(3);
   });
+  test("a throwing lookup counts as no match for that pick only", async () => {
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      if (title === "Boom") throw new Error("tmdb down");
+      return cand(7, 2020);
+    };
+    const r = await matchFilmPicks([pick(null, { title: "Boom" }), pick(null, { title: "Fine" })], [],
+      new Set(), lookup, limits);
+    expect(r.map((x) => x.tmdb_id)).toEqual([7]);
+  });
   test("empty input returns []", async () => {
     expect(await matchFilmPicks([], [], new Set(), noLookup, limits)).toEqual([]);
   });

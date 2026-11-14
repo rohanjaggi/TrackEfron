@@ -315,7 +315,7 @@ describe("tool schemas", () => {
   });
 
   test("formerly optional fields are nullable", () => {
-    const film = (tools.filmVerifyTool.input_schema as Schema).properties!.verified.items!.properties!;
+    const film = (tools.filmRecommendTool.input_schema as Schema).properties!.picks.items!.properties!;
     const vibe = (tools.vibeSearchTool.input_schema as Schema).properties!.results.items!.properties!;
     for (const field of [film.tmdb_id, film.year, vibe.artist, vibe.year]) {
       expect(field.anyOf?.map((s) => s.type)).toContain("null");

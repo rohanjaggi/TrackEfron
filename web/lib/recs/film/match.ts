@@ -1,6 +1,6 @@
 import type { FilmCandidate, FilmRecommendation, RawFilmPick } from "@/lib/ai/types";
 
-type Lookup = (
+export type Lookup = (
   type: "movie" | "tv",
   title: string,
   year: number | null,
@@ -24,7 +24,12 @@ export async function matchFilmPicks(
     let match: FilmCandidate | null =
       pick.tmdb_id != null ? (byKey.get(`${pick.media_type}:${pick.tmdb_id}`) ?? null) : null;
     if (!match) {
-      const found = await lookup(pick.media_type, pick.title, pick.year);
+      let found: FilmCandidate | null = null;
+      try {
+        found = await lookup(pick.media_type, pick.title, pick.year);
+      } catch {
+        // a failed lookup means no match for this pick only
+      }
       if (found && !(pick.year != null && found.year != null && Math.abs(found.year - pick.year) > 1)) {
         match = found;
       }

@@ -25,22 +25,18 @@ Rules:
 
 Use the recommend_music tool to return your recommendations.`;
 
-export const FILM_VERIFY_SYSTEM = `You are an AI layer that verifies and enriches film recommendations from a machine learning pipeline. The ML model uses collaborative filtering and content similarity, but it has blind spots: stale training data, no awareness of recent releases, and scoring signals that sometimes produce false positives.
-
-Your job:
-1. VERIFY: Review each ML candidate against the user's actual taste profile. Does this genuinely match what they like? Flag and drop picks that contradict their demonstrated preferences (e.g., ML suggests a horror film but user rates horror consistently low).
-2. RE-RANK: Reorder based on deeper taste understanding — review themes, aspect preferences, contextual signals the ML model can't capture.
-3. ENRICH: Drop weak ML picks and suggest replacements. You can recommend newer titles, niche picks, or films the static ML model doesn't know about. Mark these as source="ai".
-4. EXPLAIN: Write a personalized 2-3 sentence explanation for each final recommendation, referencing specific things from the user's profile.
+export const FILM_RECOMMEND_SYSTEM = `You are a film and TV recommendation engine for a personal media tracking app. Recommend for this person from their ratings and reviews.
 
 Rules:
-- Keep at least 12-15 of the ML candidates (they're pre-filtered by collaborative signals which you can't replicate). Only drop clear misfits.
-- Fill to exactly 20 total recommendations.
-- AI suggestions must be real films/TV shows that actually exist.
-- For AI suggestions, include the release year for TMDB validation.
-- Reference specific titles, ratings, and review quotes from the user's data in explanations.
+- Follow the era guidance in the user message.
+- Make about a quarter of the picks "discovery": lower-profile titles, non-English titles, or an adjacent genre. Use their blind spots for these.
+- Each explanation is one sentence of at most 25 words and names something they logged.
+- Prefer ids from the candidate list. For a title outside the list, set tmdb_id to null and give the title and release year.
+- Never recommend anything in the "already seen" list.
+- Do not pick by fame. Only recommend real films and shows that exist.
+- Return 30 picks, ordered by how well they fit.
 
-Use the verify_film_recommendations tool to return your final list.`;
+Use the recommend_films tool to return your picks.`;
 
 export const VIBE_SEARCH_SYSTEM = `You are a search engine for a personal media tracking app. The user is describing a mood, vibe, feeling, or giving a natural-language description of what they want to watch or listen to.
 
@@ -168,37 +164,42 @@ export function buildMusicRecommendUserPrompt(data: {
   return parts.join("\n");
 }
 
-export function buildFilmVerifyUserPrompt(data: {
-  tasteDNA?: { fingerprint: string; film_identity?: any } | null;
-  watchLogs: { title: string; rating: number; review?: string | null; media_type: string; plot_rating?: number | null; cinematography_rating?: number | null; acting_rating?: number | null; soundtrack_rating?: number | null; pacing_rating?: number | null; casting_rating?: number | null; }[];
-  mlCandidates: { tmdb_id: number; title: string; media_type: string; poster_url?: string | null; }[];
+export function buildFilmRecommendUserPrompt(data: {
+  tasteDNA?: {
+    fingerprint?: string;
+    film_profile?: { core?: string; aspect_lens?: string } | null;
+    blind_spots?: string[] | null;
+  } | null;
+  era: { topDecades: number[]; olderBefore: number | null; maxOlder: number };
+  logsText: string;
+  seenTitles: string[];
+  candidates: { tmdb_id: number; media_type: string; title: string; year: number | null; genres: string[]; overview: string }[];
 }): string {
   const parts: string[] = [];
+  const dna = data.tasteDNA;
 
-  if (data.tasteDNA) {
-    parts.push(`USER TASTE PROFILE: ${data.tasteDNA.fingerprint}`);
-    if (data.tasteDNA.film_identity?.core) {
-      parts.push(`Film identity: ${data.tasteDNA.film_identity.core}`);
-    }
-    if (data.tasteDNA.film_identity?.aspect_lens) {
-      parts.push(`What they value: ${data.tasteDNA.film_identity.aspect_lens}`);
-    }
-    if (data.tasteDNA.film_identity?.patterns) {
-      parts.push(`Patterns: ${data.tasteDNA.film_identity.patterns}`);
-    }
+  if (dna) {
+    if (dna.fingerprint) parts.push(`USER TASTE PROFILE: ${dna.fingerprint}`);
+    if (dna.film_profile?.core) parts.push(`Film identity: ${dna.film_profile.core}`);
+    if (dna.film_profile?.aspect_lens) parts.push(`What they value: ${dna.film_profile.aspect_lens}`);
+    if (dna.blind_spots?.length) parts.push(`Blind spots: ${dna.blind_spots.join(", ")}`);
   }
 
-  parts.push(`\nRECENT WATCH HISTORY (${data.watchLogs.length} entries):`);
-  const sorted = [...data.watchLogs].sort((a, b) => b.rating - a.rating);
-  sorted.slice(0, 30).forEach((w) => {
-    const aspects = formatAspects(w, ["plot_rating", "cinematography_rating", "acting_rating", "soundtrack_rating", "pacing_rating", "casting_rating"]);
-    parts.push(`  "${w.title}" (${w.media_type}) — ${w.rating}/5${aspects ? ` [${aspects}]` : ""}${w.review ? ` Review: "${w.review.slice(0, 150)}"` : ""}`);
-  });
+  if (data.era.olderBefore != null) {
+    const decades = data.era.topDecades.map((d) => `${d}s`).join(" and ");
+    parts.push(
+      `\nERA: most of what they watch is from the ${decades}. At most ${data.era.maxOlder} of your picks may be older than ${data.era.olderBefore}.`,
+    );
+  }
 
-  parts.push(`\nML CANDIDATES (${data.mlCandidates.length} items to verify/re-rank/enrich):`);
-  data.mlCandidates.forEach((c, i) => {
-    parts.push(`  ${i + 1}. "${c.title}" (${c.media_type}) [tmdb_id: ${c.tmdb_id}]`);
-  });
+  parts.push(`\nWATCH HISTORY:\n${data.logsText}`);
+  parts.push(`\nALREADY SEEN (do not recommend these): ${data.seenTitles.join(", ")}`);
+
+  parts.push("\nCANDIDATES (id | type | title | year | genres | overview):");
+  for (const c of data.candidates) {
+    const overview = c.overview.split(/\s+/).filter(Boolean).slice(0, 30).join(" ");
+    parts.push(`${c.tmdb_id} | ${c.media_type} | ${c.title} | ${c.year ?? "unknown"} | ${c.genres.join(", ")} | ${overview}`);
+  }
 
   return parts.join("\n");
 }
