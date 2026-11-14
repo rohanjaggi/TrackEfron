@@ -41,39 +41,12 @@
     /* ── Mode-specific colors ── */
     --film: #C8A86A;
     --film-dim: rgba(200, 168, 106, 0.12);
-    --film-glow: rgba(200, 168, 106, 0.25);
     --music: #6EC8C2;
     --music-dim: rgba(110, 200, 194, 0.12);
-    --music-glow: rgba(110, 200, 194, 0.25);
 
     /* ── Mode accent (swapped via data-mode="music" on <html>) ── */
     --mode-accent: var(--film);
     --mode-accent-dim: var(--film-dim);
-    --mode-accent-glow: var(--film-glow);
-    --mode-primary-hsl: 38 52% 60%;    /* mirrors primary for film */
-  }
-
-  /* .dark === same tokens (app is dark-only) */
-  .dark {
-    --background: 60 14% 4%;
-    --foreground: 40 30% 88%;
-    --card: 60 11% 7%;
-    --card-foreground: 40 30% 88%;
-    --popover: 60 9% 10%;
-    --popover-foreground: 40 30% 88%;
-    --primary: 38 52% 60%;
-    --primary-foreground: 60 14% 4%;
-    --secondary: 60 9% 10%;
-    --secondary-foreground: 40 30% 88%;
-    --muted: 60 10% 15%;
-    --muted-foreground: 48 12% 38%;
-    --accent: 38 52% 60%;              /* gold in film mode, overridden to teal in music mode */
-    --accent-foreground: 60 14% 4%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 40 30% 88%;
-    --border: 60 10% 15%;
-    --input: 60 9% 10%;
-    --ring: 38 52% 60%;
   }
 
   /* Music mode — swap primary & accent to teal, update mode vars */
@@ -85,8 +58,6 @@
     --ring: 177 45% 61%;
     --mode-accent: var(--music);
     --mode-accent-dim: var(--music-dim);
-    --mode-accent-glow: var(--music-glow);
-    --mode-primary-hsl: 177 45% 61%;
   }
 }
 
@@ -116,10 +87,6 @@ body::before {
   font-family: var(--font-display), 'Georgia', serif;
 }
 
-.font-mono-ui {
-  font-family: var(--font-mono), 'Courier New', monospace;
-}
-
 /* ─── Mode accent bar ────────────────────────────────────────── */
 .mode-accent-bar {
   height: 2px;
@@ -143,17 +110,6 @@ body::before {
   color: var(--mode-accent) !important;
   border-color: var(--mode-accent-dim) !important;
   background: var(--mode-accent-dim) !important;
-}
-
-/* ─── Card styles ────────────────────────────────────────────── */
-.card-surface {
-  background: var(--surface);
-  border: 1px solid var(--border-raw);
-}
-
-.card-surface-2 {
-  background: var(--surface-2);
-  border: 1px solid var(--border-raw);
 }
 
 /* ─── Activity item ──────────────────────────────────────────── */
@@ -202,21 +158,6 @@ body::before {
   background: var(--music-dim);
 }
 
-/* ─── Waveform animation (dashboard music card) ──────────────── */
-.wave-bar {
-  width: 2px;
-  border-radius: 1px;
-  animation: wave 1.2s ease infinite;
-  opacity: 0.75;
-}
-.wave-bar:nth-child(2) { animation-delay: 0.1s; }
-.wave-bar:nth-child(3) { animation-delay: 0.2s; }
-.wave-bar:nth-child(4) { animation-delay: 0.15s; }
-.wave-bar:nth-child(5) { animation-delay: 0.05s; }
-.wave-bar:nth-child(6) { animation-delay: 0.25s; }
-.wave-bar:nth-child(7) { animation-delay: 0.1s; }
-.wave-bar:nth-child(8) { animation-delay: 0.3s; }
-
 /* ─── Animations ─────────────────────────────────────────────── */
 @keyframes accentShimmer {
   0%   { transform: translateX(-100%); }
@@ -231,11 +172,6 @@ body::before {
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulseDot {
-  0%, 100% { opacity: 1;   transform: scale(1);   }
-  50%       { opacity: 0.4; transform: scale(0.7); }
 }
 
 /* ─── Scrollbar ──────────────────────────────────────────────── */

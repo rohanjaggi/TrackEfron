@@ -222,4 +222,3 @@ export async function callAI(options: CallAIOptions): Promise<CallAIResult> {
 }
 
 export { resolveProvider, MODEL_MAP };
-export type { CallAIResult, CallAISuccess, CallAIError, Tier, Provider };

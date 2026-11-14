@@ -3,14 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { normaliseTrack } from "@/lib/spotify/spotify";
 
-export type SpotifyArtistResult = {
-  id: string;
-  name: string;
-  image_url: string | null;
-  genres: string[];
-  popularity: number;
-};
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action");
@@ -32,25 +24,6 @@ export async function GET(request: NextRequest) {
   const headers = { Authorization: `Bearer ${accessToken}` };
 
   try {
-    if (action === "top-artists") {
-      const res = await fetch(
-        `https://api.spotify.com/v1/me/top/artists?limit=20&time_range=${timeRange}`,
-        { headers }
-      );
-      if (res.status === 401) return NextResponse.json({ connected: false, reason: "token_invalid" });
-      if (!res.ok) throw new Error(`Spotify top-artists error: ${res.statusText}`);
-
-      const data = await res.json();
-      const artists: SpotifyArtistResult[] = (data.items || []).map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        image_url: a.images?.[0]?.url ?? null,
-        genres: a.genres ?? [],
-        popularity: a.popularity ?? 0,
-      }));
-      return NextResponse.json(artists);
-    }
-
     if (action === "top-tracks") {
       const res = await fetch(
         `https://api.spotify.com/v1/me/top/tracks?limit=20&time_range=${timeRange}`,
@@ -61,20 +34,6 @@ export async function GET(request: NextRequest) {
 
       const data = await res.json();
       const tracks = (data.items || []).map((t: any) => normaliseTrack(t));
-      return NextResponse.json(tracks);
-    }
-
-    if (action === "recently-played") {
-      const res = await fetch(
-        "https://api.spotify.com/v1/me/player/recently-played?limit=50",
-        { headers }
-      );
-      if (res.status === 401) return NextResponse.json({ connected: false, reason: "token_invalid" });
-      if (!res.ok) throw new Error(`Spotify recently-played error: ${res.statusText}`);
-
-      const data = await res.json();
-      // Each item is { track: TrackObject, played_at: string }
-      const tracks = (data.items || []).map((item: any) => normaliseTrack(item.track));
       return NextResponse.json(tracks);
     }
 

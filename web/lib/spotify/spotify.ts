@@ -137,15 +137,3 @@ export async function getNewReleases(limit = 20): Promise<SpotifySearchResult[]>
   const data = await res.json();
   return (data.albums?.items || []).filter(Boolean).map(normaliseAlbum);
 }
-
-// ── Artist top tracks ────────────────────────────────────────────
-export async function getArtistTopTracks(artistId: string): Promise<SpotifySearchResult[]> {
-  const token = await getSpotifyToken();
-  const res = await fetch(`${BASE_URL}/artists/${artistId}/top-tracks?market=US`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Spotify artist top-tracks error: ${res.statusText}`);
-
-  const data = await res.json();
-  return (data.tracks || []).filter(Boolean).map(normaliseTrack);
-}

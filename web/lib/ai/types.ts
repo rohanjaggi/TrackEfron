@@ -17,21 +17,6 @@ export interface TasteDNA {
   blind_spots: string[];
 }
 
-export interface TasteDNARow {
-  id: string;
-  user_id: string;
-  generated_at: string;
-  model_version: string;
-  fingerprint: string;
-  pulse: string[] | null;
-  observations: TasteObservation[] | null;
-  film_profile: TasteIdentity;
-  music_profile: TasteIdentity;
-  blind_spots: string[];
-  film_log_count: number;
-  music_log_count: number;
-}
-
 export interface MusicRecommendation {
   artist: string;
   title: string;
