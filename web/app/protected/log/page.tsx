@@ -224,10 +224,14 @@ function LogWatchForm() {
     }
   };
 
+  // In edit mode the loaded entry is fixed; a boolean keeps the effect from re-running per selection in create mode.
+  const skipSearch = isEditMode && !!selectedMovie;
+
   useEffect(() => {
-    if (isEditMode && selectedMovie) return;
+    if (skipSearch) return;
     const q = title.trim();
     if (!q) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears the results and selection when the title is emptied
       setResults([]);
       setSelectedMovie(null);
       return;
@@ -265,7 +269,7 @@ function LogWatchForm() {
     }, 350);
 
     return () => clearTimeout(t);
-  }, [title, mediaType]);
+  }, [title, mediaType, skipSearch]);
 
   // Load existing log for edit mode (watch_logs for film, listen_logs for music)
   useEffect(() => {

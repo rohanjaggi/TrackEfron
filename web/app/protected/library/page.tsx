@@ -69,6 +69,7 @@ export default function LibraryPage() {
 
   // When mode changes externally, reset to the new default filter
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the filter and view when the mode changes
     setFilter(mode === "music" ? "music" : "film");
     setViewType("grid");
   }, [mode]);
@@ -114,6 +115,7 @@ export default function LibraryPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; the loading flag is set as the request starts
     fetchLibrary();
   }, []);
 

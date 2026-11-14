@@ -201,6 +201,7 @@ export default function FriendsPage() {
   useEffect(() => {
     const q = escapeIlike(searchQuery).trim();
     if (!q || !currentUserId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears the results when the search box is emptied
       setSearchResults([]);
       return;
     }

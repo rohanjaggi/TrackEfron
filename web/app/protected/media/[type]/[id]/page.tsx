@@ -161,6 +161,7 @@ function MediaDetailContent() {
   // Fetch detail
   useEffect(() => {
     if (!isFilm && !isMusic) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reports an unsupported media type from the route params
       setError("Invalid media type");
       setLoading(false);
       return;

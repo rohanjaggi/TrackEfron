@@ -252,6 +252,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   // Film picks only: skip until the stored mode is known, and in music mode.
   useEffect(() => {
     if (!modeReady || mode !== "film" || recsFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setRecsFetched(true);
 
     async function fetchRecs() {

@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { FilmCandidate, RawFilmPick } from "@/lib/ai/types";
 import { matchFilmPicks } from "./match";
 
@@ -13,6 +13,7 @@ const noLookup = async () => null;
 const limits = { max: 20, maxOlder: 5, olderBefore: 2010 as number | null };
 
 describe("matchFilmPicks", () => {
+  afterEach(() => vi.restoreAllMocks());
   test("keeps a pick whose id is in the candidate list", async () => {
     const r = await matchFilmPicks([pick(1)], [cand(1)], new Set(), noLookup, limits);
     expect(r).toHaveLength(1);
@@ -66,6 +67,7 @@ describe("matchFilmPicks", () => {
     expect(r).toHaveLength(3);
   });
   test("a throwing lookup counts as no match for that pick only", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const lookup = async (_t: "movie" | "tv", title: string) => {
       if (title === "Boom") throw new Error("tmdb down");
       return cand(7, 2020);
@@ -83,6 +85,5 @@ describe("matchFilmPicks", () => {
     const r = await matchFilmPicks([pick(null), pick(null), pick(null)], [], new Set(), boom, limits);
     expect(r).toEqual([]);
     expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
   });
 });

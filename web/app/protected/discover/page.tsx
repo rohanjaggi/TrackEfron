@@ -429,6 +429,7 @@ export default function DiscoverPage() {
   // ─── Fetch the music queue (lazy — only when mode is music) ───
   useEffect(() => {
     if (mode !== "music" || musicFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setMusicFetched(true);
 
     async function fetchQueuedIds() {
@@ -452,6 +453,7 @@ export default function DiscoverPage() {
   // ─── Personalised music rows (lazy — top artists from listen_logs) ───
   useEffect(() => {
     if (mode !== "music" || personalMusicFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setPersonalMusicFetched(true);
     setPersonalMusicLoading(true);
 
@@ -504,6 +506,7 @@ export default function DiscoverPage() {
   // ─── Fetch Spotify OAuth personalised data (lazy — top tracks) ───
   useEffect(() => {
     if (mode !== "music" || spotifyOAuthFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setSpotifyOAuthFetched(true);
     setSpotifyOAuthLoading(true);
 
@@ -585,6 +588,7 @@ export default function DiscoverPage() {
   // Music: lazy, only when mode is music.
   useEffect(() => {
     if (mode !== "music" || aiMusicFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setAiMusicFetched(true);
     fetchAiMusicRecs();
   }, [mode, aiMusicFetched, fetchAiMusicRecs]);
@@ -592,6 +596,7 @@ export default function DiscoverPage() {
   // Film: lazy, only on the For You tab in film mode, and not before the stored mode is known.
   useEffect(() => {
     if (!modeReady || mode !== "film" || activeTab !== "for-you" || aiFilmFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setAiFilmFetched(true);
     fetchAiFilmRecs();
   }, [mode, modeReady, activeTab, aiFilmFetched, fetchAiFilmRecs]);
@@ -599,6 +604,7 @@ export default function DiscoverPage() {
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
     if (activeTab !== "browse" || browseFetched) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch; the fetched flag stops it running twice
     setBrowseFetched(true);
 
     async function fetchBrowse() {
@@ -784,6 +790,7 @@ export default function DiscoverPage() {
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears the results when the search box is emptied
       setSearchResults([]);
       setMusicSearchResults([]);
       setShowDropdown(false);

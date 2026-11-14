@@ -56,12 +56,14 @@ type TmdbDetail = {
   posterUrl: string | null;
 };
 
+const DEFAULT_COLOURS = {
+  primary: "#8B7355",
+  accent: "#A0845C",
+  secondary: "#6B5B4A",
+};
+
 function useThemeColours() {
-  const [colours, setColours] = useState({
-    primary: "#8B7355",
-    accent: "#A0845C",
-    secondary: "#6B5B4A",
-  });
+  const [colours, setColours] = useState(DEFAULT_COLOURS);
 
   useEffect(() => {
     const style = getComputedStyle(document.documentElement);
@@ -69,10 +71,11 @@ function useThemeColours() {
       const val = style.getPropertyValue(v).trim();
       return val ? `hsl(${val})` : "";
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads CSS variables from the DOM, which only exists after mount
     setColours({
-      primary: resolve("--primary") || colours.primary,
-      accent: resolve("--accent") || colours.accent,
-      secondary: resolve("--secondary") || colours.secondary,
+      primary: resolve("--primary") || DEFAULT_COLOURS.primary,
+      accent: resolve("--accent") || DEFAULT_COLOURS.accent,
+      secondary: resolve("--secondary") || DEFAULT_COLOURS.secondary,
     });
   }, []);
 
@@ -235,6 +238,7 @@ export default function AnalyticsPage() {
   }, [fetchDetails]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; the loading flag is set as the request starts
     fetchData();
   }, [fetchData]);
 

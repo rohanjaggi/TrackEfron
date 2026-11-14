@@ -5,6 +5,7 @@ import {
   getPoster,
   getRecommendations,
   getTvDetails,
+  type TmdbResult,
 } from "@/lib/tmdb/tmdb";
 import type { WatchLogRow } from "./select-logs";
 
@@ -22,8 +23,7 @@ const GENRE_NAMES: Record<number, string> = {
   10768: "War & Politics",
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function toCandidate(r: any, type: "movie" | "tv"): FilmCandidate | null {
+export function toCandidate(r: TmdbResult, type: "movie" | "tv"): FilmCandidate | null {
   const title = type === "movie" ? r.title : r.name;
   if (r.id == null || !title) return null;
   const date: string | undefined = type === "movie" ? r.release_date : r.first_air_date;
@@ -140,8 +140,7 @@ export async function gatherFilmCandidates(
       ])
     : [[], []];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const convert = (list: any[], type: "movie" | "tv") =>
+  const convert = (list: TmdbResult[], type: "movie" | "tv") =>
     list.map((r) => toCandidate(r, type)).filter((c): c is FilmCandidate => c !== null);
 
   return mergeCandidates(

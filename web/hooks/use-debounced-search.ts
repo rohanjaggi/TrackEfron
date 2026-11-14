@@ -31,16 +31,17 @@ export function useDebouncedSearch<T>(
   const [error, setError] = useState<unknown>(null);
 
   const searchRef = useRef(search);
-  searchRef.current = search;
-  const beginRef = useRef<ReturnType<typeof latestOnly> | null>(null);
-  if (!beginRef.current) beginRef.current = latestOnly();
+  useEffect(() => {
+    searchRef.current = search;
+  });
+  const [begin] = useState(latestOnly);
 
   const trimmed = query.trim();
 
   useEffect(() => {
-    const begin = beginRef.current!;
     const isCurrent = begin();
     if (!trimmed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears the results when the query is emptied
       setResults([]);
       setLoading(false);
       setError(null);
@@ -65,7 +66,7 @@ export function useDebouncedSearch<T>(
       clearTimeout(t);
       begin();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `deps` is the caller-supplied list that re-runs the search
   }, [trimmed, delayMs, ...deps]);
 
   return { query, setQuery, results, loading, error };

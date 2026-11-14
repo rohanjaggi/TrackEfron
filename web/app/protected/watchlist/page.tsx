@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,7 @@ function WatchlistPageContent() {
 
   // When mode changes externally, reset to mode-appropriate default
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the filter and view when the mode changes
     setFilter(mode === "music" ? "music" : "film");
     setViewType("grid");
   }, [mode]);
@@ -120,6 +121,7 @@ function WatchlistPageContent() {
     return Array.isArray(raw) ? raw : [];
   }, [mode]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- opens the dropdown when search results arrive
     setShowAddDropdown(addResults.length > 0);
   }, [addResults]);
   const [addingId, setAddingId] = useState<string | number | null>(null);
@@ -142,9 +144,29 @@ function WatchlistPageContent() {
     fetchMusicQueue();
   }, []);
 
-  useEffect(() => {
-    fetchLists();
+  const fetchLists = useCallback(async () => {
+    try {
+      setListsLoading(true);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("lists")
+        .select("*, list_items(count)")
+        .eq("list_type", mode)
+        .order("updated_at", { ascending: false });
+
+      if (error) throw error;
+      setLists((data as UserList[]) || []);
+    } catch {
+      // silently fail
+    } finally {
+      setListsLoading(false);
+    }
   }, [mode]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount and when the mode changes; the loading flag is set as the request starts
+    fetchLists();
+  }, [fetchLists]);
 
   async function fetchMusicQueue() {
     try {
@@ -179,24 +201,6 @@ function WatchlistPageContent() {
     }
   }
 
-  async function fetchLists() {
-    try {
-      setListsLoading(true);
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("lists")
-        .select("*, list_items(count)")
-        .eq("list_type", mode)
-        .order("updated_at", { ascending: false });
-
-      if (error) throw error;
-      setLists((data as UserList[]) || []);
-    } catch {
-      // silently fail
-    } finally {
-      setListsLoading(false);
-    }
-  }
 
 
   // Close dropdown on outside click

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -69,11 +69,7 @@ function UserProfileContent() {
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProfile();
-  }, [targetUsername]);
-
-  async function fetchProfile() {
+  const fetchProfile = useCallback(async () => {
     try {
       setLoading(true);
       const supabase = createClient();
@@ -132,7 +128,12 @@ function UserProfileContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [targetUsername, router]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount and when the username changes; the loading flag is set as the request starts
+    fetchProfile();
+  }, [fetchProfile]);
 
   // Fetch friend data when relationship is "friends"
   useEffect(() => {

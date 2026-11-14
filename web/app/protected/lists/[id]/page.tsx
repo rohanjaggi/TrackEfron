@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,15 +107,12 @@ function ListDetailContent() {
     return Array.isArray(data) ? data : [];
   }, [isMusic]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- opens the dropdown when search results arrive
     setShowAddDropdown(addResults.length > 0);
   }, [addResults]);
   const [addingId, setAddingId] = useState<number | string | null>(null);
 
-  useEffect(() => {
-    fetchListData();
-  }, [listId]);
-
-  async function fetchListData() {
+  const fetchListData = useCallback(async () => {
     try {
       setLoading(true);
       const supabase = createClient();
@@ -140,8 +137,12 @@ function ListDetailContent() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [listId, router]);
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount and when the list id changes; the loading flag is set as the request starts
+    fetchListData();
+  }, [fetchListData]);
 
   // Close dropdown on outside click
   useClickOutside(searchRef, () => setShowAddDropdown(false));
