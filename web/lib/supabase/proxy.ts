@@ -47,12 +47,24 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
+  const pathname = request.nextUrl.pathname;
+
   if (
-    request.nextUrl.pathname !== "/" &&
+    pathname !== "/" &&
     !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
+    !pathname.startsWith("/auth")
   ) {
+    // API callers get a JSON 401 instead of a redirect to an HTML page. The Spotify
+    // connect and callback routes are browser navigations that already redirect a
+    // signed-out user to the login page, so they keep the redirect below.
+    if (
+      pathname.startsWith("/api") &&
+      !pathname.startsWith("/api/spotify/connect") &&
+      !pathname.startsWith("/api/spotify/callback")
+    ) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
