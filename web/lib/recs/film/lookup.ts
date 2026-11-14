@@ -1,16 +1,9 @@
 import type { FilmCandidate } from "@/lib/ai/types";
-import { normalise } from "../normalise";
+import { overlaps } from "../normalise";
 import { toCandidate } from "./candidates";
 import type { Lookup } from "./match";
 
 type Search = (type: "movie" | "tv", title: string, year: number | null) => Promise<unknown[]>;
-
-function overlaps(a: string, b: string): boolean {
-  const x = normalise(a);
-  const y = normalise(b);
-  if (!x || !y) return false;
-  return x.includes(y) || y.includes(x);
-}
 
 /**
  * Adapts a raw TMDB title search to the film matcher's lookup. A result is

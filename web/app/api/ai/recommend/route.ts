@@ -6,6 +6,7 @@ import type {
   MusicRecommendation,
   MusicRecsResponse,
   RawFilmPick,
+  SpotifyTops,
   RecsResponse,
   RightNow,
 } from "@/lib/ai/types";
@@ -21,6 +22,11 @@ import { fetchSpotifyTops } from "@/lib/recs/music/tops";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { searchSpotify } from "@/lib/spotify/spotify";
 import { getMovieDetails, getTvDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
+
+// The film cache keeps its existing mode value because the repo has no schema file to confirm a new one is allowed.
+const FILM_MODE = "film_explanations";
+const MUSIC_MODE = "music";
+type CacheMode = typeof FILM_MODE | typeof MUSIC_MODE;
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 type CacheRow = { recommendations: unknown; expires_at: string; log_count_at_generation: number };
@@ -48,11 +54,12 @@ export async function GET(request: Request) {
     if (e instanceof AIError) {
       return NextResponse.json({ error: e.message, code: e.code }, { status: e.code === "NO_API_KEY" ? 402 : 500 });
     }
+    console.error("recommend route failed:", e);
     return NextResponse.json({ error: "Failed to generate recommendations", code: "PROVIDER_ERROR" }, { status: 500 });
   }
 }
 
-async function readCache(supabase: Supabase, userId: string, mode: "film" | "music"): Promise<CacheRow | null> {
+async function readCache(supabase: Supabase, userId: string, mode: CacheMode): Promise<CacheRow | null> {
   const { data } = await supabase
     .from("ai_recommendation_cache")
     .select("recommendations, expires_at, log_count_at_generation")
@@ -65,12 +72,12 @@ async function readCache(supabase: Supabase, userId: string, mode: "film" | "mus
 async function writeCache(
   supabase: Supabase,
   userId: string,
-  mode: "film" | "music",
+  mode: CacheMode,
   recommendations: unknown,
   logCount: number,
 ) {
   const now = new Date();
-  await supabase.from("ai_recommendation_cache").upsert(
+  const { error } = await supabase.from("ai_recommendation_cache").upsert(
     {
       user_id: userId,
       mode,
@@ -81,11 +88,12 @@ async function writeCache(
     },
     { onConflict: "user_id,mode" },
   );
+  if (error) console.error("ai_recommendation_cache write failed:", error.message);
 }
 
 async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): Promise<RecsResponse<FilmRecommendation>> {
   const [cache, logsRes, watchlistRes, dnaRes] = await Promise.all([
-    readCache(supabase, userId, "film"),
+    readCache(supabase, userId, FILM_MODE),
     supabase
       .from("watch_logs")
       .select(
@@ -98,8 +106,10 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
   ]);
   const logs = (logsRes.data ?? []) as WatchLogRow[];
 
-  if (!refresh && Array.isArray(cache?.recommendations) && isCacheValid(cache, logs.length, new Date())) {
-    return { status: "ok", items: cache!.recommendations as FilmRecommendation[] };
+  // Old rows stored a bare array; only the { items } shape is valid.
+  const cachedFilm = cache?.recommendations as { items?: FilmRecommendation[] } | undefined;
+  if (!refresh && cachedFilm && Array.isArray(cachedFilm.items) && isCacheValid(cache, logs.length, new Date())) {
+    return { status: "ok", items: cachedFilm.items };
   }
 
   const result = await buildFilmRecs({
@@ -112,13 +122,13 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
     ai: makeAI<{ picks: RawFilmPick[] }>({ supabase, userId, tool: filmRecommendTool }),
   });
 
-  if (result.status === "ok") await writeCache(supabase, userId, "film", result.items, logs.length);
+  if (result.status === "ok") await writeCache(supabase, userId, FILM_MODE, { items: result.items }, logs.length);
   return result;
 }
 
 async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): Promise<MusicRecsResponse> {
   const [cache, logsRes, queueRes, dnaRes] = await Promise.all([
-    readCache(supabase, userId, "music"),
+    readCache(supabase, userId, MUSIC_MODE),
     supabase
       .from("listen_logs")
       .select(
@@ -137,7 +147,7 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
     return { status: "ok", items: cached.items, right_now: cached.right_now ?? null };
   }
 
-  let tops = null;
+  let tops: SpotifyTops | null = null;
   try {
     const token = await getValidToken(supabase, userId);
     if (token) tops = await fetchSpotifyTops(token);
@@ -155,7 +165,7 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
   });
 
   if (result.status === "ok") {
-    await writeCache(supabase, userId, "music", { items: result.items, right_now: result.right_now }, logs.length);
+    await writeCache(supabase, userId, MUSIC_MODE, { items: result.items, right_now: result.right_now }, logs.length);
   }
   return result;
 }

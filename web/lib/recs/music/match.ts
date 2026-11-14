@@ -1,13 +1,6 @@
 import type { MusicRecommendation } from "@/lib/ai/types";
-import { normalise } from "../normalise";
+import { overlaps } from "../normalise";
 import type { searchSpotify } from "@/lib/spotify/spotify";
-
-function overlaps(a: string, b: string): boolean {
-  const x = normalise(a);
-  const y = normalise(b);
-  if (!x || !y) return false;
-  return x.includes(y) || y.includes(x);
-}
 
 /**
  * Keeps only picks that Spotify confirms: a search result whose title and artist
