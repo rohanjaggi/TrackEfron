@@ -347,13 +347,13 @@ export default function Home() {
                   <Sparkles className="w-7 h-7 mb-5" style={{ color: "var(--film)" }} />
                   <h3 className="font-display text-xl font-bold mb-2">Smart Recommendations</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                    ML-generated film picks verified and enriched by AI. Music recs built from your
+                    AI-generated film picks matched against TMDB. Music recs built from your
                     listening patterns. Every suggestion explains why it fits your taste.
                   </p>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <div className="w-1.5 h-1.5" style={{ background: "var(--film)" }} />
-                      ML + AI Film Picks
+                      AI Film Picks
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <div className="w-1.5 h-1.5" style={{ background: "var(--music)" }} />
