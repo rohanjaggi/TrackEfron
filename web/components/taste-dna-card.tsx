@@ -1,110 +1,87 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Sparkles,
-  RefreshCw,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
-  Film,
-  Headphones,
-  Link2,
-  Eye,
-  Zap,
-  Key,
-} from "lucide-react";
 import Link from "next/link";
+import { Sparkles, RefreshCw, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { TasteDNA, TasteObservation } from "@/lib/ai/types";
 
-interface TasteDNAData {
-  fingerprint: string;
-  film_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  music_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  cross_domain: {
-    thread: string;
-    surprising_connection: string;
-  };
-  blind_spots: string[];
-  guilty_pleasures: string[];
-  generated_at?: string;
-  film_log_count?: number;
-  music_log_count?: number;
-}
+type TasteCardData = Pick<TasteDNA, "fingerprint" | "pulse" | "observations"> & {
+  generated_at: string;
+  logs_since: number;
+  needs_regenerate: boolean;
+};
 
-function Section({
-  icon: Icon,
-  title,
-  children,
-  defaultOpen = false,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
+type CardError =
+  | { kind: "no_key" }
+  | { kind: "not_enough" }
+  | { kind: "message"; message: string };
 
-  return (
-    <div className="border-2 border-border">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <Icon className="w-4 h-4 text-primary" />
-          <span className="font-semibold text-sm">{title}</span>
-        </div>
-        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-      </button>
-      {open && <div className="px-4 pb-4 space-y-3 text-sm text-muted-foreground">{children}</div>}
-    </div>
-  );
-}
+function Observation({ observation }: { observation: TasteObservation }) {
+  const { text, cited_title } = observation;
+  const at = cited_title ? text.toLowerCase().indexOf(cited_title.toLowerCase()) : -1;
 
-function IdentitySection({ data }: { data: { core: string; aspect_lens: string; patterns: string; rating_style: string } }) {
+  if (!cited_title) return <>{text}</>;
+  if (at === -1) {
+    return (
+      <>
+        {text} <span className="font-semibold text-foreground">{cited_title}</span>
+      </>
+    );
+  }
   return (
     <>
-      <p>{data.core}</p>
-      {data.aspect_lens && <p>{data.aspect_lens}</p>}
-      {data.patterns && <p>{data.patterns}</p>}
-      {data.rating_style && <p className="italic">{data.rating_style}</p>}
+      {text.slice(0, at)}
+      <span className="font-semibold text-foreground">{text.slice(at, at + cited_title.length)}</span>
+      {text.slice(at + cited_title.length)}
     </>
   );
 }
 
+function ErrorLine({ error }: { error: CardError }) {
+  let content: React.ReactNode;
+  if (error.kind === "no_key") {
+    content = (
+      <>
+        Add an Anthropic or OpenAI key in{" "}
+        <Link href="/protected/profile" className="underline text-primary">profile settings</Link>{" "}
+        to generate your taste card.
+      </>
+    );
+  } else if (error.kind === "not_enough") {
+    content = "Log a few films or albums first, then generate your taste card.";
+  } else {
+    content = error.message;
+  }
+  return (
+    <p className="mt-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
+      {content}
+    </p>
+  );
+}
+
 export function TasteDNACard() {
-  const [dna, setDna] = useState<TasteDNAData | null>(null);
+  const [dna, setDna] = useState<TasteCardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [noApiKey, setNoApiKey] = useState(false);
+  const [error, setError] = useState<CardError | null>(null);
 
   useEffect(() => {
-    async function fetchDNA() {
+    async function fetchDna() {
       try {
         const res = await fetch("/api/ai/taste-dna");
-        if (res.ok) {
-          const data = await res.json();
-          setDna(data);
+        if (!res.ok) {
+          setError({ kind: "message", message: "Couldn't load your taste card." });
+          return;
         }
+        setDna(await res.json());
       } catch {
-        // no DNA yet — that's fine
+        setError({ kind: "message", message: "Couldn't load your taste card." });
       } finally {
         setLoading(false);
       }
     }
-    fetchDNA();
+    fetchDna();
   }, []);
 
   async function handleGenerate() {
@@ -112,168 +89,88 @@ export function TasteDNACard() {
     setError(null);
     try {
       const res = await fetch("/api/ai/taste-dna", { method: "POST" });
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        const data = await res.json();
-        if (data.code === "NO_API_KEY") {
-          setNoApiKey(true);
-          return;
+        if (res.status === 402 || body?.code === "NO_API_KEY") {
+          setError({ kind: "no_key" });
+        } else if (res.status === 400) {
+          setError({ kind: "not_enough" });
+        } else {
+          setError({ kind: "message", message: body?.error || "Something went wrong. Try again." });
         }
-        setError(data.error || "Failed to generate Taste DNA");
         return;
       }
-      const data = await res.json();
-      setDna({ ...data, generated_at: new Date().toISOString() });
+      setDna({
+        fingerprint: body.fingerprint,
+        pulse: body.pulse,
+        observations: body.observations,
+        generated_at: new Date().toISOString(),
+        logs_since: 0,
+        needs_regenerate: false,
+      });
     } catch {
-      setError("Something went wrong. Check your API key.");
+      setError({ kind: "message", message: "Something went wrong. Try again." });
     } finally {
       setGenerating(false);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="border-2 border-border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
-        </div>
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!dna) {
-    return (
-      <div className="border-2 border-border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Generate an AI-powered analysis of your taste in film and music.
-          Discover patterns you didn't know you had.
-        </p>
-        {noApiKey && (
-          <div className="mb-4 p-3 border-2 border-primary/30 bg-primary/5 text-sm flex items-start gap-3">
-            <Key className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">API key required</p>
-              <p className="text-muted-foreground">
-                Add an Anthropic or OpenAI key in{" "}
-                <Link href="/protected/profile" className="underline text-primary">profile settings</Link>
-                {" "}to enable AI features.
-              </p>
-            </div>
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
-            {error}
-          </div>
-        )}
-        <Button onClick={handleGenerate} disabled={generating || noApiKey} className="border-2">
-          {generating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Analyzing your taste...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Generate Taste DNA
-            </>
-          )}
-        </Button>
-      </div>
-    );
-  }
-
   return (
-    <div className="border-2 border-border p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
+    <div className="border-2 border-border bg-card/50 p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <h2 className="font-display text-base font-bold">Your taste</h2>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="text-muted-foreground"
-        >
-          {generating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+        {!loading && (
+          <Button variant="ghost" size="sm" onClick={handleGenerate} disabled={generating} className="text-muted-foreground">
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : dna ? <RefreshCw className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+            <span className="ml-2">{generating ? "Generating..." : dna ? "Regenerate" : "Generate"}</span>
+          </Button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="mt-4 space-y-2 animate-pulse">
+          <div className="h-5 w-2/3 bg-muted/50" />
+          <div className="h-4 w-1/3 bg-muted/50" />
+        </div>
+      ) : dna ? (
+        <div className="mt-4">
+          <p className="text-lg font-semibold">&ldquo;{dna.fingerprint}&rdquo;</p>
+          {dna.needs_regenerate ? (
+            <p className="text-sm text-muted-foreground mt-2">Regenerate to update</p>
           ) : (
-            <RefreshCw className="w-4 h-4" />
+            <>
+              {dna.pulse.length > 0 && (
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-2">
+                  {dna.pulse.join(" · ")}
+                </p>
+              )}
+              {dna.observations.length > 0 && (
+                <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+                  {dna.observations.map((o, i) => (
+                    <li key={i}><Observation observation={o} /></li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
-          <span className="ml-2">{generating ? "Generating..." : "Regenerate"}</span>
-        </Button>
-      </div>
-
-      {error && (
-        <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
-          {error}
+          {dna.logs_since > 0 && (
+            <p className="text-xs text-muted-foreground mt-3">
+              {dna.logs_since} {dna.logs_since === 1 ? "log" : "logs"} since this was generated
+            </p>
+          )}
         </div>
+      ) : (
+        !error && (
+          <p className="text-sm text-muted-foreground mt-4">
+            A short read on your taste, built from what you&apos;ve logged.
+          </p>
+        )
       )}
 
-      {/* Fingerprint */}
-      <div className="mb-6 p-4 bg-primary/5 border-2 border-primary/20">
-        <p className="text-lg font-semibold text-center italic">
-          &ldquo;{dna.fingerprint}&rdquo;
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        {dna.film_identity?.core && (
-          <Section icon={Film} title="Film Identity" defaultOpen>
-            <IdentitySection data={dna.film_identity} />
-          </Section>
-        )}
-
-        {dna.music_identity?.core && (
-          <Section icon={Headphones} title="Music Identity">
-            <IdentitySection data={dna.music_identity} />
-          </Section>
-        )}
-
-        {dna.cross_domain?.thread && (
-          <Section icon={Link2} title="The Thread Between">
-            <p>{dna.cross_domain.thread}</p>
-            {dna.cross_domain.surprising_connection && (
-              <p className="italic">{dna.cross_domain.surprising_connection}</p>
-            )}
-          </Section>
-        )}
-
-        {dna.blind_spots && dna.blind_spots.length > 0 && (
-          <Section icon={Eye} title="Blind Spots">
-            <ul className="list-disc list-inside space-y-1">
-              {dna.blind_spots.map((spot, i) => (
-                <li key={i}>{spot}</li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        {dna.guilty_pleasures && dna.guilty_pleasures.length > 0 && (
-          <Section icon={Zap} title="Guilty Pleasures">
-            <ul className="list-disc list-inside space-y-1">
-              {dna.guilty_pleasures.map((gp, i) => (
-                <li key={i}>{gp}</li>
-              ))}
-            </ul>
-          </Section>
-        )}
-      </div>
-
-      {dna.generated_at && (
-        <p className="text-xs text-muted-foreground mt-4 text-right">
-          Generated {new Date(dna.generated_at).toLocaleDateString()}
-        </p>
-      )}
+      {error && <ErrorLine error={error} />}
     </div>
   );
 }

@@ -25,7 +25,6 @@ import {
   Key,
   Trash2
 } from "lucide-react";
-import { TasteDNACard } from "@/components/taste-dna-card";
 
 interface ProfileProps {
   profile: {
@@ -422,9 +421,6 @@ export function ProfileClient({ profile }: ProfileProps) {
           </div>
         </div>
       )}
-
-      {/* Taste DNA */}
-      <TasteDNACard />
 
       {/* Profile Details */}
       <div className="border-2 border-border p-6">
