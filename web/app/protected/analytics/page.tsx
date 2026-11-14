@@ -61,7 +61,6 @@ function useThemeColours() {
     primary: "#8B7355",
     accent: "#A0845C",
     secondary: "#6B5B4A",
-    muted: "#78716c",
   });
 
   useEffect(() => {
@@ -74,7 +73,6 @@ function useThemeColours() {
       primary: resolve("--primary") || colours.primary,
       accent: resolve("--accent") || colours.accent,
       secondary: resolve("--secondary") || colours.secondary,
-      muted: resolve("--muted-foreground") || colours.muted,
     });
   }, []);
 

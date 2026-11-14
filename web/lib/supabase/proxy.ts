@@ -58,9 +58,9 @@ export async function updateSession(request: NextRequest) {
     // connect and callback routes are browser navigations that already redirect a
     // signed-out user to the login page, so they keep the redirect below.
     if (
-      pathname.startsWith("/api") &&
-      !pathname.startsWith("/api/spotify/connect") &&
-      !pathname.startsWith("/api/spotify/callback")
+      (pathname === "/api" || pathname.startsWith("/api/")) &&
+      pathname !== "/api/spotify/connect" &&
+      pathname !== "/api/spotify/callback"
     ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

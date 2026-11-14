@@ -19,6 +19,11 @@ describe("escapeIlike", () => {
     expect(escapeIlike("a\\b")).toBe("a\\\\b");
   });
 
+  test("strips asterisks, which PostgREST treats as a % wildcard", () => {
+    expect(escapeIlike("a*b")).toBe("ab");
+    expect(escapeIlike("*")).toBe("");
+  });
+
   test("leaves plain text unchanged", () => {
     expect(escapeIlike("Zac Efron")).toBe("Zac Efron");
   });

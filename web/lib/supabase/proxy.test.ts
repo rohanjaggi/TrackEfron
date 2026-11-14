@@ -35,6 +35,13 @@ describe("updateSession, signed out", () => {
     }
   });
 
+  test("only exact /api paths get the 401, and only the exact Spotify paths are exempt", async () => {
+    const lookalike = await updateSession(request("/apifoo"));
+    expect(lookalike.status).toBe(307);
+    const connectx = await updateSession(request("/api/spotify/connectx"));
+    expect(connectx.status).toBe(401);
+  });
+
   test("a page path still redirects to login", async () => {
     const res = await updateSession(request("/protected/discover"));
     expect(res.status).toBe(307);

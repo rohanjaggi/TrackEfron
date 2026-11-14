@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { FilmCandidate, RawFilmPick } from "@/lib/ai/types";
 import { matchFilmPicks } from "./match";
 
@@ -76,5 +76,13 @@ describe("matchFilmPicks", () => {
   });
   test("empty input returns []", async () => {
     expect(await matchFilmPicks([], [], new Set(), noLookup, limits)).toEqual([]);
+  });
+  test("warns once per batch when lookups throw", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const boom = async () => { throw new Error("tmdb down"); };
+    const r = await matchFilmPicks([pick(null), pick(null), pick(null)], [], new Set(), boom, limits);
+    expect(r).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

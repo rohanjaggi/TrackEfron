@@ -199,7 +199,7 @@ export default function FriendsPage() {
 
   // Debounced search
   useEffect(() => {
-    const q = escapeIlike(searchQuery.trim());
+    const q = escapeIlike(searchQuery).trim();
     if (!q || !currentUserId) {
       setSearchResults([]);
       return;

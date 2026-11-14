@@ -60,12 +60,16 @@ export async function GET(request: Request) {
 }
 
 async function readCache(supabase: Supabase, userId: string, mode: CacheMode): Promise<CacheRow | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("ai_recommendation_cache")
     .select("recommendations, expires_at, log_count_at_generation")
     .eq("user_id", userId)
     .eq("mode", mode)
     .maybeSingle();
+  if (error) {
+    console.error("recommendation cache read failed:", error.message);
+    return null;
+  }
   return (data as CacheRow | null) ?? null;
 }
 
@@ -151,7 +155,8 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
   try {
     const token = await getValidToken(supabase, userId);
     if (token) tops = await fetchSpotifyTops(token);
-  } catch {
+  } catch (e) {
+    console.error("Spotify tops fetch failed, continuing without it:", e);
     // Spotify listening is optional context; carry on without it.
   }
 

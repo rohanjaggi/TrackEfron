@@ -43,7 +43,11 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
   const ready = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   const setMode = useCallback((m: AppMode) => {
-    localStorage.setItem("trackefron-mode", m);
+    try {
+      localStorage.setItem("trackefron-mode", m);
+    } catch {
+      // Storage can be blocked; the mode still changes for this session.
+    }
     document.documentElement.setAttribute("data-mode", m);
     listeners.forEach((listener) => listener());
   }, []);

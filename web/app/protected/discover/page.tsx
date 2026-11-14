@@ -87,7 +87,9 @@ async function loadRecs<T>(url: string): Promise<RecsLoad<T>> {
     const res = await fetch(url);
     if (res.status === 402) return { kind: "no_key" };
     if (!res.ok) return { kind: "error" };
-    return { kind: "ok", data: (await res.json()) as T };
+    const body = await res.json();
+    if (!Array.isArray(body?.items)) return { kind: "error" };
+    return { kind: "ok", data: body as T };
   } catch {
     return { kind: "error" };
   }
@@ -534,8 +536,10 @@ export default function DiscoverPage() {
     const result = await loadRecs<MusicRecsResponse>(`/api/ai/recommend?mode=music${refresh ? "&refresh=true" : ""}`);
     if (result.kind === "no_key") {
       setAiNotConfigured(true);
+      setRightNow(null);
     } else if (result.kind === "error") {
       setAiMusicEmpty("error");
+      setRightNow(null);
     } else {
       const { status, items, right_now } = result.data;
       setRightNow(right_now ?? null);
@@ -982,6 +986,7 @@ export default function DiscoverPage() {
                     onClick={() => {
                       setShowDropdown(false);
                       setSearchQuery("");
+                      setIsVibeQuery(false);
                       if (result.tmdb_id) {
                         router.push(`/protected/media/${result.type === "tv" ? "tv" : "movie"}/${result.tmdb_id}`);
                       } else if (result.spotify_id) {
@@ -1132,7 +1137,7 @@ export default function DiscoverPage() {
                     </ExplanationTooltip>
                   ))}
                 </div>
-              ) : !aiMusicLoading ? (
+              ) : (
                 <div className="border-2 border-dashed border-border p-8 text-center">
                   <Sparkles className="w-6 h-6 text-muted-foreground/40 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">
@@ -1148,7 +1153,7 @@ export default function DiscoverPage() {
                     </Button>
                   )}
                 </div>
-              ) : null}
+              )}
           </div>
 
           {/* Spotify OAuth — top tracks */}
@@ -1163,19 +1168,15 @@ export default function DiscoverPage() {
               queuedIds={queuedIds}
             />
           )}
-          {spotifyOAuthConnected === true && (
-            <>
-              {spotifyTopTracks.length > 0 && (
-                <MusicRow
-                  title="Your Top Tracks"
-                  subtitle="Your most-played tracks on Spotify"
-                  icon={TrendingUp}
-                  items={spotifyTopTracks}
-                  onQueue={handleAddToQueue}
-                  queuedIds={queuedIds}
-                />
-              )}
-            </>
+          {spotifyOAuthConnected === true && spotifyTopTracks.length > 0 && (
+            <MusicRow
+              title="Your Top Tracks"
+              subtitle="Your most-played tracks on Spotify"
+              icon={TrendingUp}
+              items={spotifyTopTracks}
+              onQueue={handleAddToQueue}
+              queuedIds={queuedIds}
+            />
           )}
           {spotifyOAuthConnected === false && (
             <div
@@ -1206,30 +1207,28 @@ export default function DiscoverPage() {
           )}
 
           {/* Personalised rows — based on top artists in listen_logs */}
-          <>
-              {personalMusicLoading
-                ? (
-                  <MusicRow
-                    title="From Your Library"
-                    subtitle="Based on artists you've logged"
-                    icon={Headphones}
-                    items={[]}
-                    loading
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                )
-                : personalMusicRows.map((row) => (
-                  <MusicRow
-                    key={row.title}
-                    title={row.title}
-                    icon={Headphones}
-                    items={row.items}
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))}
-          </>
+          {personalMusicLoading
+            ? (
+              <MusicRow
+                title="From Your Library"
+                subtitle="Based on artists you've logged"
+                icon={Headphones}
+                items={[]}
+                loading
+                onQueue={handleAddToQueue}
+                queuedIds={queuedIds}
+              />
+            )
+            : personalMusicRows.map((row) => (
+              <MusicRow
+                key={row.title}
+                title={row.title}
+                icon={Headphones}
+                items={row.items}
+                onQueue={handleAddToQueue}
+                queuedIds={queuedIds}
+              />
+            ))}
         </div>
       )}
 

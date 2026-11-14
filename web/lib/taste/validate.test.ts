@@ -50,6 +50,17 @@ describe("limitTasteDNA", () => {
     expect(limitTasteDNA({ ...base, pulse: undefined as unknown as string[] })).toBeNull();
   });
 
+  it("drops multi-word pulse entries before taking three", () => {
+    const out = limitTasteDNA({ ...base, pulse: ["dark and moody", "a", "b", "c", "d"] });
+    expect(out?.pulse).toEqual(["a", "b", "c"]);
+    expect(limitTasteDNA({ ...base, pulse: ["two words", "a", "b"] })).toBeNull();
+  });
+
+  it("de-duplicates observations by normalised cited_title", () => {
+    const out = limitTasteDNA({ ...base, observations: [obs("Blonde"), obs("blonde!"), obs("Heat")] });
+    expect(out?.observations.map((o) => o.cited_title)).toEqual(["Blonde", "Heat"]);
+  });
+
   it("tolerates missing observations", () => {
     expect(limitTasteDNA({ ...base, observations: undefined as unknown as [] })?.observations).toEqual([]);
   });

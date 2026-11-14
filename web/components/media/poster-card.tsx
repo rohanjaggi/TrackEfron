@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import { Disc3, Film } from "lucide-react";
 
 export type PosterAspect = "poster" | "square";
@@ -41,13 +43,14 @@ export function PosterCard({
   tag?: ReactNode;
   action?: ReactNode;
 }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const FallbackIcon = aspect === "square" ? Disc3 : Film;
-  const art = imageUrl ? (
+  const art = imageUrl && failedUrl !== imageUrl ? (
     <img
       src={imageUrl}
       alt={title}
       className={`w-full ${POSTER_ASPECT_CLASS[aspect]} object-cover border-2 border-border ${ACCENT[accent].border} transition-colors duration-200`}
-      onError={(e) => { e.currentTarget.style.display = "none"; }}
+      onError={() => setFailedUrl(imageUrl)}
     />
   ) : (
     <div className={`w-full ${POSTER_ASPECT_CLASS[aspect]} bg-muted/20 border-2 border-border flex items-center justify-center`}>

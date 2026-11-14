@@ -1,8 +1,8 @@
 "use client";
 
+import { useMode } from "@/lib/mode-context";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useMode } from "@/lib/mode-context";
 import { Home, Library, Clock, Compass, BarChart3, Clapperboard, Music2 } from "lucide-react";
 
 const NAV_LINKS = [
@@ -19,8 +19,6 @@ export function NavAccentBar() {
 
 export function NavLinks() {
   const pathname = usePathname();
-  const { mode } = useMode();
-
   return (
     <div className="flex items-center gap-0.5">
       {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
@@ -41,7 +39,15 @@ export function NavLinks() {
             ].join(" ")}
           >
             <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="hidden md:inline">{label === "Queue" && mode === "film" ? "Watchlist" : label}</span>
+            <span className="hidden md:inline">{label === "Queue" ? (
+                <>
+                  <span className="film-label">Watchlist</span>
+                  <span className="music-label">Queue</span>
+                </>
+              ) : (
+                label
+              )}
+            </span>
           </Link>
         );
       })}
@@ -50,7 +56,7 @@ export function NavLinks() {
 }
 
 export function NavModeToggle() {
-  const { mode, setMode } = useMode();
+  const { setMode } = useMode();
 
   return (
     <div
@@ -63,11 +69,8 @@ export function NavModeToggle() {
         className={[
           "flex items-center gap-[5px] px-2.5 py-[5px]",
           "text-[10px] font-medium tracking-[0.08em] uppercase transition-all duration-200",
-          mode === "film"
-            ? "text-[var(--film)]"
-            : "text-[var(--text-muted)] hover:text-[var(--text)]",
+          "mode-toggle-film text-[var(--text-muted)] hover:text-[var(--text)]",
         ].join(" ")}
-        style={mode === "film" ? { background: "var(--film-dim)" } : {}}
       >
         <Clapperboard className="w-3.5 h-3.5" />
         <span className="hidden sm:inline">Film</span>
@@ -79,11 +82,8 @@ export function NavModeToggle() {
         className={[
           "flex items-center gap-[5px] px-2.5 py-[5px]",
           "text-[10px] font-medium tracking-[0.08em] uppercase transition-all duration-200",
-          mode === "music"
-            ? "text-[var(--music)]"
-            : "text-[var(--text-muted)] hover:text-[var(--text)]",
+          "mode-toggle-music text-[var(--text-muted)] hover:text-[var(--text)]",
         ].join(" ")}
-        style={mode === "music" ? { background: "var(--music-dim)" } : {}}
       >
         <Music2 className="w-3.5 h-3.5" />
         <span className="hidden sm:inline">Music</span>

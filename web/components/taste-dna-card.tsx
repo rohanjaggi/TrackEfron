@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import type { TasteDNA, TasteObservation } from "@/lib/ai/types";
 
 type TasteCardData = Pick<TasteDNA, "fingerprint" | "pulse" | "observations"> & {
-  generated_at: string;
   logs_since: number;
   needs_regenerate: boolean;
 };
@@ -104,7 +103,6 @@ export function TasteDNACard() {
         fingerprint: body.fingerprint,
         pulse: body.pulse,
         observations: body.observations,
-        generated_at: new Date().toISOString(),
         logs_since: 0,
         needs_regenerate: false,
       });

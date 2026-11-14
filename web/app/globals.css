@@ -112,6 +112,22 @@ body::before {
   background: var(--mode-accent-dim) !important;
 }
 
+/* ─── Mode toggle and mode-dependent labels ──────────────────────
+   Driven by the data-mode attribute so a hard reload in music mode is right
+   before hydration. The attribute is set before first paint. */
+:root:not([data-mode="music"]) .mode-toggle-film {
+  color: var(--film);
+  background: var(--film-dim);
+}
+[data-mode="music"] .mode-toggle-music {
+  color: var(--music);
+  background: var(--music-dim);
+}
+[data-mode="music"] .film-label,
+:root:not([data-mode="music"]) .music-label {
+  display: none;
+}
+
 /* ─── Activity item ──────────────────────────────────────────── */
 .activity-item {
   border-bottom: 1px solid var(--border-raw);

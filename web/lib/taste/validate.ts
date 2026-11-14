@@ -11,14 +11,22 @@ export function validateObservations(obs: TasteObservation[], loggedTitles: stri
 }
 
 /**
- * Enforces the limits the tool schema can only describe: pulse is trimmed to 3
- * words and observations to 3. Returns null when fewer than 3 pulse words came back.
+ * Enforces the limits the tool schema can only describe: pulse keeps single words only, trimmed to 3,
+ * and observations are de-duplicated by cited title, then trimmed to 3. Returns null when fewer than 3 pulse words came back.
  */
 export function limitTasteDNA(dna: TasteDNA): TasteDNA | null {
   const pulse = (Array.isArray(dna.pulse) ? dna.pulse : [])
     .map((w) => (typeof w === "string" ? w.trim() : ""))
-    .filter(Boolean);
+    .filter((w) => w && !/\s/.test(w));
   if (pulse.length < 3) return null;
-  const observations = Array.isArray(dna.observations) ? dna.observations.slice(0, 3) : [];
+  const seen = new Set<string>();
+  const observations = (Array.isArray(dna.observations) ? dna.observations : [])
+    .filter((o) => {
+      const key = normalise(o.cited_title ?? "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 3);
   return { ...dna, pulse: pulse.slice(0, 3), observations };
 }

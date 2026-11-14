@@ -107,6 +107,11 @@ export async function GET() {
     supabase.from("listen_logs").select("id", { count: "exact", head: true }).eq("user_id", user.id),
   ]);
 
+  if (dnaRes.error) {
+    console.error("taste_dna read failed:", dnaRes.error.message);
+    return NextResponse.json({ error: dnaRes.error.message }, { status: 500 });
+  }
+
   const data = dnaRes.data;
   if (!data) {
     return NextResponse.json(null);

@@ -17,6 +17,7 @@ export async function matchFilmPicks(
   const seen = new Set<string>();
   const out: FilmRecommendation[] = [];
   let older = 0;
+  let lookupFailed = false;
 
   for (const pick of raw) {
     if (out.length >= limits.max) break;
@@ -27,8 +28,12 @@ export async function matchFilmPicks(
       let found: FilmCandidate | null = null;
       try {
         found = await lookup(pick.media_type, pick.title, pick.year);
-      } catch {
-        // a failed lookup means no match for this pick only
+      } catch (e) {
+        // a failed lookup means no match for this pick only; warn once per batch
+        if (!lookupFailed) {
+          lookupFailed = true;
+          console.warn("TMDB lookup failed while matching film picks:", e instanceof Error ? e.message : e);
+        }
       }
       if (found && !(pick.year != null && found.year != null && Math.abs(found.year - pick.year) > 1)) {
         match = found;
