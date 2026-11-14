@@ -31,23 +31,12 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import { TasteDNACard } from "@/components/taste-dna-card";
+import type { WatchLog as SharedWatchLog, ListenLog } from "@/lib/types";
 
-type WatchLog = {
-  rating: number;
-  media_type: "movie" | "tv";
-  watched_date: string | null;
-  created_at: string;
-  tmdb_id: number | null;
-  title: string;
-  times_watched: string | null;
-  poster_url: string | null;
-};
-
-type ListenLog = {
-  media_type: "album" | "track";
-  artist: string | null;
-  rating: number;
-};
+type WatchLog = Pick<
+  SharedWatchLog,
+  "rating" | "watched_date" | "created_at" | "tmdb_id" | "title" | "times_watched" | "poster_url"
+> & { media_type: "movie" | "tv" };
 
 type ControversialPick = {
   title: string;

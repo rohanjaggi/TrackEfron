@@ -30,6 +30,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import { StarDisplay } from "@/components/ui/star-display";
+import type { WatchLog } from "@/lib/types";
 
 type ViewType = "grid" | "list";
 // "film" = movies+tv, "music" = albums+tracks
@@ -46,20 +47,6 @@ const SORT_OPTIONS: { value: SortType; label: string }[] = [
   { value: "date_added_desc", label: "Date Added (Newest)" },
   { value: "date_added_asc", label: "Date Added (Oldest)" },
 ];
-
-type WatchLog = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  rating: number;
-  review: string | null;
-  watched_date: string | null;
-  poster_url: string | null;
-  tmdb_id: number | null;
-  spotify_id?: string | null;
-  created_at: string;
-  artist?: string | null;
-};
 
 function upscalePoster(url: string | null, size = "w342"): string | null {
   if (!url) return null;

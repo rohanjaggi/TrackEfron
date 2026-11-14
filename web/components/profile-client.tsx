@@ -25,6 +25,9 @@ import {
   Key,
   Trash2
 } from "lucide-react";
+import type { WatchLog as SharedWatchLog } from "@/lib/types";
+
+type WatchLog = Pick<SharedWatchLog, "rating" | "review" | "media_type" | "created_at">;
 
 interface ProfileProps {
   profile: {
@@ -38,13 +41,6 @@ interface ProfileProps {
     spotifyConnected: boolean;
   };
 }
-
-type WatchLog = {
-  rating: number;
-  review: string | null;
-  media_type: "movie" | "tv";
-  created_at: string;
-};
 
 function extractDominantColor(file: File): Promise<string> {
   return new Promise((resolve) => {

@@ -20,6 +20,7 @@ import {
   ListMusic,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { WatchLog, WatchlistItem } from "@/lib/types";
 
 type Profile = {
   id: string;
@@ -28,25 +29,6 @@ type Profile = {
   avatar_url: string | null;
   profile_color: string | null;
   created_at: string;
-};
-
-type WatchLog = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv";
-  rating: number;
-  review: string | null;
-  poster_url: string | null;
-  tmdb_id: number | null;
-  created_at: string;
-};
-
-type WatchlistItem = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv";
-  poster_url: string | null;
-  tmdb_id: number;
 };
 
 type UserList = {

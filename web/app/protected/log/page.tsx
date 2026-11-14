@@ -21,22 +21,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { MediaSearchResult } from "@/lib/types";
 
 type MediaType = "movie" | "tv" | "album" | "track";
-
-type TmdbResult = {
-  id: number;
-  spotify_id?: string;
-  artist?: string;
-  album_name?: string;
-  title?: string;
-  name?: string;
-  release_date?: string;
-  first_air_date?: string;
-  poster_path?: string;
-  poster_url?: string | null;
-  overview?: string;
-};
 
 export default function LogWatchPage() {
   return (
@@ -65,9 +52,9 @@ function LogWatchForm() {
   const [watchedDate, setWatchedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<TmdbResult[]>([]);
+  const [results, setResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedMovie, setSelectedMovie] = useState<TmdbResult | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<MediaSearchResult | null>(null);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
   const [watchedOn, setWatchedOn] = useState("");
   const [watchDuration, setWatchDuration] = useState("");
@@ -248,13 +235,14 @@ function LogWatchForm() {
       try {
         setIsSearching(true);
         const isMusic = mediaType === "album" || mediaType === "track";
-        let data: TmdbResult[];
+        let data: MediaSearchResult[];
         if (isMusic) {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=${mediaType}`);
           const raw = await res.json();
           data = Array.isArray(raw)
             ? raw.map((r: any, idx: number) => ({
                 id: idx + 1,
+                media_type: mediaType as "album" | "track",
                 spotify_id: r.id,
                 name: r.name,
                 artist: r.artist,
@@ -309,7 +297,7 @@ function LogWatchForm() {
           setPacingRating(filmData.pacing_rating || 0);
           setCastingRating(filmData.casting_rating || 0);
           if (filmData.tmdb_id) {
-            setSelectedMovie({ id: filmData.tmdb_id, title: filmData.title, poster_url: filmData.poster_url } as TmdbResult);
+            setSelectedMovie({ id: filmData.tmdb_id, title: filmData.title, poster_url: filmData.poster_url } as MediaSearchResult);
           }
           if (filmData.watched_on || filmData.watch_duration || filmData.discovered_via ||
               filmData.rewatchability || filmData.watched_with || filmData.times_watched) {
@@ -347,7 +335,7 @@ function LogWatchForm() {
                 artist: musicData.artist,
                 poster_url: musicData.image_url,
                 release_date: musicData.release_date,
-              } as TmdbResult);
+              } as MediaSearchResult);
             }
             if (musicData.listened_on || musicData.listening_context) {
               setShowMoreDetails(true);

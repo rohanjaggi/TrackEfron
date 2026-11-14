@@ -20,6 +20,7 @@ import {
   Music2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { MediaSearchResult } from "@/lib/types";
 
 type ListMeta = {
   id: string;
@@ -42,21 +43,6 @@ type ListItem = {
   image_url: string | null;
   added_at: string;
   position: number;
-};
-
-type SearchResult = {
-  id: number | string;
-  spotify_id?: string;
-  artist?: string;
-  album_name?: string;
-  title?: string;
-  name?: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  release_date?: string;
-  first_air_date?: string;
-  poster_url?: string | null;
-  image_url?: string | null;
-  vote_average?: number;
 };
 
 function upscalePoster(url: string | null, size = "w500"): string | null {
@@ -96,7 +82,7 @@ function ListDetailContent() {
 
   // Add items search state
   const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<SearchResult[]>([]);
+  const [addResults, setAddResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [addingId, setAddingId] = useState<number | string | null>(null);
@@ -147,7 +133,7 @@ function ListDetailContent() {
         if (isMusic) {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
           const raw = await res.json();
-          const data: SearchResult[] = Array.isArray(raw)
+          const data: MediaSearchResult[] = Array.isArray(raw)
             ? raw.map((r: any) => ({
                 id: r.id,
                 spotify_id: r.id,
@@ -189,7 +175,7 @@ function ListDetailContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  async function handleAddItem(result: SearchResult) {
+  async function handleAddItem(result: MediaSearchResult) {
     setAddingId(result.spotify_id || result.id);
     try {
       const supabase = createClient();

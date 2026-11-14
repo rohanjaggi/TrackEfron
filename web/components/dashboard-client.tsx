@@ -17,18 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import { StarDisplay } from "@/components/ui/star-display";
 import type { FilmRecommendation, RecsResponse } from "@/lib/ai/types";
-
-type WatchLog = {
-  id: string;
-  title: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  rating: number;
-  review: string | null;
-  watched_date: string | null;
-  poster_url: string | null;
-  tmdb_id: number | null;
-  created_at: string;
-};
+import type { WatchLog } from "@/lib/types";
 
 type Recommendation = {
   id: number;

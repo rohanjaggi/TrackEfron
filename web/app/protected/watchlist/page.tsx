@@ -25,22 +25,11 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import type { MediaSearchResult, WatchlistItem } from "@/lib/types";
 
 type ViewType = "grid" | "list";
 type FilterType = "all" | "film" | "movies" | "tv" | "music" | "albums";
 type ActiveTab = "watchlist" | "lists";
-
-type WatchlistItem = {
-  id: string;
-  tmdb_id: number | null;
-  spotify_id: string | null;
-  artist: string | null;
-  title: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  poster_url: string | null;
-  image_url?: string | null;
-  added_at: string;
-};
 
 type MusicQueueItem = {
   id: string;
@@ -50,20 +39,6 @@ type MusicQueueItem = {
   artist: string | null;
   image_url: string | null;
   added_at: string;
-};
-
-type SearchResult = {
-  id: number | string;
-  spotify_id?: string;
-  artist?: string;
-  title?: string;
-  name?: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  release_date?: string;
-  first_air_date?: string;
-  poster_url?: string | null;
-  image_url?: string | null;
-  vote_average?: number;
 };
 
 type UserList = {
@@ -120,7 +95,7 @@ function WatchlistPageContent() {
 
   // Add search state
   const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<SearchResult[]>([]);
+  const [addResults, setAddResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [addingId, setAddingId] = useState<string | number | null>(null);
@@ -211,7 +186,7 @@ function WatchlistPageContent() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
-        let results: SearchResult[];
+        let results: MediaSearchResult[];
         if (mode === "music") {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
           const raw = await res.json();
@@ -255,7 +230,7 @@ function WatchlistPageContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  async function handleAdd(result: SearchResult) {
+  async function handleAdd(result: MediaSearchResult) {
     setAddingId(result.id);
     try {
       const supabase = createClient();
@@ -884,7 +859,7 @@ function WatchlistPageContent() {
                           {item.media_type === "movie" ? "Movie" : item.media_type === "tv" ? "TV Show" : "Album"}
                         </span>
                         <span className="text-xs">
-                          Added {new Date(item.added_at).toLocaleDateString()}
+                          Added {item.added_at ? new Date(item.added_at).toLocaleDateString() : ""}
                         </span>
                       </div>
                     </div>

@@ -41,6 +41,7 @@ import type {
   VibeSearchResponse,
   VibeSearchResult,
 } from "@/lib/ai/types";
+import type { MediaSearchResult } from "@/lib/types";
 
 // ─── Types ───
 
@@ -55,17 +56,6 @@ type MediaItem = {
   release_date?: string;
   first_air_date?: string;
   genre_ids?: number[];
-};
-
-type SearchResult = {
-  id: number;
-  title?: string;
-  name?: string;
-  media_type: "movie" | "tv";
-  release_date?: string;
-  first_air_date?: string;
-  poster_url?: string | null;
-  vote_average?: number;
 };
 
 type ForYouRow = {
@@ -553,7 +543,7 @@ export default function DiscoverPage() {
 
   // Search (shared across tabs)
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -1069,7 +1059,7 @@ export default function DiscoverPage() {
     router.push(`/protected/media/${item.media_type}/${item.id}`);
   }
 
-  function handleResultClick(result: SearchResult) {
+  function handleResultClick(result: MediaSearchResult) {
     setShowDropdown(false);
     setSearchQuery("");
     router.push(`/protected/media/${result.media_type}/${result.id}`);
