@@ -57,6 +57,10 @@ export function SegmentedControl<T extends string>({
     refs.current[next]?.focus();
   };
 
+  // One tab stop: the selected option, or the first enabled one if none is selected.
+  const selected = options.findIndex((o) => o.value === value && !o.disabled);
+  const focusable = selected >= 0 ? selected : options.findIndex((o) => !o.disabled);
+
   return (
     <div
       role="radiogroup"
@@ -75,9 +79,9 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
-            aria-label={opt.iconOnly ? opt.label : undefined}
+            aria-label={typeof opt.count === "number" ? `${opt.label}, ${opt.count}` : opt.label}
             title={opt.hint ?? (opt.iconOnly ? opt.label : undefined)}
-            tabIndex={active ? 0 : -1}
+            tabIndex={i === focusable ? 0 : -1}
             data-active={active}
             disabled={opt.disabled}
             onClick={() => onChange(opt.value)}

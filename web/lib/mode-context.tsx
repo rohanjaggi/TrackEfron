@@ -1,15 +1,22 @@
 "use client";
 
-import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
+import { MODE_STORAGE_KEY } from "@/lib/mode-boot";
 
 export type AppMode = "film" | "music";
 
-const STORAGE_KEY = "trackefron-mode";
 const listeners = new Set<() => void>();
 
 function readMode(): AppMode {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "music" ? "music" : "film";
+    return localStorage.getItem(MODE_STORAGE_KEY) === "music" ? "music" : "film";
   } catch {
     return "film";
   }
@@ -24,16 +31,10 @@ function subscribe(listener: () => void) {
   };
 }
 
-/**
- * Runs before first paint (see app/layout.tsx) so the accent colour is right
- * from the first frame instead of flashing film gold for music users.
- */
-export const MODE_BOOT_SCRIPT = `try{var m=localStorage.getItem("${STORAGE_KEY}");document.documentElement.setAttribute("data-mode",m==="music"?"music":"film")}catch(e){}`;
-
 interface ModeContextValue {
   mode: AppMode;
   setMode: (m: AppMode) => void;
-  /** How many times the user has switched mode in this session; drives the reel-change animation. */
+  /** How many times the mode has changed since this provider mounted; drives the reel-change animation. */
   switches: number;
 }
 
@@ -43,28 +44,41 @@ const ModeContext = createContext<ModeContextValue>({
   switches: 0,
 });
 
-let switches = 0;
-const readSnapshot = () => `${readMode()}|${switches}`;
+let switchCount = 0;
+const readSnapshot = () => `${readMode()}|${switchCount}`;
 
 export function ModeProvider({ children }: { children: React.ReactNode }) {
   // The server always renders film; the client re-reads storage straight after hydration.
   const snapshot = useSyncExternalStore(subscribe, readSnapshot, () => "film|0");
   const [mode, count] = snapshot.split("|") as [AppMode, string];
 
+  // Count only the switches made while this provider is mounted, so returning
+  // to the app does not replay the reel change.
+  const baseline = useRef<number | null>(null);
+  if (baseline.current === null) baseline.current = Number(count);
+
+  // Keep <html data-mode> in step with the store. The boot script in the root
+  // layout sets it before paint; this covers another tab changing the mode.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-mode", mode);
+  }, [mode]);
+
   const setMode = useCallback((m: AppMode) => {
     if (m === readMode()) return;
     try {
-      localStorage.setItem(STORAGE_KEY, m);
+      localStorage.setItem(MODE_STORAGE_KEY, m);
     } catch {
       /* private mode: the choice lasts for this page only */
     }
     document.documentElement.setAttribute("data-mode", m);
-    switches += 1;
+    switchCount += 1;
     listeners.forEach((l) => l());
   }, []);
 
   return (
-    <ModeContext.Provider value={{ mode, setMode, switches: Number(count) }}>
+    <ModeContext.Provider
+      value={{ mode, setMode, switches: Number(count) - (baseline.current ?? 0) }}
+    >
       {children}
     </ModeContext.Provider>
   );
@@ -72,4 +86,17 @@ export function ModeProvider({ children }: { children: React.ReactNode }) {
 
 export function useMode() {
   return useContext(ModeContext);
+}
+
+/**
+ * For pages about ONE item whose domain is fixed by the item, not by the
+ * toggle (a film's detail page, a music list, a log being edited). Once the
+ * item's domain is known, the app moves to that mode so the accent, the nav
+ * wording and the page always agree. Pass `null` while it is still loading.
+ */
+export function useSyncMode(domain: AppMode | null | undefined) {
+  const { setMode } = useMode();
+  useEffect(() => {
+    if (domain) setMode(domain);
+  }, [domain, setMode]);
 }

@@ -1,6 +1,8 @@
 import { AuthButton } from "@/components/auth-button";
 import {
+  FooterAttribution,
   GlobalShortcuts,
+  MobileNav,
   NavAccentBar,
   NavLinks,
   NavLogButton,
@@ -72,7 +74,7 @@ export default function ProtectedLayout({
         </main>
 
         {/* ── Footer ── */}
-        <footer className="mt-auto w-full border-t border-[var(--border-raw)] py-6">
+        <footer className="mt-auto w-full border-t border-[var(--border-raw)] pb-20 pt-6 sm:pb-6">
           <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -85,15 +87,12 @@ export default function ProtectedLayout({
               <span className="hidden md:inline">
                 Press <kbd className="border border-[var(--border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--text)]">N</kbd> to log
               </span>
-              <span className="flex items-center gap-2">
-                Data &amp; images by
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
-              </span>
+              <FooterAttribution />
               <span>© 2026 TrackEfron</span>
             </div>
           </div>
         </footer>
+        <MobileNav />
       </div>
     </ModeProvider>
   );

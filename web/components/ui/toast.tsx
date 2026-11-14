@@ -73,7 +73,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div
         aria-live="polite"
         aria-relevant="additions"
-        className="pointer-events-none fixed inset-x-4 bottom-4 z-[1000] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:items-end"
+        className="pointer-events-none fixed inset-x-4 bottom-[4.5rem] z-[1000] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:items-end"
       >
         {items.map((t) => {
           const tone = t.tone ?? "success";

@@ -3,7 +3,7 @@ import { Cormorant_Garamond, Azeret_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/ui/toast";
-import { MODE_BOOT_SCRIPT } from "@/lib/mode-context";
+import { MODE_BOOT_SCRIPT } from "@/lib/mode-boot";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL

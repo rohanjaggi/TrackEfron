@@ -35,12 +35,72 @@ export function ReelCueMark() {
   return <span key={switches} className="cue-mark" aria-hidden="true" />;
 }
 
+/**
+ * Phone navigation: the five sections as a bottom bar in thumb reach, each
+ * with its label. The top bar keeps the logo, Log, the mode toggle and the account.
+ */
+export function MobileNav() {
+  const pathname = usePathname();
+  const { mode } = useMode();
+
+  return (
+    <nav
+      aria-label="Sections"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--border-strong)] bg-[var(--bg)] pb-[env(safe-area-inset-bottom)] sm:hidden"
+    >
+      <ul className="grid grid-cols-5">
+        {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
+          const active = exact ? pathname === href : pathname.startsWith(href);
+          const text = label === "Queue" && mode === "film" ? "Watchlist" : label;
+          const short = text === "Analytics" ? "Stats" : text === "Watchlist" ? "Watch" : text;
+          return (
+            <li key={href}>
+              <Link
+                href={href}
+                aria-label={text}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "relative flex h-14 flex-col items-center justify-center gap-1",
+                  "text-[10px] font-medium uppercase tracking-[0.06em]",
+                  "transition-colors duration-cut ease-mech",
+                  active ? "text-[var(--mode-accent)]" : "text-[var(--text-muted)]",
+                ].join(" ")}
+              >
+                {active && (
+                  <span aria-hidden="true" className="absolute inset-x-3 top-[-1px] h-[2px] bg-[var(--mode-accent)]" />
+                )}
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span aria-hidden="true">{short}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+/** Credits the catalogue that the current mode draws on. */
+export function FooterAttribution() {
+  const { mode } = useMode();
+  if (mode === "music") {
+    return <span>Music data &amp; covers by Spotify</span>;
+  }
+  return (
+    <span className="flex items-center gap-2">
+      Data &amp; images by
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
+    </span>
+  );
+}
+
 export function NavLinks() {
   const pathname = usePathname();
   const { mode } = useMode();
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="hidden items-center gap-0.5 sm:flex">
       {NAV_LINKS.map(({ href, label, icon: Icon, exact }) => {
         const active = exact ? pathname === href : pathname.startsWith(href);
         const text = label === "Queue" && mode === "film" ? "Watchlist" : label;

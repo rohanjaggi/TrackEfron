@@ -436,6 +436,15 @@ body::before {
   .artwork-live {
     filter: none;
   }
+  /* Missing artwork: a hatched plate, like an unprinted proof. */
+  .artwork-empty {
+    background-color: var(--surface-2);
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 9px,
+      color-mix(in srgb, var(--border-strong) 45%, transparent) 9px 10px
+    );
+  }
   .media-card__caption {
     clip-path: inset(100% 0 0 0);
     transition: clip-path 200ms var(--ease-mech);
