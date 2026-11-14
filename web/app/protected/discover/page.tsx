@@ -40,6 +40,7 @@ import type {
   VibeSearchResult,
 } from "@/lib/ai/types";
 import type { MediaSearchResult } from "@/lib/types";
+import { PosterCard } from "@/components/media/poster-card";
 import { PosterSkeleton, ScrollRow } from "@/components/media/scroll-row";
 import { useClickOutside } from "@/hooks/use-click-outside";
 
@@ -232,36 +233,24 @@ function MediaCard({ item, onClick }: { item: MediaItem; onClick: (item: MediaIt
   const title = item.title || item.name || "Untitled";
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
   return (
-    <div
+    <PosterCard
+      imageUrl={item.poster_url}
+      title={title}
+      aspect="poster"
       onClick={() => onClick(item)}
-      className="shrink-0 w-[130px] md:w-[150px] cursor-pointer group"
-    >
-      {item.poster_url ? (
-        <img
-          src={item.poster_url}
-          alt={title}
-          className="w-full aspect-[2/3] object-cover border-2 border-border group-hover:border-primary transition-colors duration-200"
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
-        />
-      ) : (
-        <div className="w-full aspect-[2/3] bg-muted/20 border-2 border-border flex items-center justify-center">
-          <Film className="w-6 h-6 text-muted-foreground/50" />
+      subtitle={
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          {year && <span>{year}</span>}
+          {year && item.vote_average != null && item.vote_average > 0 && <span>·</span>}
+          {item.vote_average != null && item.vote_average > 0 && (
+            <span className="flex items-center gap-0.5">
+              <Star className="w-2.5 h-2.5 text-accent fill-accent" />
+              {item.vote_average.toFixed(1)}
+            </span>
+          )}
         </div>
-      )}
-      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-primary transition-colors">
-        {title}
-      </p>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        {year && <span>{year}</span>}
-        {year && item.vote_average != null && item.vote_average > 0 && <span>·</span>}
-        {item.vote_average != null && item.vote_average > 0 && (
-          <span className="flex items-center gap-0.5">
-            <Star className="w-2.5 h-2.5 text-accent fill-accent" />
-            {item.vote_average.toFixed(1)}
-          </span>
-        )}
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -318,20 +307,13 @@ function MusicCard({
   stretch?: boolean;
 }) {
   return (
-    <div className="shrink-0 w-[130px] md:w-[150px] group">
-      <div className="relative">
-        {item.image_url ? (
-          <img
-            src={item.image_url}
-            alt={item.name}
-            className="w-full aspect-square object-cover border-2 border-border group-hover:border-[var(--music)] transition-colors duration-200"
-          />
-        ) : (
-          <div className="w-full aspect-square bg-muted/20 border-2 border-border flex items-center justify-center">
-            <Disc3 className="w-6 h-6 text-muted-foreground/50" />
-          </div>
-        )}
-        {stretch && <StretchTag />}
+    <PosterCard
+      imageUrl={item.image_url}
+      title={item.name}
+      aspect="square"
+      accent="music"
+      tag={stretch ? <StretchTag /> : undefined}
+      action={
         <button
           onClick={() => onQueue(item)}
           disabled={queued}
@@ -342,12 +324,9 @@ function MusicCard({
             ? <BookmarkCheck className="w-3 h-3 text-[var(--music)]" />
             : <Bookmark className="w-3 h-3" />}
         </button>
-      </div>
-      <p className="text-sm font-medium truncate mt-1.5 group-hover:text-[var(--music)] transition-colors">
-        {item.name}
-      </p>
-      <p className="text-xs text-muted-foreground truncate">{item.artist}</p>
-    </div>
+      }
+      subtitle={<p className="text-xs text-muted-foreground truncate">{item.artist}</p>}
+    />
   );
 }
 

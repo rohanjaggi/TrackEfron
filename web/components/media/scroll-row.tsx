@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-
-export type PosterAspect = "poster" | "square";
-
-const ASPECT_CLASS: Record<PosterAspect, string> = {
-  poster: "aspect-[2/3]",
-  square: "aspect-square",
-};
+import { POSTER_ASPECT_CLASS, type PosterAspect } from "@/components/media/poster-card";
 
 /** Pulsing placeholder with the same footprint as a poster card. */
 export function PosterSkeleton({
@@ -20,7 +14,7 @@ export function PosterSkeleton({
 }) {
   return (
     <div className={className ?? "shrink-0 w-[130px] md:w-[150px]"}>
-      <div className={`w-full ${ASPECT_CLASS[aspect]} bg-muted/20 border-2 border-border animate-pulse`} />
+      <div className={`w-full ${POSTER_ASPECT_CLASS[aspect]} bg-muted/20 border-2 border-border animate-pulse`} />
       <div className="h-3.5 bg-muted/20 rounded mt-1.5 w-3/4 animate-pulse" />
       <div className="h-3 bg-muted/20 rounded mt-1 w-1/2 animate-pulse" />
     </div>
