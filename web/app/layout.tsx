@@ -29,6 +29,10 @@ const azeretMono = Azeret_Mono({
   subsets: ["latin"],
 });
 
+// Applies the stored mode to <html> before first paint so the accent colours do not flash.
+// A literal string, nothing interpolated. The server render never reads localStorage.
+const MODE_SCRIPT = `try{if(localStorage.getItem("trackefron-mode")==="music")document.documentElement.setAttribute("data-mode","music")}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -36,6 +40,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MODE_SCRIPT }} />
+      </head>
       <body className={`${cormorant.variable} ${azeretMono.variable} antialiased`}>
         <ThemeProvider
           attribute="class"

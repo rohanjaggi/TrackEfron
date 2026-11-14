@@ -1,12 +1,12 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useCallback, useMemo, useSyncExternalStore } from "react";
 
 export type AppMode = "film" | "music";
 
 interface ModeContextValue {
   mode: AppMode;
-  /** False until the stored mode has been read; before that, `mode` is only the default. */
+  /** False during the server render and hydration, when `mode` is only the default. */
   ready: boolean;
   setMode: (m: AppMode) => void;
 }
@@ -17,29 +17,40 @@ const ModeContext = createContext<ModeContextValue>({
   setMode: () => {},
 });
 
-export function ModeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<AppMode>("film");
-  const [ready, setReady] = useState(false);
+// The stored mode is applied to <html data-mode> by an inline script in the root layout
+// before first paint, so the attribute is the source of truth on the client.
+const listeners = new Set<() => void>();
 
-  useEffect(() => {
-    const stored = localStorage.getItem("trackefron-mode") as AppMode | null;
-    const initial = stored === "film" || stored === "music" ? stored : "film";
-    setModeState(initial);
-    document.documentElement.setAttribute("data-mode", initial);
-    setReady(true);
-  }, []);
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function subscribeNever() {
+  return () => {};
+}
+
+function readMode(): AppMode {
+  return document.documentElement.getAttribute("data-mode") === "music" ? "music" : "film";
+}
+
+export function ModeProvider({ children }: { children: React.ReactNode }) {
+  // The server snapshot is always "film", so the server render and hydration match and do not
+  // depend on localStorage. React then re-renders at once with the real mode and `ready` true.
+  const mode = useSyncExternalStore<AppMode>(subscribe, readMode, () => "film");
+  const ready = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   const setMode = useCallback((m: AppMode) => {
-    setModeState(m);
     localStorage.setItem("trackefron-mode", m);
     document.documentElement.setAttribute("data-mode", m);
+    listeners.forEach((listener) => listener());
   }, []);
 
-  return (
-    <ModeContext.Provider value={{ mode, ready, setMode }}>
-      {children}
-    </ModeContext.Provider>
-  );
+  const value = useMemo(() => ({ mode, ready, setMode }), [mode, ready, setMode]);
+
+  return <ModeContext.Provider value={value}>{children}</ModeContext.Provider>;
 }
 
 export function useMode() {
