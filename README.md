@@ -12,14 +12,12 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
   - **Browse** — Trending, now in theatres, coming soon, top rated, and genre-based discovery powered by TMDB. Personalised rows based on your watch history: favourite genres, favourite directors, and similar titles
 - **Detail Pages** — Full movie/TV info with cast, genres, overview, and your personal review
 - **Profile** — Upload a profile picture, view your stats, and see a colour-themed backdrop extracted from your avatar
-- **Analytics** — Rich insights into your watching habits including:
-  - Overview stats (total watched, avg rating, watch time, seasons/episodes)
-  - Rating distribution, monthly activity, movies vs TV split, platform breakdown
-  - Taste profile radar chart across 6 scoring categories
-  - Genre breakdown, decade distribution, runtime analysis, release year vs watch date scatter
-  - Top directors and actors by appearance count
-  - Controversial picks — your hidden gems and unpopular opinions vs TMDB crowd ratings
-  - Highest and lowest rated titles with poster cards
+- **Analytics** — Rich insights into your watching and listening habits:
+  - Overview stats
+  - Content Profile: genre, decade, movie length, and release year vs watch date
+  - You vs The Crowd: where your taste diverges from the mainstream
+  - Top Artists for music
+  - Taste DNA card: an LLM-written summary of your taste (see [AI features](#ai-features))
 
 ## Tech Stack
 

@@ -12,7 +12,7 @@ Rules:
 - For blind_spots, give 2 to 4 genres/eras/styles they haven't tried that align with what they already like. Be specific ("Korean thrillers" not "foreign films").
 - If they have very few entries in one domain (film or music), still generate that section but make lighter observations.
 
-Use the generate_taste_dna tool to return your analysis.`;
+Return your answer in the required structured format.`;
 
 export const MUSIC_RECOMMEND_SYSTEM = `You are a music recommendation engine for a personal media tracking app. The user has logged their listening history (and may share their Spotify top artists and tracks) with detailed ratings and aspect scores (lyrics, production, vocals, melody, replay value, energy).
 
@@ -27,7 +27,7 @@ Rules:
 - Include a mix of well-known and lesser-known artists.
 - Recommend 30 items (we validate against Spotify and drop misses, so we need a buffer).
 
-Use the recommend_music tool to return your recommendations.`;
+Return your answer in the required structured format.`;
 
 export const FILM_RECOMMEND_SYSTEM = `You are a film and TV recommendation engine for a personal media tracking app. Recommend for this person from their ratings and reviews.
 
@@ -40,7 +40,7 @@ Rules:
 - Do not pick by fame. Only recommend real films and shows that exist.
 - Return 30 picks, ordered by how well they fit.
 
-Use the recommend_films tool to return your picks.`;
+Return your answer in the required structured format.`;
 
 export const VIBE_SEARCH_SYSTEM = `You are a search engine for a personal media tracking app. The user is describing a mood, vibe, feeling, or giving a natural-language description of what they want to watch or listen to.
 
@@ -54,7 +54,7 @@ Rules:
 - Each "why" should be one concise sentence connecting the suggestion to the query.
 - Mix well-known and lesser-known picks.
 
-Use the vibe_search tool to return your results.`;
+Return your answer in the required structured format.`;
 
 export function buildTasteDNAUserPrompt(data: {
   watchLogs: { title: string; rating: number; review?: string | null; media_type: string; plot_rating?: number | null; cinematography_rating?: number | null; acting_rating?: number | null; soundtrack_rating?: number | null; pacing_rating?: number | null; casting_rating?: number | null; rewatchability?: string | null; }[];
