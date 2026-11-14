@@ -96,12 +96,8 @@ const MOODS = [
 ];
 
 const MUSIC_GENRE_QUERIES = [
-  { title: "Hot in pop", subtitle: "Chart-topping pop releases", query: "pop hits 2024" },
-  { title: "Hip-hop now", subtitle: "Latest rap and hip-hop", query: "hip hop rap 2024" },
-  { title: "R&B and soul", subtitle: "Smooth soul and R&B", query: "r&b soul neo soul" },
-  { title: "Electronic and dance", subtitle: "Electronic beats and dance", query: "electronic dance edm" },
-  { title: "Indie picks", subtitle: "Independent and alternative", query: "indie alternative indie pop" },
-  { title: "Jazz and blues", subtitle: "Classic and contemporary", query: "jazz blues piano" },
+  { title: "Hot in pop", subtitle: "Chart-topping pop releases", query: "pop hits" },
+  { title: "Hip-hop now", subtitle: "Latest rap and hip-hop", query: "hip hop rap" },
 ];
 
 const FILM_GENRES = [
@@ -130,6 +126,11 @@ function detectVibeQuery(q: string): boolean {
   const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
   const lower = q.toLowerCase();
   return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
+}
+
+/** TMDB movie and TV ids are separate namespaces, so a title is always the pair. */
+function titleKey(mediaType: string | null | undefined, id: number) {
+  return `${mediaType ?? "movie"}:${id}`;
 }
 
 function mediaHref(type: "movie" | "tv", id: number) {
@@ -197,9 +198,9 @@ function ToggleGroup({
           <Button
             key={opt.key}
             variant="outline"
-            size="sm"
+            size="default"
             aria-pressed={active}
-            className={active ? "border-primary bg-primary/10 text-primary" : undefined}
+            className={active ? "border-primary bg-primary/10 text-primary" : "text-foreground"}
             onClick={() => onToggle(opt.key)}
           >
             {opt.label}
@@ -295,21 +296,30 @@ function Shelf({
         }
       />
       {subtitle && <p className="t-meta mb-5">{subtitle}</p>}
-      <div
-        ref={scrollRef}
-        role={loading ? "status" : undefined}
-        aria-label={loading ? `Loading ${title}` : undefined}
-        className="-mx-1 flex gap-5 overflow-x-auto px-1 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:w-[140px] [&>*]:shrink-0 sm:[&>*]:w-[160px]"
-      >
-        {loading
-          ? Array.from({ length: 8 }, (_, i) => (
-              <div key={i}>
-                <Skeleton className={aspect === "square" ? "aspect-square" : "aspect-[2/3]"} />
-                <Skeleton className="mt-3 h-3 w-3/4" />
-                <Skeleton className="mt-2 h-2.5 w-1/2" />
-              </div>
-            ))
-          : children}
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          role={loading ? "status" : "group"}
+          aria-label={loading ? `Loading ${title}` : `${title}, scrolls sideways`}
+          tabIndex={loading ? undefined : 0}
+          className="-mx-1 flex snap-x snap-proximity gap-5 overflow-x-auto px-1 pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:w-[140px] [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-[160px]"
+        >
+          {loading
+            ? Array.from({ length: 8 }, (_, i) => (
+                <div key={i}>
+                  <Skeleton className={aspect === "square" ? "aspect-square" : "aspect-[2/3]"} />
+                  <Skeleton className="mt-3 h-3 w-3/4" />
+                  <Skeleton className="mt-2 h-2.5 w-1/2" />
+                </div>
+              ))
+            : children}
+        </div>
+        {canScrollRight && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-[var(--bg)] to-transparent"
+          />
+        )}
       </div>
     </section>
   );
@@ -484,6 +494,7 @@ export default function DiscoverPage() {
   const [moodError, setMoodError] = useState(false);
   const [musicGenreRows, setMusicGenreRows] = useState<{ title: string; subtitle: string; items: MusicMediaItem[] }[]>([]);
   const [musicGenreLoading, setMusicGenreLoading] = useState(false);
+  const [musicGenreFetched, setMusicGenreFetched] = useState(false);
   const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
   const [personalMusicLoading, setPersonalMusicLoading] = useState(false);
   const [personalMusicFetched, setPersonalMusicFetched] = useState(false);
@@ -505,7 +516,6 @@ export default function DiscoverPage() {
   // Browse tab state
   const [trending, setTrending] = useState<MediaItem[]>([]);
   const [nowPlaying, setNowPlaying] = useState<MediaItem[]>([]);
-  const [upcoming, setUpcoming] = useState<MediaItem[]>([]);
   const [topRated, setTopRated] = useState<MediaItem[]>([]);
   const [browseLoading, setBrowseLoading] = useState(true);
   const [selectedGenre, setSelectedGenre] = useState<{ id: number; name: string } | null>(null);
@@ -516,7 +526,7 @@ export default function DiscoverPage() {
   // Personalised rows (browse tab)
   const [forYouRows, setForYouRows] = useState<ForYouRow[]>([]);
   const [personalLoading, setPersonalLoading] = useState(true);
-  const [watchedIds, setWatchedIds] = useState<Set<number>>(new Set());
+  const [watchedKeys, setWatchedKeys] = useState<Set<string>>(new Set());
 
   // Browse data fetched flag
   const [browseFetched, setBrowseFetched] = useState(false);
@@ -525,7 +535,7 @@ export default function DiscoverPage() {
   const [mlRecs, setMlRecs] = useState<FilmRec[]>([]);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlFetched, setMlFetched] = useState(false);
-  const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
+  const [watchlistedKeys, setWatchlistedKeys] = useState<Set<string>>(new Set());
   const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
 
   // AI recommendations
@@ -550,6 +560,41 @@ export default function DiscoverPage() {
   const moodRequest = useRef(0);
   const genreRequest = useRef(0);
   const savingIds = useRef(new Set<string>());
+  // Mirrors `aiNotConfigured` so the search effect can read it without re-running when it flips.
+  const noAiKey = useRef(false);
+  useEffect(() => {
+    noAiKey.current = aiNotConfigured;
+  }, [aiNotConfigured]);
+
+  // When the mode changes, drop the old mode's transient state in the same render so nothing stale paints.
+  const [prevMode, setPrevMode] = useState(mode);
+  if (prevMode !== mode) {
+    setPrevMode(mode);
+    setActiveTab("for-you");
+    setSearchQuery("");
+    setActiveQuery("");
+    setSearchResults([]);
+    setMusicSearchResults([]);
+    setVibeResults([]);
+    setVibeInterpretation("");
+    setIsVibeQuery(false);
+    setSearchLoading(false);
+    setSearchError(false);
+    setSearchNeedsKey(false);
+    setActiveMood(null);
+    setMoodResults([]);
+    setMoodError(false);
+    setMoodLoading(false);
+    setSelectedGenre(null);
+    setGenreResults([]);
+    setGenreError(false);
+    setGenreLoading(false);
+  }
+  // Late answers for a mood or genre picked in the old mode must not land in the new one.
+  useEffect(() => {
+    moodRequest.current++;
+    genreRequest.current++;
+  }, [mode]);
 
   // ─── Fetch music browse data (lazy — only when mode is music) ───
   useEffect(() => {
@@ -569,26 +614,76 @@ export default function DiscoverPage() {
       }
     }
 
+    fetchMusicBrowse();
+  }, [mode, musicFetched]);
+
+  // ─── Music queue keys (music mode only; reloaded on each visit) ───
+  useEffect(() => {
+    if (mode !== "music") return;
+    let cancelled = false;
+
     async function fetchQueuedIds() {
       try {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user || cancelled) return;
         const { data } = await supabase
           .from("music_queue")
           .select("spotify_id")
           .eq("user_id", user.id);
-        if (data) setQueuedIds(new Set(data.map((i: { spotify_id: string }) => i.spotify_id).filter(Boolean)));
+        if (data && !cancelled) {
+          setQueuedIds(new Set(data.map((i: { spotify_id: string }) => i.spotify_id).filter(Boolean)));
+        }
       } catch {
         // Queue buttons fall back to "Queue"; adding a duplicate is handled on save.
       }
     }
 
+    fetchQueuedIds();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  // ─── Film watchlist keys (film mode only; reloaded on each visit) ───
+  useEffect(() => {
+    if (mode !== "film") return;
+    let cancelled = false;
+
+    async function fetchWatchlistKeys() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const { data } = await supabase
+          .from("watchlist")
+          .select("tmdb_id, media_type")
+          .eq("user_id", user.id);
+        if (data && !cancelled) {
+          setWatchlistedKeys(new Set(data.map((i) => titleKey(i.media_type, i.tmdb_id))));
+        }
+      } catch {
+        // Add buttons fall back to "Add"; adding a duplicate is handled on save.
+      }
+    }
+
+    fetchWatchlistKeys();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  // ─── Music genre shelves (music mode; wait until Spotify connection is known so the shelf budget is exact) ───
+  useEffect(() => {
+    if (mode !== "music" || musicGenreFetched || !spotifyOAuthFetched || spotifyOAuthLoading) return;
+    setMusicGenreFetched(true);
+    setMusicGenreLoading(true);
+    const queries = MUSIC_GENRE_QUERIES.slice(0, spotifyOAuthConnected ? 1 : 2);
+
     async function fetchMusicGenres() {
-      setMusicGenreLoading(true);
       try {
         const rows = await Promise.all(
-          MUSIC_GENRE_QUERIES.map(async (g) => {
+          queries.map(async (g) => {
             try {
               const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(g.query)}&type=album`);
               const data = await res.json();
@@ -604,10 +699,8 @@ export default function DiscoverPage() {
       }
     }
 
-    fetchMusicBrowse();
-    fetchQueuedIds();
     fetchMusicGenres();
-  }, [mode, musicFetched]);
+  }, [mode, musicGenreFetched, spotifyOAuthFetched, spotifyOAuthLoading, spotifyOAuthConnected]);
 
   // ─── Personalised music rows (lazy — top artists from listen_logs) ───
   useEffect(() => {
@@ -623,10 +716,11 @@ export default function DiscoverPage() {
         const { data: logs } = await supabase
           .from("listen_logs")
           .select("artist")
+          .eq("user_id", user.id)
           .not("artist", "is", null);
         if (!logs || logs.length === 0) return;
 
-        // Count artist frequency and take top 3
+        // Count artist frequency and take the top one
         const freq = new Map<string, number>();
         logs.forEach((l: { artist: string | null }) => {
           if (!l.artist) return;
@@ -636,7 +730,7 @@ export default function DiscoverPage() {
         });
         const topArtists = Array.from(freq.entries())
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
+          .slice(0, 1)
           .map(([name]) => name);
 
         const rows = await Promise.all(
@@ -695,7 +789,7 @@ export default function DiscoverPage() {
 
   // ─── Fetch picks from the recommendation service (lazy — only when the For you tab is first opened) ───
   useEffect(() => {
-    if (activeTab !== "for-you" || mlFetched) return;
+    if (mode !== "film" || activeTab !== "for-you" || mlFetched) return;
     setMlFetched(true);
     setMlLoading(true);
 
@@ -715,7 +809,7 @@ export default function DiscoverPage() {
     }
 
     fetchMlRecs();
-  }, [activeTab, mlFetched]);
+  }, [mode, activeTab, mlFetched]);
 
   // ─── Fetch AI music recommendations (lazy — only when mode is music) ───
   useEffect(() => {
@@ -746,7 +840,7 @@ export default function DiscoverPage() {
 
   // ─── Fetch AI film recommendations (lazy — only when For you tab + film mode) ───
   useEffect(() => {
-    if (mode === "music" || activeTab !== "for-you" || aiFilmFetched) return;
+    if (mode !== "film" || activeTab !== "for-you" || aiFilmFetched) return;
     setAiFilmFetched(true);
     setAiFilmLoading(true);
 
@@ -756,7 +850,9 @@ export default function DiscoverPage() {
         const data = await res.json();
         if (Array.isArray(data)) {
           setAiFilmRecs((data as FilmRecommendation[]).map(toFilmRec));
-        } else if (data?.code !== "NO_API_KEY") {
+        } else if (data?.code === "NO_API_KEY") {
+          setAiNotConfigured(true);
+        } else {
           setAiFilmError(true);
         }
       } catch {
@@ -771,20 +867,18 @@ export default function DiscoverPage() {
 
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
-    if (activeTab !== "browse" || browseFetched) return;
+    if (mode !== "film" || activeTab !== "browse" || browseFetched) return;
     setBrowseFetched(true);
 
     async function fetchBrowse() {
       try {
-        const [trendingRes, nowPlayingRes, upcomingRes, topRatedRes] = await Promise.all([
+        const [trendingRes, nowPlayingRes, topRatedRes] = await Promise.all([
           fetch("/api?action=trending").then((r) => r.json()).catch(() => []),
           fetch("/api?action=now_playing").then((r) => r.json()).catch(() => []),
-          fetch("/api?action=upcoming").then((r) => r.json()).catch(() => []),
           fetch("/api?action=top_rated&type=movie").then((r) => r.json()).catch(() => []),
         ]);
         if (Array.isArray(trendingRes)) setTrending(trendingRes);
         if (Array.isArray(nowPlayingRes)) setNowPlaying(nowPlayingRes);
-        if (Array.isArray(upcomingRes)) setUpcoming(upcomingRes);
         if (Array.isArray(topRatedRes)) setTopRated(topRatedRes);
       } catch {
         // Handled below: if every shelf is empty the tab says so.
@@ -796,51 +890,42 @@ export default function DiscoverPage() {
     async function fetchPersonalized() {
       try {
         const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
         const { data: logs, error } = await supabase
           .from("watch_logs")
           .select("rating, media_type, tmdb_id, title")
+          .eq("user_id", user.id)
           .order("rating", { ascending: false });
 
-        if (error || !logs || logs.length === 0) {
-          setPersonalLoading(false);
-          return;
-        }
+        if (error || !logs || logs.length === 0) return;
 
-        const watched = new Set<number>();
-        logs.forEach((l) => { if (l.tmdb_id) watched.add(l.tmdb_id); });
-        setWatchedIds(watched);
+        const watched = new Set<string>();
+        logs.forEach((l) => { if (l.tmdb_id) watched.add(titleKey(l.media_type, l.tmdb_id)); });
+        setWatchedKeys(watched);
 
-        const uniqueEntries = new Map<number, { type: "movie" | "tv"; rating: number; title: string }>();
+        const uniqueEntries = new Map<string, { tmdbId: number; type: "movie" | "tv" }>();
         logs.forEach((l) => {
-          if (l.tmdb_id && !uniqueEntries.has(l.tmdb_id)) {
-            uniqueEntries.set(l.tmdb_id, { type: l.media_type, rating: l.rating, title: l.title });
+          const key = titleKey(l.media_type, l.tmdb_id);
+          if (l.tmdb_id && !uniqueEntries.has(key)) {
+            uniqueEntries.set(key, { tmdbId: l.tmdb_id, type: l.media_type });
           }
         });
-        const entries = Array.from(uniqueEntries.entries()).slice(0, 20);
+        const entries = Array.from(uniqueEntries.values()).slice(0, 20);
 
-        type DetailResult = {
-          tmdbId: number;
-          genres: { id: number; name: string }[];
-          directors: { id: number; name: string }[];
-          mediaType: "movie" | "tv";
-          rating: number;
-          title: string;
-        };
+        type DetailResult = { genres: { id: number; name: string }[] };
         const details: DetailResult[] = [];
 
         for (let i = 0; i < entries.length; i += 10) {
           const batch = entries.slice(i, i + 10);
           const results = await Promise.all(
-            batch.map(async ([tmdbId, info]) => {
+            batch.map(async (info) => {
               try {
-                const res = await fetch(`/api?action=detail&type=${info.type}&id=${tmdbId}`);
+                const res = await fetch(`/api?action=detail&type=${info.type}&id=${info.tmdbId}`);
                 if (!res.ok) return null;
                 const d = await res.json();
                 const genres = (d.genres || []).map((g: { id: number; name: string }) => ({ id: g.id, name: g.name }));
-                const directors = (d.credits?.crew || [])
-                  .filter((c: { job: string }) => c.job === "Director")
-                  .map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }));
-                return { tmdbId, genres, directors, mediaType: info.type, rating: info.rating, title: info.title };
+                return { genres };
               } catch { return null; }
             })
           );
@@ -861,84 +946,22 @@ export default function DiscoverPage() {
           .sort((a, b) => b.count - a.count)
           .slice(0, 2);
 
-        // Top directors
-        const dirCount = new Map<number, { name: string; count: number }>();
-        details.forEach((d) => {
-          d.directors.forEach((dir) => {
-            const entry = dirCount.get(dir.id) || { name: dir.name, count: 0 };
-            entry.count++;
-            dirCount.set(dir.id, entry);
-          });
-        });
-        const topDirectors = Array.from(dirCount.entries())
-          .map(([id, { name, count }]) => ({ id, name, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 2);
-
-        // Highest rated for "similar to"
-        const topTitles = details
-          .sort((a, b) => b.rating - a.rating)
-          .slice(0, 2);
-
-        // Fetch all personalised rows in parallel
-        const rowPromises: Promise<ForYouRow | null>[] = [];
-
-        topGenres.forEach((genre) => {
-          rowPromises.push(
-            fetch(`/api?action=discover&type=movie&genres=${genre.id}`)
-              .then((r) => r.json())
-              .then((data) => {
-                if (!Array.isArray(data)) return null;
-                const filtered = data.filter((item: MediaItem) => !watched.has(item.id));
-                if (filtered.length === 0) return null;
-                return {
-                  id: `genre-${genre.id}`,
-                  title: `Because you love ${genre.name}`,
-                  subtitle: `Highly rated ${genre.name.toLowerCase()} picks`,
-                  items: filtered.slice(0, 20),
-                };
-              })
-              .catch(() => null)
-          );
-        });
-
-        topDirectors.forEach((dir) => {
-          rowPromises.push(
-            fetch(`/api?action=person_credits&id=${dir.id}`)
-              .then((r) => r.json())
-              .then((data) => {
-                if (!Array.isArray(data)) return null;
-                const filtered = data.filter((item: MediaItem) => !watched.has(item.id));
-                if (filtered.length === 0) return null;
-                return {
-                  id: `director-${dir.id}`,
-                  title: `More from ${dir.name}`,
-                  subtitle: `You've watched ${dir.count} of their ${dir.count === 1 ? "title" : "titles"}`,
-                  items: filtered.slice(0, 20),
-                };
-              })
-              .catch(() => null)
-          );
-        });
-
-        topTitles.forEach((t) => {
-          rowPromises.push(
-            fetch(`/api?action=similar&type=${t.mediaType}&id=${t.tmdbId}`)
-              .then((r) => r.json())
-              .then((data) => {
-                if (!Array.isArray(data)) return null;
-                const filtered = data.filter((item: MediaItem) => !watched.has(item.id));
-                if (filtered.length === 0) return null;
-                return {
-                  id: `similar-${t.tmdbId}`,
-                  title: `Similar to ${t.title}`,
-                  subtitle: `Because you rated it ${t.rating}/5`,
-                  items: filtered.slice(0, 20),
-                };
-              })
-              .catch(() => null)
-          );
-        });
+        const rowPromises: Promise<ForYouRow | null>[] = topGenres.map((genre) =>
+          fetch(`/api?action=discover&type=movie&genres=${genre.id}`)
+            .then((r) => r.json())
+            .then((data) => {
+              if (!Array.isArray(data)) return null;
+              const filtered = data.filter((item: MediaItem) => !watched.has(titleKey(item.media_type, item.id)));
+              if (filtered.length === 0) return null;
+              return {
+                id: `genre-${genre.id}`,
+                title: `Because you love ${genre.name}`,
+                subtitle: `Highly rated ${genre.name.toLowerCase()} picks`,
+                items: filtered.slice(0, 20),
+              };
+            })
+            .catch(() => null)
+        );
 
         const rows = (await Promise.all(rowPromises)).filter((r): r is ForYouRow => r !== null);
         setForYouRows(rows);
@@ -951,7 +974,7 @@ export default function DiscoverPage() {
 
     fetchBrowse();
     fetchPersonalized();
-  }, [activeTab, browseFetched]);
+  }, [mode, activeTab, browseFetched]);
 
   // ─── Search: typing settles into `activeQuery` after a pause; submitting does it at once ───
   useEffect(() => {
@@ -985,9 +1008,35 @@ export default function DiscoverPage() {
     setIsVibeQuery(isVibe);
     setSearchLoading(true);
 
+    /** The ordinary title search for the current mode. */
+    async function titleSearch() {
+      if (mode === "music") {
+        const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data)) setMusicSearchResults(data);
+        else setSearchError(true);
+      } else {
+        const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data)) setSearchResults(data);
+        else setSearchError(true);
+      }
+    }
+
+    /** No AI key: search the words as a title and note that describing a mood needs a key. */
+    async function titleSearchWithoutKey() {
+      setIsVibeQuery(false);
+      setSearchNeedsKey(true);
+      await titleSearch();
+    }
+
     async function run() {
       try {
-        if (isVibe) {
+        if (isVibe && noAiKey.current) {
+          await titleSearchWithoutKey();
+        } else if (isVibe) {
           const res = await fetch("/api/ai/search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -996,26 +1045,17 @@ export default function DiscoverPage() {
           const data = await res.json();
           if (cancelled) return;
           if (data?.code === "NO_API_KEY") {
+            noAiKey.current = true;
             setAiNotConfigured(true);
-            setSearchNeedsKey(true);
+            await titleSearchWithoutKey();
           } else if (Array.isArray(data?.results)) {
             setVibeResults(data.results as VibeSearchResult[]);
             setVibeInterpretation(data.interpretation || "");
           } else {
             setSearchError(true);
           }
-        } else if (mode === "music") {
-          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-          const data = await res.json();
-          if (cancelled) return;
-          if (Array.isArray(data)) setMusicSearchResults(data);
-          else setSearchError(true);
         } else {
-          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-          const data = await res.json();
-          if (cancelled) return;
-          if (Array.isArray(data)) setSearchResults(data);
-          else setSearchError(true);
+          await titleSearch();
         }
       } catch {
         if (!cancelled) setSearchError(true);
@@ -1047,7 +1087,8 @@ export default function DiscoverPage() {
 
   async function handleAddToWatchlist(item: MediaItem) {
     const title = item.title || item.name || "Untitled";
-    const key = `watch-${item.id}`;
+    const titleId = titleKey(item.media_type, item.id);
+    const key = `watch-${titleId}`;
     if (savingIds.current.has(key)) return;
     savingIds.current.add(key);
     try {
@@ -1073,7 +1114,7 @@ export default function DiscoverPage() {
         });
         return;
       }
-      setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
+      setWatchlistedKeys((prev) => new Set([...prev, titleId]));
       if (error) toast({ tone: "info", title: `${title} is already on your watchlist` });
       else toast({ mark: "Added", title: `${title} added to your watchlist` });
     } catch {
@@ -1259,7 +1300,7 @@ export default function DiscoverPage() {
   }
 
   const filterWatched = (items: MediaItem[]) =>
-    watchedIds.size > 0 ? items.filter((i) => !watchedIds.has(i.id)) : items;
+    watchedKeys.size > 0 ? items.filter((i) => !watchedKeys.has(titleKey(i.media_type, i.id))) : items;
 
   // ─── Derived ───
 
@@ -1278,7 +1319,6 @@ export default function DiscoverPage() {
     !browseLoading &&
     trending.length === 0 &&
     nowPlaying.length === 0 &&
-    upcoming.length === 0 &&
     topRated.length === 0;
 
   return (
@@ -1305,8 +1345,8 @@ export default function DiscoverPage() {
               htmlFor="discover-search"
               hint={
                 isMusic
-                  ? "Type a title or an artist, or describe what you are in the mood for."
-                  : "Type a title, or describe what you are in the mood for."
+                  ? "Type a title or an artist, or describe what you are in the mood for, like “something calm for late at night”."
+                  : "Type a title, or describe what you are in the mood for, like “something tense and slow”."
               }
             >
               <div className="flex gap-2">
@@ -1320,7 +1360,7 @@ export default function DiscoverPage() {
                     type="text"
                     enterKeyHint="search"
                     autoComplete="off"
-                    placeholder={isMusic ? "Blonde, or something calm for late at night" : "Aftersun, or something tense and slow"}
+                    placeholder="Search titles"
                     className="pl-9"
                     aria-describedby="discover-search-hint"
                     value={searchQuery}
@@ -1349,16 +1389,6 @@ export default function DiscoverPage() {
                   <LoadingLine label={isVibeQuery ? "Finding matches" : "Searching"} className="mb-5" />
                   <MediaGridSkeleton count={5} aspect={isMusic ? "square" : "poster"} />
                 </>
-              ) : searchNeedsKey ? (
-                <Notice tone="info" title="This kind of search needs an AI key">
-                  <p>
-                    Describing what you are in the mood for uses your own AI key, and none is saved yet.
-                    Add one in your profile, or search by title instead.
-                  </p>
-                  <div className="mt-3">
-                    <AiKeyLink />
-                  </div>
-                </Notice>
               ) : searchError ? (
                 <Notice tone="error" title="Search didn't go through">
                   <p>Check your connection and try again.</p>
@@ -1444,6 +1474,16 @@ export default function DiscoverPage() {
                       ))}
                   </MediaGrid>
                 </>
+              )}
+
+              {searchNeedsKey && !searchLoading && (
+                <p className="t-meta mt-5">
+                  Describing a mood needs an AI key.{" "}
+                  <Link href={PROFILE_HREF} className="text-primary underline underline-offset-4">
+                    Add one in your profile
+                  </Link>
+                  .
+                </p>
               )}
             </div>
           )}
@@ -1596,21 +1636,21 @@ export default function DiscoverPage() {
               </>
             )}
             {!activeMood && spotifyOAuthConnected === false && (
-              <section className="frame flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <h2 className="t-card">Connect Spotify for personalised picks</h2>
-                  <p className="t-meta mt-1">
-                    See your top tracks and artists right here once you connect your account.
-                  </p>
-                </div>
-                <Button
-                  asChild
-                  variant="outline"
-                  className="shrink-0 border-[#1DB954] bg-[#1DB954] text-black hover:border-[#1DB954] hover:bg-[#1DB954]/85 hover:text-black"
-                >
-                  <a href="/api/spotify/connect">Connect Spotify</a>
-                </Button>
-              </section>
+              <Notice
+                tone="info"
+                title="Connect Spotify for personalised picks"
+                action={
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="shrink-0 border-[#1DB954] bg-[#1DB954] text-black hover:border-[#1DB954] hover:bg-[#1DB954]/85 hover:text-black"
+                  >
+                    <a href="/api/spotify/connect">Connect Spotify</a>
+                  </Button>
+                }
+              >
+                See your top tracks and artists right here once you connect your account.
+              </Notice>
             )}
 
             {/* New releases */}
@@ -1649,8 +1689,8 @@ export default function DiscoverPage() {
 
             {/* Genre shelves */}
             {!activeMood &&
-              (musicGenreLoading
-                ? MUSIC_GENRE_QUERIES.slice(0, 3).map((g) => (
+              (musicGenreLoading || !musicGenreFetched
+                ? MUSIC_GENRE_QUERIES.slice(0, 1).map((g) => (
                     <MusicShelf
                       key={g.title}
                       title={g.title}
@@ -1738,7 +1778,7 @@ export default function DiscoverPage() {
                         item={item}
                         rank={idx + 1}
                         onWatchlist={handleAddToWatchlist}
-                        watchlisted={mlWatchlistedIds.has(item.id)}
+                        watchlisted={watchlistedKeys.has(titleKey(item.media_type, item.id))}
                       />
                     ))}
                   </MediaGrid>
@@ -1827,13 +1867,6 @@ export default function DiscoverPage() {
                     <FilmShelf
                       title="In cinemas now"
                       items={filterWatched(nowPlaying)}
-                      loading={browseLoading}
-                    />
-
-                    <FilmShelf
-                      title="Coming soon"
-                      subtitle="Upcoming releases"
-                      items={filterWatched(upcoming)}
                       loading={browseLoading}
                     />
 

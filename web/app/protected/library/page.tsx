@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   Disc3,
@@ -28,7 +28,7 @@ import { useMode } from "@/lib/mode-context";
 
 type ViewType = "grid" | "list";
 // "film" = movies+tv, "music" = albums+tracks
-type FilterType = "all" | "film" | "movies" | "tv" | "music" | "albums" | "tracks";
+type FilterType = "film" | "movies" | "tv" | "music" | "albums" | "tracks";
 type SortType = "date_watched_desc" | "date_watched_asc" | "rating_desc" | "rating_asc" | "title_asc" | "title_desc" | "date_added_desc" | "date_added_asc";
 
 // `dated` options are prefixed with "Date watched" or "Date listened" by mode.
@@ -48,14 +48,13 @@ const VIEW_OPTIONS: SegmentOption<ViewType>[] = [
   { value: "list", label: "List view", icon: List, iconOnly: true },
 ];
 
-const MIXED_VIEW_HINT =
-  "All mixes posters and square covers, so it is shown as a list. Pick a type to use the grid.";
-
 type WatchLog = {
   id: string;
+  /** The table this row was loaded from; deletes go back to the same table. */
+  source: "watch_logs" | "listen_logs";
   title: string;
   media_type: "movie" | "tv" | "album" | "track";
-  rating: number;
+  rating: number | null;
   review: string | null;
   watched_date: string | null;
   poster_url: string | null;
@@ -76,7 +75,7 @@ const TYPE_ICON: Record<WatchLog["media_type"], LucideIcon> = {
   movie: Film,
   tv: Tv,
   album: Disc3,
-  track: Disc3,
+  track: Music2,
 };
 
 function upscalePoster(url: string | null, size = "w342"): string | null {
@@ -104,95 +103,136 @@ function metaLine(item: WatchLog): string {
   return item.watched_date ? `${label} · ${formatDate(item.watched_date)}` : label;
 }
 
-function averageRating(items: WatchLog[]): string {
-  if (items.length === 0) return "—";
-  return (items.reduce((acc, i) => acc + Number(i.rating), 0) / items.length).toFixed(1);
+function isRated(item: WatchLog): boolean {
+  return Number(item.rating) > 0;
 }
+
+function averageRating(items: WatchLog[]): string {
+  const rated = items.filter(isRated);
+  if (rated.length === 0) return "—";
+  return (rated.reduce((acc, i) => acc + Number(i.rating), 0) / rated.length).toFixed(1);
+}
+
+type AppMode = "film" | "music";
+
+const DEFAULT_FILTER: Record<AppMode, FilterType> = { film: "film", music: "music" };
+
+type LibraryData = { mode: AppMode; items: WatchLog[]; failed: boolean };
+type ViewState = { mode: AppMode; filter: FilterType; sortBy: SortType | null; searchQuery: string };
 
 export default function LibraryPage() {
   const { mode } = useMode();
   const toast = useToast();
   const isMusicMode = mode === "music";
 
-  // Default filter and view depend on mode:
-  // film mode → show film content by default (grid)
-  // music mode → show music content by default (grid)
-  // user picks "all" → list view (mixed aspect ratios don't work in grid)
-  const defaultFilter: FilterType = isMusicMode ? "music" : "film";
+  const appMode: AppMode = isMusicMode ? "music" : "film";
+  const defaultFilter = DEFAULT_FILTER[appMode];
   const [viewType, setViewType] = useState<ViewType>("grid");
-  const [filter, setFilter] = useState<FilterType>(defaultFilter);
-  const [sortBy, setSortBy] = useState<SortType | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [watchedItems, setWatchedItems] = useState<WatchLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadFailed, setLoadFailed] = useState(false);
+  // Filter, sort and search belong to one mode; a mode switch falls back to defaults.
+  const [viewState, setViewState] = useState<ViewState>({
+    mode: appMode,
+    filter: defaultFilter,
+    sortBy: null,
+    searchQuery: "",
+  });
+  const current: ViewState =
+    viewState.mode === appMode
+      ? viewState
+      : { mode: appMode, filter: defaultFilter, sortBy: null, searchQuery: "" };
+  const { filter, sortBy, searchQuery } = current;
+  function patchView(patch: Partial<ViewState>) {
+    setViewState({ ...current, ...patch, mode: appMode });
+  }
 
-  // When mode changes externally, reset to the new default filter
+  // Library rows for one mode; data tagged with another mode counts as not loaded.
+  const [data, setData] = useState<LibraryData | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const loaded = data !== null && data.mode === appMode;
+  const loading = !loaded;
+  const loadFailed = loaded && data.failed;
+  const watchedItems: WatchLog[] = loaded ? data.items : [];
+
   useEffect(() => {
-    setFilter(mode === "music" ? "music" : "film");
-    setViewType("grid");
-  }, [mode]);
-
-  async function fetchLibrary() {
-    try {
-      const supabase = createClient();
-      const [filmRes, musicRes] = await Promise.all([
-        supabase
-          .from("watch_logs")
-          .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("listen_logs")
-          .select("id, title, media_type, rating, review, listened_date, image_url, created_at, artist, spotify_id")
-          .order("created_at", { ascending: false }),
-      ]);
-
-      const filmItems: WatchLog[] = (filmRes.data || []);
-      const musicItems: WatchLog[] = (musicRes.data || []).map((m) => ({
-        id: m.id,
-        title: m.title,
-        media_type: m.media_type as "album" | "track",
-        rating: m.rating,
-        review: m.review,
-        watched_date: m.listened_date,
-        poster_url: m.image_url,
-        tmdb_id: null,
-        spotify_id: m.spotify_id,
-        created_at: m.created_at,
-        artist: m.artist,
-      }));
-
-      const combined = [...filmItems, ...musicItems].sort((a, b) =>
-        b.created_at.localeCompare(a.created_at)
-      );
-      setWatchedItems(combined);
-      setLoadFailed(Boolean(filmRes.error || musicRes.error));
-    } catch {
-      setLoadFailed(true);
-    } finally {
-      setLoading(false);
+    let cancelled = false;
+    async function fetchLibrary() {
+      let result: LibraryData = { mode: appMode, items: [], failed: true };
+      try {
+        const supabase = createClient();
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData.user;
+        if (user) {
+          if (appMode === "film") {
+            const res = await supabase
+              .from("watch_logs")
+              .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+              .eq("user_id", user.id)
+              .order("created_at", { ascending: false });
+            const items: WatchLog[] = (res.data || [])
+              .filter((r) => r.media_type === "movie" || r.media_type === "tv")
+              .map((r) => ({
+                id: r.id,
+                source: "watch_logs" as const,
+                title: r.title,
+                media_type: r.media_type as "movie" | "tv",
+                rating: r.rating,
+                review: r.review,
+                watched_date: r.watched_date,
+                poster_url: r.poster_url,
+                tmdb_id: r.tmdb_id,
+                created_at: r.created_at,
+              }));
+            result = { mode: appMode, items, failed: Boolean(res.error) };
+          } else {
+            const res = await supabase
+              .from("listen_logs")
+              .select("id, title, media_type, rating, review, listened_date, image_url, created_at, artist, spotify_id")
+              .eq("user_id", user.id)
+              .order("created_at", { ascending: false });
+            const items: WatchLog[] = (res.data || [])
+              .filter((m) => m.media_type === "album" || m.media_type === "track")
+              .map((m) => ({
+                id: m.id,
+                source: "listen_logs" as const,
+                title: m.title,
+                media_type: m.media_type as "album" | "track",
+                rating: m.rating,
+                review: m.review,
+                watched_date: m.listened_date,
+                poster_url: m.image_url,
+                tmdb_id: null,
+                spotify_id: m.spotify_id,
+                created_at: m.created_at,
+                artist: m.artist,
+              }));
+            result = { mode: appMode, items, failed: Boolean(res.error) };
+          }
+        }
+      } catch {
+        result = { mode: appMode, items: [], failed: true };
+      }
+      if (!cancelled) setData(result);
     }
-  }
-
-  useEffect(() => {
     fetchLibrary();
+    return () => {
+      cancelled = true;
+    };
+  }, [appMode, reloadKey]);
+
+  const retryLoad = useCallback(() => {
+    setData(null);
+    setReloadKey((k) => k + 1);
   }, []);
-
-  function retryLoad() {
-    setLoading(true);
-    setLoadFailed(false);
-    fetchLibrary();
-  }
 
   async function handleDelete(item: WatchLog) {
     let failed = false;
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from(isMusicItem(item) ? "listen_logs" : "watch_logs")
+      const { data: removed, error } = await supabase
+        .from(item.source)
         .delete()
-        .eq("id", item.id);
-      failed = Boolean(error);
+        .eq("id", item.id)
+        .select("id");
+      failed = Boolean(error) || !removed || removed.length === 0;
     } catch {
       failed = true;
     }
@@ -207,24 +247,21 @@ export default function LibraryPage() {
       return;
     }
 
-    setWatchedItems((prev) => prev.filter((i) => i.id !== item.id));
+    setData((prev) => (prev ? { ...prev, items: prev.items.filter((i) => i.id !== item.id) } : prev));
     toast({ mark: "Removed", title: `${item.title} removed from your library`, tone: "info" });
   }
 
   function handleFilterChange(next: FilterType) {
-    setFilter(next);
-    if (next !== "all") setViewType("grid");
+    patchView({ filter: next });
   }
 
   function clearFilters() {
-    setSearchQuery("");
-    setFilter(defaultFilter);
+    patchView({ searchQuery: "", filter: defaultFilter });
   }
 
   const filteredItems = watchedItems
     .filter((item) => {
       const matchesFilter =
-        filter === "all" ||
         (filter === "film" && (item.media_type === "movie" || item.media_type === "tv")) ||
         (filter === "movies" && item.media_type === "movie") ||
         (filter === "tv" && item.media_type === "tv") ||
@@ -264,7 +301,6 @@ export default function LibraryPage() {
   const musicItems = watchedItems.filter(isMusicItem);
 
   const counts = {
-    total: watchedItems.length,
     movies: watchedItems.filter((i) => i.media_type === "movie").length,
     tvShows: watchedItems.filter((i) => i.media_type === "tv").length,
     albums: watchedItems.filter((i) => i.media_type === "album").length,
@@ -290,20 +326,16 @@ export default function LibraryPage() {
         { value: "music", label: "Music", icon: Music2, count: musicItems.length },
         { value: "albums", label: "Albums", icon: Disc3, count: counts.albums },
         { value: "tracks", label: "Tracks", icon: Music2, count: counts.tracks },
-        { value: "all", label: "All", count: counts.total },
       ]
     : [
-        { value: "film", label: "Film & TV", icon: Film, count: filmItems.length },
+        { value: "film", label: "Films & TV", icon: Film, count: filmItems.length },
         { value: "movies", label: "Films", icon: Film, count: counts.movies },
         { value: "tv", label: "TV", icon: Tv, count: counts.tvShows },
-        { value: "all", label: "All", count: counts.total },
       ];
 
   // Whether the current filter shows music content (square art) or film content (portrait art)
   const isMusicFilter = filter === "music" || filter === "albums" || filter === "tracks";
-  // "All" mixes 2:3 posters with 1:1 covers, so it is always a list.
-  const gridUnavailable = filter === "all";
-  const effectiveViewType: ViewType = gridUnavailable ? "list" : viewType;
+  const effectiveViewType: ViewType = viewType;
 
   const hasQuery = searchQuery.trim() !== "";
   // Nothing to show and nothing narrowing the view: the library itself is empty.
@@ -315,7 +347,7 @@ export default function LibraryPage() {
     return (
       <>
         <Button asChild size="icon" variant="secondary">
-          <Link href={`/protected/log?edit=${item.id}`} aria-label={`Edit ${item.title}`} title="Edit">
+          <Link href={`/protected/log?edit=${item.id}&kind=${item.source === "listen_logs" ? "music" : "film"}`} aria-label={`Edit ${item.title}`} title="Edit">
             <Pencil aria-hidden="true" />
           </Link>
         </Button>
@@ -361,14 +393,16 @@ export default function LibraryPage() {
 
       {/* Toolbar: what to show on the left; find, order and lay out on the right */}
       <div className="mt-12 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <SegmentedControl
-          label="Filter by type"
-          value={filter}
-          onChange={handleFilterChange}
-          options={filterOptions}
-        />
+        <div className="flex w-full min-w-0 sm:w-auto">
+          <SegmentedControl
+            label="Filter by type"
+            value={filter}
+            onChange={handleFilterChange}
+            options={filterOptions}
+          />
+        </div>
 
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 sm:flex-none">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
           <div className="relative min-w-[160px] flex-1 sm:w-56 sm:flex-none">
             <label htmlFor="library-search" className="sr-only">
               Search your library by title
@@ -382,7 +416,7 @@ export default function LibraryPage() {
               type="search"
               placeholder="Search your library"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => patchView({ searchQuery: e.target.value })}
               className="pl-9"
             />
           </div>
@@ -394,7 +428,7 @@ export default function LibraryPage() {
             <Select
               id="library-sort"
               value={sortBy ?? ""}
-              onChange={(e) => setSortBy(e.target.value === "" ? null : (e.target.value as SortType))}
+              onChange={(e) => patchView({ sortBy: e.target.value === "" ? null : (e.target.value as SortType) })}
             >
               <option value="">Sort: recently added</option>
               {SORT_OPTIONS.map((option) => (
@@ -405,21 +439,7 @@ export default function LibraryPage() {
             </Select>
           </div>
 
-          {gridUnavailable ? (
-            <fieldset
-              disabled
-              title={MIXED_VIEW_HINT}
-              aria-describedby="library-view-hint"
-              className="min-w-0 [&_.seg[data-active=false]]:text-dim [&_button]:cursor-not-allowed"
-            >
-              <SegmentedControl label="View" value="list" onChange={setViewType} options={VIEW_OPTIONS} />
-              <span id="library-view-hint" className="sr-only">
-                {MIXED_VIEW_HINT}
-              </span>
-            </fieldset>
-          ) : (
-            <SegmentedControl label="View" value={viewType} onChange={setViewType} options={VIEW_OPTIONS} />
-          )}
+          <SegmentedControl label="View" value={viewType} onChange={setViewType} options={VIEW_OPTIONS} />
         </div>
       </div>
 
@@ -483,7 +503,7 @@ export default function LibraryPage() {
                 image={upscalePoster(item.poster_url)}
                 aspect={isMusicItem(item) ? "square" : "poster"}
                 href={mediaHref(item)}
-                rating={Number(item.rating)}
+                rating={isRated(item) ? Number(item.rating) : null}
                 footer={metaLine(item)}
                 fallbackIcon={TYPE_ICON[item.media_type]}
                 caption={
@@ -535,7 +555,7 @@ export default function LibraryPage() {
                     </h3>
                     {music && item.artist && <p className="mt-0.5 truncate text-[12px] text-primary">{item.artist}</p>}
                     <p className="t-meta mt-1">{metaLine(item)}</p>
-                    <Stars value={Number(item.rating)} showValue className="mt-1.5" />
+                    {isRated(item) && <Stars value={Number(item.rating)} showValue className="mt-1.5" />}
                     {item.review && (
                       <p className="t-meta mt-2 line-clamp-2 italic">&ldquo;{item.review}&rdquo;</p>
                     )}

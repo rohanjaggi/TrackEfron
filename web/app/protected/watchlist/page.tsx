@@ -10,6 +10,7 @@ import {
   Film,
   LayoutGrid,
   List,
+  ListChecks,
   ListMusic,
   Music2,
   Plus,
@@ -48,16 +49,15 @@ type MusicType = "album" | "track";
 type MediaType = FilmType | MusicType;
 type TypeFilter = "all" | MediaType;
 
-/** A row of the `watchlist` table. Older rows may hold music. */
+/** A row of the `watchlist` table. Older rows may hold music; those are ignored. */
 type WatchlistItem = {
   id: string;
   tmdb_id: number | null;
   spotify_id: string | null;
   artist: string | null;
   title: string;
-  media_type: MediaType;
+  media_type: string;
   poster_url: string | null;
-  image_url?: string | null;
   added_at: string;
 };
 
@@ -65,7 +65,7 @@ type WatchlistItem = {
 type MusicQueueItem = {
   id: string;
   spotify_id: string | null;
-  media_type: MusicType;
+  media_type: string;
   title: string;
   artist: string | null;
   image_url: string | null;
@@ -155,6 +155,11 @@ function formatDate(iso: string): string {
   });
 }
 
+function countLabel(count: number, music: boolean): string {
+  if (music) return count === 1 ? "1 album or track" : `${count} albums and tracks`;
+  return count === 1 ? "1 film or show" : `${count} films and shows`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -213,29 +218,25 @@ function resultKey(result: SearchResult): string {
     : `${result.mediaType}-${result.tmdbId}`;
 }
 
-function watchlistEntry(row: WatchlistItem): Entry {
-  const base = { id: row.id, source: "watchlist" as const, title: row.title, addedAt: row.added_at };
-  if (isFilmType(row.media_type)) {
-    return {
-      ...base,
+function watchlistEntry(row: WatchlistItem): FilmEntry[] {
+  if (!isFilmType(row.media_type)) return [];
+  return [
+    {
+      id: row.id,
+      source: "watchlist",
       kind: "film",
+      title: row.title,
+      addedAt: row.added_at,
       mediaType: row.media_type,
       tmdbId: row.tmdb_id,
       image: row.poster_url,
-    };
-  }
-  return {
-    ...base,
-    kind: "music",
-    mediaType: row.media_type,
-    spotifyId: row.spotify_id,
-    artist: row.artist,
-    image: row.image_url ?? row.poster_url,
-  };
+    },
+  ];
 }
 
-function queueEntry(row: MusicQueueItem): MusicEntry {
-  return {
+function queueEntry(row: MusicQueueItem): MusicEntry[] {
+  if (!isMusicType(row.media_type)) return [];
+  return [{
     id: row.id,
     source: "music_queue",
     kind: "music",
@@ -245,7 +246,7 @@ function queueEntry(row: MusicQueueItem): MusicEntry {
     artist: row.artist,
     image: row.image_url,
     addedAt: row.added_at,
-  };
+  }];
 }
 
 function entryHref(entry: Entry): string | undefined {
@@ -302,12 +303,12 @@ function WatchlistPageContent() {
   const [viewType, setViewType] = useState<ViewType>("grid");
   const [filter, setFilter] = useState<TypeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [watchlistFailed, setWatchlistFailed] = useState(false);
-  const [musicQueue, setMusicQueue] = useState<MusicQueueItem[]>([]);
-  const [musicQueueLoading, setMusicQueueLoading] = useState(true);
-  const [musicQueueFailed, setMusicQueueFailed] = useState(false);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(true);
+  const [entriesFailed, setEntriesFailed] = useState(false);
+  const modeRef = useRef(mode);
+  const entriesRequest = useRef(0);
+  const listsRequest = useRef(0);
 
   // Add search state
   const [addQuery, setAddQuery] = useState("");
@@ -329,68 +330,108 @@ function WatchlistPageContent() {
   const [newListEmoji, setNewListEmoji] = useState(defaultEmoji);
   const [creatingList, setCreatingList] = useState(false);
 
-  // When mode changes externally, reset to mode-appropriate defaults
+  const loadEntries = useCallback(async (forMode: "film" | "music") => {
+    if (modeRef.current !== forMode) return;
+    const token = ++entriesRequest.current;
+    const current = () => token === entriesRequest.current && modeRef.current === forMode;
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!current()) return;
+      if (!user) {
+        setEntriesFailed(true);
+        setEntries([]);
+        setEntriesLoading(false);
+        return;
+      }
+      if (forMode === "music") {
+        const { data, error } = await supabase
+          .from("music_queue")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("added_at", { ascending: false });
+        if (!current()) return;
+        if (error) {
+          setEntriesFailed(true);
+        } else {
+          setEntriesFailed(false);
+          setEntries(((data as MusicQueueItem[] | null) ?? []).flatMap(queueEntry));
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("watchlist")
+          .select("*")
+          .eq("user_id", user.id)
+          .in("media_type", ["movie", "tv"])
+          .order("added_at", { ascending: false });
+        if (!current()) return;
+        if (error) {
+          setEntriesFailed(true);
+        } else {
+          setEntriesFailed(false);
+          setEntries(((data as WatchlistItem[] | null) ?? []).flatMap(watchlistEntry));
+        }
+      }
+    } catch {
+      if (!current()) return;
+      setEntriesFailed(true);
+    }
+    if (current()) setEntriesLoading(false);
+  }, []);
+
+  const fetchLists = useCallback(async (forMode: "film" | "music") => {
+    if (modeRef.current !== forMode) return;
+    const token = ++listsRequest.current;
+    const current = () => token === listsRequest.current && modeRef.current === forMode;
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!current()) return;
+      if (!user) {
+        setListsFailed(true);
+        setListsLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("lists")
+        .select("*, list_items(count)")
+        .eq("user_id", user.id)
+        .eq("list_type", forMode)
+        .order("updated_at", { ascending: false });
+      if (!current()) return;
+      if (error) {
+        setListsFailed(true);
+      } else {
+        setListsFailed(false);
+        setLists((data as UserList[]) || []);
+      }
+    } catch {
+      if (!current()) return;
+      setListsFailed(true);
+    }
+    if (current()) setListsLoading(false);
+  }, []);
+
+  // When the mode changes: drop the other mode's transient state and refetch.
   useEffect(() => {
+    modeRef.current = mode;
     setFilter("all");
     setViewType("grid");
     setNewListEmoji(mode === "music" ? "🎵" : "🎬");
-  }, [mode]);
-
-  const fetchMusicQueue = useCallback(async () => {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("music_queue")
-      .select("*")
-      .order("added_at", { ascending: false });
-    if (error) {
-      setMusicQueueFailed(true);
-    } else {
-      setMusicQueueFailed(false);
-      setMusicQueue(data || []);
-    }
-    setMusicQueueLoading(false);
-  }, []);
-
-  const fetchWatchlist = useCallback(async () => {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("watchlist")
-      .select("*")
-      .order("added_at", { ascending: false });
-    if (error) {
-      setWatchlistFailed(true);
-    } else {
-      setWatchlistFailed(false);
-      setWatchlist(data || []);
-    }
-    setLoading(false);
-  }, []);
-
-  const fetchLists = useCallback(async () => {
+    setSearchQuery("");
+    setAddQuery("");
+    setAddResults([]);
+    setShowAddDropdown(false);
+    setSearchFailed(false);
+    setIsSearching(false);
+    setShowCreateForm(false);
+    setEntries([]);
+    setEntriesLoading(true);
+    setLists([]);
     setListsLoading(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("lists")
-      .select("*, list_items(count)")
-      .eq("list_type", mode)
-      .order("updated_at", { ascending: false });
-    if (error) {
-      setListsFailed(true);
-    } else {
-      setListsFailed(false);
-      setLists((data as UserList[]) || []);
-    }
-    setListsLoading(false);
-  }, [mode]);
-
-  useEffect(() => {
-    fetchWatchlist();
-    fetchMusicQueue();
-  }, [fetchWatchlist, fetchMusicQueue]);
-
-  useEffect(() => {
-    fetchLists();
-  }, [fetchLists]);
+    void loadEntries(mode);
+    void fetchLists(mode);
+  }, [mode, loadEntries, fetchLists]);
 
   // Debounced search for adding
   useEffect(() => {
@@ -500,8 +541,7 @@ function WatchlistPageContent() {
         toast({ mark: "Added", title: `${result.title} added to your ${noun}` });
       }
 
-      if (result.kind === "music") await fetchMusicQueue();
-      else await fetchWatchlist();
+      await loadEntries(mode);
 
       setAddQuery("");
       setShowAddDropdown(false);
@@ -524,16 +564,16 @@ function WatchlistPageContent() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.from(entry.source).delete().eq("id", entry.id);
-      if (error) {
+      const { data, error } = await supabase
+        .from(entry.source)
+        .delete()
+        .eq("id", entry.id)
+        .select("id");
+      if (error || !data || data.length === 0) {
         failed();
         return;
       }
-      if (entry.source === "music_queue") {
-        setMusicQueue((items) => items.filter((item) => item.id !== entry.id));
-      } else {
-        setWatchlist((items) => items.filter((item) => item.id !== entry.id));
-      }
+      setEntries((items) => items.filter((item) => item.id !== entry.id));
       toast({ mark: "Removed", title: `${entry.title} removed from your ${noun}` });
     } catch {
       failed();
@@ -576,9 +616,12 @@ function WatchlistPageContent() {
         return;
       }
 
-      toast({ mark: "Created", title: `${name} is ready for its first title` });
+      toast({
+        mark: "Created",
+        title: `${name} is ready for its first ${isMusicMode ? "album or track" : "film or show"}`,
+      });
       closeCreateForm();
-      await fetchLists();
+      await fetchLists(mode);
     } catch {
       failed("Your list is still in the form. Try again in a moment.");
     } finally {
@@ -597,8 +640,12 @@ function WatchlistPageContent() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.from("lists").delete().eq("id", list.id);
-      if (error) {
+      const { data, error } = await supabase
+        .from("lists")
+        .delete()
+        .eq("id", list.id)
+        .select("id");
+      if (error || !data || data.length === 0) {
         failed();
         return;
       }
@@ -608,11 +655,6 @@ function WatchlistPageContent() {
       failed();
     }
   }
-
-  // Music mode shows music_queue, film mode shows watchlist
-  const entries: Entry[] = isMusicMode ? musicQueue.map(queueEntry) : watchlist.map(watchlistEntry);
-  const entriesLoading = isMusicMode ? musicQueueLoading : loading;
-  const entriesFailed = isMusicMode ? musicQueueFailed : watchlistFailed;
 
   const needle = searchQuery.trim().toLowerCase();
   const filteredItems = entries.filter(
@@ -647,17 +689,22 @@ function WatchlistPageContent() {
         { value: "tv", label: "TV", icon: Tv },
       ];
 
-  const watchlistTmdbIds = new Set(watchlist.map((i) => i.tmdb_id));
-  const musicQueueSpotifyIds = new Set(musicQueue.map((i) => i.spotify_id));
+  const filmKeys = new Set<string>();
+  const spotifyIds = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind === "film") {
+      if (entry.tmdbId != null) filmKeys.add(`${entry.mediaType}:${entry.tmdbId}`);
+    } else if (entry.spotifyId) {
+      spotifyIds.add(entry.spotifyId);
+    }
+  }
   const isAlreadyAdded = (result: SearchResult) =>
     result.kind === "music"
-      ? musicQueueSpotifyIds.has(result.spotifyId)
-      : watchlistTmdbIds.has(result.tmdbId);
+      ? spotifyIds.has(result.spotifyId)
+      : filmKeys.has(`${result.mediaType}:${result.tmdbId}`);
 
-  const logVerb = isMusicMode ? "listened" : "watched";
   const logText = (entry: Entry) => (entry.kind === "music" ? "Log listen" : "Log watch");
-  const logAria = (entry: Entry) =>
-    `Log ${entry.title} as ${entry.kind === "music" ? "listened" : "watched"}`;
+  const logAria = (entry: Entry) => `${logText(entry)}: ${entry.title}`;
 
   return (
     <div>
@@ -693,7 +740,7 @@ function WatchlistPageContent() {
           {
             value: "lists",
             label: "Lists",
-            icon: ListMusic,
+            icon: isMusicMode ? ListMusic : ListChecks,
             count: listsLoading ? undefined : lists.length,
           },
         ]}
@@ -939,7 +986,7 @@ function WatchlistPageContent() {
                   ))}
                 </MediaGrid>
                 <p className="t-meta mt-8">
-                  On each cover, the tick logs it as {logVerb} and the bin removes it from your {listNoun}.
+                  On each cover, the tick opens the log page and the bin removes it from your {listNoun}.
                 </p>
               </>
             ) : (
@@ -1086,7 +1133,7 @@ function WatchlistPageContent() {
           ) : lists.length === 0 ? (
             !showCreateForm && (
               <EmptyState
-                icon={ListMusic}
+                icon={isMusicMode ? ListMusic : ListChecks}
                 title="No lists yet."
                 description={
                   isMusicMode
@@ -1125,7 +1172,7 @@ function WatchlistPageContent() {
                         <p className="t-meta mt-1 line-clamp-2">{list.description}</p>
                       )}
                       <p className="t-meta mt-1">
-                        {itemCount} {itemCount === 1 ? "title" : "titles"} · Created {formatDate(list.created_at)}
+                        {countLabel(itemCount, isMusicMode)} · Created {formatDate(list.created_at)}
                       </p>
                     </div>
                     <ConfirmButton

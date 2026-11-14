@@ -11,7 +11,7 @@ import { MediaCard, MediaGrid } from "@/components/ui/media-card";
 import { EmptyState, Notice, PageHeader, SectionHeader, StatBlock } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
-import { useMode } from "@/lib/mode-context";
+import { useMode, type AppMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ type LogEntry = {
   id: string;
   title: string;
   media_type: MediaType;
-  rating: number;
+  rating: number | null;
   review: string | null;
   /** Watched date for film and TV, listened date for music. */
   watched_date: string | null;
@@ -39,6 +39,32 @@ type Recommendation = {
   vote_average: number | null;
   release_date: string | null;
 };
+
+type MusicRecommendation = {
+  title: string;
+  artist: string;
+  type: "album" | "track";
+  explanation?: string;
+  spotify_id?: string;
+  image_url?: string | null;
+};
+
+type RecsState = {
+  mode: AppMode;
+  status: "ok" | "failed" | "nokey";
+  film: Recommendation[];
+  music: MusicRecommendation[];
+};
+
+type LogsState = {
+  mode: AppMode;
+  key: number;
+  rows: LogEntry[];
+  failed: boolean;
+};
+
+/** Postgres unique-violation: the row is already there. */
+const DUPLICATE_ROW = "23505";
 
 interface DashboardClientProps {
   userName: string;
@@ -74,7 +100,13 @@ function mediaHref(item: LogEntry): string | null {
 }
 
 function fallbackIconFor(type: MediaType) {
-  return type === "movie" ? Film : type === "tv" ? Tv : Disc3;
+  return type === "movie" ? Film : type === "tv" ? Tv : type === "album" ? Disc3 : Music2;
+}
+
+/** Unrated (null or 0) has no rating: no stars, and it is left out of the average. */
+function ratingOf(item: LogEntry): number | null {
+  const value = Number(item.rating);
+  return item.rating != null && value > 0 ? value : null;
 }
 
 // ─── The latest entry: the page's one feature object ──────────────
@@ -83,13 +115,14 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w500");
   const Fallback = fallbackIconFor(item.media_type);
+  const rating = ratingOf(item);
 
   return (
-    <div className="light-leak">
-      <article className="frame frame-accent frame-raised ticks flex lg:flex-col">
+    <div className="light-leak h-full">
+      <article className="frame frame-accent frame-raised ticks flex h-full">
         <div
           className={cn(
-            "w-[120px] shrink-0 self-start overflow-hidden border-r border-border bg-surface-2 lg:w-full lg:border-b lg:border-r-0",
+            "w-[120px] shrink-0 self-start overflow-hidden border-r border-border bg-surface-2 lg:w-[180px]",
             music ? "aspect-square" : "aspect-[2/3]",
           )}
         >
@@ -117,13 +150,13 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
               item.title
             )}
           </h2>
-          <Stars value={Number(item.rating)} size={15} className="mt-2" />
+          {rating != null && <Stars value={rating} size={15} className="mt-2" />}
           <p className="t-meta mt-2">
             {TYPE_LABEL[item.media_type]}
             {item.watched_date && ` · ${formatDate(item.watched_date)}`}
           </p>
           {item.review && (
-            <p className="t-prose mt-3 line-clamp-3 italic text-muted-foreground">
+            <p className="t-prose mt-3 line-clamp-4 italic text-muted-foreground">
               &ldquo;{item.review}&rdquo;
             </p>
           )}
@@ -139,7 +172,8 @@ function RecentRow({ item }: { item: LogEntry }) {
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w185");
   const Fallback = fallbackIconFor(item.media_type);
-  const rowClass = "row-item -mx-2 flex items-center gap-4 px-2 py-4";
+  const rating = ratingOf(item);
+  const rowClass = "row-item flex items-center gap-4 py-4";
 
   const body = (
     <>
@@ -165,7 +199,7 @@ function RecentRow({ item }: { item: LogEntry }) {
         </div>
       </div>
 
-      <Stars value={Number(item.rating)} showValue className="shrink-0" />
+      {rating != null && <Stars value={rating} showValue className="shrink-0" />}
     </>
   );
 
@@ -182,72 +216,80 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const { mode } = useMode();
   const toast = useToast();
 
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filmFailed, setFilmFailed] = useState(false);
-  const [musicFailed, setMusicFailed] = useState(false);
+  const [logsState, setLogsState] = useState<LogsState | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const [recs, setRecs] = useState<Recommendation[]>([]);
-  const [recsLoading, setRecsLoading] = useState(true);
-  const [recsFailed, setRecsFailed] = useState(false);
-  const [watchlistedIds, setWatchlistedIds] = useState<Set<number>>(new Set());
-  const [addingId, setAddingId] = useState<number | null>(null);
+  const [recsState, setRecsState] = useState<RecsState | null>(null);
+  const [watchlistKeys, setWatchlistKeys] = useState<Set<string>>(new Set());
+  const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
+  const [addingKey, setAddingKey] = useState<string | null>(null);
 
+  // Only the current mode's logs; a response for another mode never lands.
   useEffect(() => {
     let cancelled = false;
+    const requestMode = mode;
 
     async function fetchLogs() {
-      const supabase = createClient();
+      const done = (rows: LogEntry[], failed: boolean) => {
+        if (!cancelled) setLogsState({ mode: requestMode, key: reloadKey, rows, failed });
+      };
       try {
-        const [filmRes, musicRes] = await Promise.all([
-          supabase
-            .from("watch_logs")
-            .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-            .order("watched_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-          supabase
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          done([], false);
+          return;
+        }
+
+        if (requestMode === "music") {
+          const res = await supabase
             .from("listen_logs")
             .select("id, title, media_type, rating, review, listened_date, image_url, spotify_id, created_at")
+            .eq("user_id", user.id)
+            .in("media_type", ["album", "track"])
             .order("listened_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-        ]);
-        if (cancelled) return;
-
-        const filmMapped: LogEntry[] = (filmRes.data || []).map((f) => ({
-          id: f.id,
-          title: f.title,
-          media_type: f.media_type as "movie" | "tv",
-          rating: f.rating,
-          review: f.review,
-          watched_date: f.watched_date,
-          poster_url: f.poster_url,
-          tmdb_id: f.tmdb_id,
-          spotify_id: null,
-          created_at: f.created_at,
-        }));
-        const musicMapped: LogEntry[] = (musicRes.data || []).map((m) => ({
-          id: m.id,
-          title: m.title,
-          media_type: m.media_type as "album" | "track",
-          rating: m.rating,
-          review: m.review,
-          watched_date: m.listened_date,
-          poster_url: m.image_url,
-          tmdb_id: null,
-          spotify_id: m.spotify_id,
-          created_at: m.created_at,
-        }));
-
-        setLogs([...filmMapped, ...musicMapped]);
-        setFilmFailed(Boolean(filmRes.error));
-        setMusicFailed(Boolean(musicRes.error));
+            .order("created_at", { ascending: false });
+          done(
+            (res.data || []).map((m) => ({
+              id: m.id,
+              title: m.title,
+              media_type: m.media_type as "album" | "track",
+              rating: m.rating,
+              review: m.review,
+              watched_date: m.listened_date,
+              poster_url: m.image_url,
+              tmdb_id: null,
+              spotify_id: m.spotify_id,
+              created_at: m.created_at,
+            })),
+            Boolean(res.error),
+          );
+        } else {
+          const res = await supabase
+            .from("watch_logs")
+            .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+            .eq("user_id", user.id)
+            .in("media_type", ["movie", "tv"])
+            .order("watched_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false });
+          done(
+            (res.data || []).map((f) => ({
+              id: f.id,
+              title: f.title,
+              media_type: f.media_type as "movie" | "tv",
+              rating: f.rating,
+              review: f.review,
+              watched_date: f.watched_date,
+              poster_url: f.poster_url,
+              tmdb_id: f.tmdb_id,
+              spotify_id: null,
+              created_at: f.created_at,
+            })),
+            Boolean(res.error),
+          );
+        }
       } catch {
-        if (cancelled) return;
-        setFilmFailed(true);
-        setMusicFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
+        done([], true);
       }
     }
 
@@ -255,24 +297,48 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [mode, reloadKey]);
 
+  // Recommendations follow the mode: film and TV from the recommendation service, music from the AI route.
   useEffect(() => {
     let cancelled = false;
+    const requestMode = mode;
 
     async function fetchRecs() {
+      const done = (
+        status: RecsState["status"],
+        film: Recommendation[] = [],
+        music: MusicRecommendation[] = [],
+      ) => {
+        if (!cancelled) setRecsState({ mode: requestMode, status, film, music });
+      };
       try {
+        if (requestMode === "music") {
+          const res = await fetch("/api/ai/recommend?mode=music");
+          const data: unknown = await res.json();
+          if (Array.isArray(data)) {
+            const picks = (data as MusicRecommendation[]).filter((r) => r.spotify_id).slice(0, 5);
+            done("ok", [], picks);
+          } else if ((data as { code?: string } | null)?.code === "NO_API_KEY") {
+            done("nokey");
+          } else {
+            done("failed");
+          }
+          return;
+        }
+
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user) {
+          done("ok");
+          return;
+        }
         const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
         if (!res.ok) throw new Error("Recommendations request failed");
         const data: unknown = await res.json();
-        if (!cancelled && Array.isArray(data)) setRecs((data as Recommendation[]).slice(0, 5));
+        done("ok", Array.isArray(data) ? (data as Recommendation[]).slice(0, 5) : []);
       } catch {
-        if (!cancelled) setRecsFailed(true);
-      } finally {
-        if (!cancelled) setRecsLoading(false);
+        done("failed");
       }
     }
 
@@ -280,14 +346,54 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mode]);
+
+  // What is already saved, so a pick shows its state from the start.
+  useEffect(() => {
+    let cancelled = false;
+    const requestMode = mode;
+
+    async function fetchSaved() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        if (requestMode === "music") {
+          const { data } = await supabase.from("music_queue").select("spotify_id").eq("user_id", user.id);
+          if (!cancelled && data) {
+            const ids = data
+              .map((r: { spotify_id: string | null }) => r.spotify_id)
+              .filter((id): id is string => Boolean(id));
+            setQueuedIds(new Set(ids));
+          }
+        } else {
+          const { data } = await supabase
+            .from("watchlist")
+            .select("tmdb_id, media_type")
+            .eq("user_id", user.id);
+          if (!cancelled && data) {
+            setWatchlistKeys(
+              new Set(data.map((r: { tmdb_id: number; media_type: string }) => `${r.media_type}:${r.tmdb_id}`)),
+            );
+          }
+        }
+      } catch {
+        // Buttons fall back to "add"; a duplicate is handled on save.
+      }
+    }
+
+    fetchSaved();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   function retryLogs() {
-    setLoading(true);
     setReloadKey((k) => k + 1);
   }
 
   async function addToWatchlist(item: Recommendation) {
+    const key = `${item.media_type}:${item.id}`;
     const failed = () =>
       toast({
         tone: "error",
@@ -296,7 +402,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         description: "Check your connection and try again.",
       });
 
-    setAddingId(item.id);
+    setAddingKey(key);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -316,11 +422,11 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         poster_url: item.poster_url,
       });
       // 23505: unique violation, i.e. it was already on the watchlist.
-      if (error && error.code !== "23505") {
+      if (error && error.code !== DUPLICATE_ROW) {
         failed();
         return;
       }
-      setWatchlistedIds((prev) => new Set([...prev, item.id]));
+      setWatchlistKeys((prev) => new Set([...prev, key]));
       toast(
         error
           ? { tone: "info", title: `${item.title} is already on your watchlist` }
@@ -329,16 +435,71 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     } catch {
       failed();
     } finally {
-      setAddingId(null);
+      setAddingKey(null);
+    }
+  }
+
+  async function addToQueue(item: MusicRecommendation) {
+    const spotifyId = item.spotify_id;
+    if (!spotifyId) return;
+    const failed = () =>
+      toast({
+        tone: "error",
+        mark: "Not added",
+        title: `Couldn't add ${item.title} to your queue`,
+        description: "Check your connection and try again.",
+      });
+
+    setAddingKey(spotifyId);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          tone: "error",
+          title: "Your session has ended",
+          description: "Sign in again to add to your queue.",
+        });
+        return;
+      }
+      const { error } = await supabase.from("music_queue").insert({
+        user_id: user.id,
+        spotify_id: spotifyId,
+        media_type: item.type,
+        title: item.title,
+        artist: item.artist,
+        image_url: item.image_url ?? null,
+      });
+      if (error && error.code !== DUPLICATE_ROW) {
+        failed();
+        return;
+      }
+      setQueuedIds((prev) => new Set([...prev, spotifyId]));
+      toast(
+        error
+          ? { tone: "info", title: `${item.title} is already in your queue` }
+          : { mark: "Added", title: `${item.title} added to your queue` },
+      );
+    } catch {
+      failed();
+    } finally {
+      setAddingKey(null);
     }
   }
 
   const music = mode === "music";
-  const activeLogs = logs.filter((i) => isMusicType(i.media_type) === music);
-  const loadFailed = music ? musicFailed : filmFailed;
+  const loading = !logsState || logsState.mode !== mode || logsState.key !== reloadKey;
+  const activeLogs = !loading && logsState ? logsState.rows : [];
+  const loadFailed = !loading && Boolean(logsState?.failed);
   const firstRun = !loading && !loadFailed && activeLogs.length === 0;
   const latest = activeLogs[0] ?? null;
   const recentItems = activeLogs.slice(0, 6);
+
+  const recsLoading = !recsState || recsState.mode !== mode;
+  const filmRecs = !recsLoading && recsState ? recsState.film : [];
+  const musicRecs = !recsLoading && recsState ? recsState.music : [];
+  const recsStatus = recsLoading ? undefined : recsState?.status;
+  const recCount = music ? musicRecs.length : filmRecs.length;
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -348,31 +509,30 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     return created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
   };
 
+  const ratings = activeLogs.map(ratingOf).filter((r): r is number => r != null);
   const stats = {
     count: activeLogs.length,
     reviews: activeLogs.filter((i) => i.review && i.review.trim().length > 0).length,
     avgRating:
-      activeLogs.length > 0
-        ? (activeLogs.reduce((acc, i) => acc + Number(i.rating), 0) / activeLogs.length).toFixed(1)
-        : "0.0",
+      ratings.length > 0 ? (ratings.reduce((acc, r) => acc + r, 0) / ratings.length).toFixed(1) : "–",
     thisMonth: activeLogs.filter(isThisMonth).length,
   };
 
   const showFeature = loading || (!loadFailed && latest !== null);
-  const showRecs = !firstRun || recs.length > 0;
+  const showRecs = !firstRun || recCount > 0;
 
   return (
     <div className="flex flex-col gap-16">
       {/* ── Greeting, figures and the latest entry ─────────────── */}
       <section
         className={cn(
-          "grid grid-cols-1 items-start gap-10",
-          showFeature && "lg:grid-cols-[minmax(0,1fr)_260px]",
+          "grid grid-cols-1 items-stretch gap-10",
+          showFeature && "lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]",
         )}
       >
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col justify-between gap-8">
           <PageHeader
-            className="mb-8"
+            className="mb-0"
             title={
               <>
                 Welcome, <strong>{userName}</strong>
@@ -410,14 +570,14 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             />
           ) : (
             <>
-              <div className="flex flex-wrap gap-x-10 gap-y-6">
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6 sm:flex sm:gap-12">
                 <StatBlock label={music ? "Listened" : "Watched"} value={stats.count} loading={loading} />
                 <StatBlock label="Reviews" value={stats.reviews} loading={loading} />
                 <StatBlock label="Avg rating" value={stats.avgRating} loading={loading} />
                 <StatBlock label="This month" value={stats.thisMonth} loading={loading} />
               </div>
 
-              <div className="mt-8 flex flex-wrap gap-2.5">
+              <div className="flex flex-wrap gap-2.5">
                 <Button asChild>
                   <Link href="/protected/log">
                     <Plus aria-hidden="true" />
@@ -436,7 +596,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </div>
 
         {loading ? (
-          <Skeleton className="h-[180px] w-full lg:h-[480px]" />
+          <Skeleton className="h-[180px] w-full lg:h-full lg:min-h-[300px]" />
         ) : (
           !loadFailed && latest && <FeaturedEntry item={latest} />
         )}
@@ -446,7 +606,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       {!firstRun && !loadFailed && (
         <section>
           <SectionHeader
-            className="mb-0"
+            flush
             title={music ? "Recent listens" : "Recent watches"}
             action={
               <Button asChild variant="link">
@@ -469,12 +629,11 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </section>
       )}
 
-      {/* ── Recommendations (film and TV) ──────────────────────── */}
+      {/* ── Recommendations: films and TV in film mode, music in music mode ── */}
       {showRecs && (
         <section>
           <SectionHeader
             title="Recommended for you"
-            meta={music ? "Film and TV" : undefined}
             action={
               <Button asChild variant="link">
                 <Link href="/protected/discover">
@@ -486,24 +645,68 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           />
 
           {recsLoading ? (
-            <MediaGridSkeleton count={5} />
-          ) : recsFailed ? (
+            <MediaGridSkeleton count={5} aspect={music ? "square" : "poster"} />
+          ) : recsStatus === "failed" ? (
             <Notice tone="error" title="Couldn't load recommendations">
               Reload the page to try again. Everything else on this page is up to date.
             </Notice>
-          ) : recs.length === 0 ? (
+          ) : recsStatus === "nokey" ? (
+            <EmptyState
+              className="py-10"
+              title="Music picks need an AI key."
+              description="They are written using your own AI key, and none is saved yet."
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/protected/profile">Add a key in your profile</Link>
+                </Button>
+              }
+            />
+          ) : recCount === 0 ? (
             <EmptyState
               className="py-10"
               title={`Log more ${music ? "listens" : "watches"} to unlock personalised picks.`}
             />
+          ) : music ? (
+            <MediaGrid>
+              {musicRecs.map((item) => {
+                const id = item.spotify_id ?? "";
+                const queued = queuedIds.has(id);
+                return (
+                  <MediaCard
+                    key={`${item.type}-${id}`}
+                    title={item.title}
+                    subtitle={`${item.type === "album" ? "Album" : "Track"} · ${item.artist}`}
+                    image={item.image_url}
+                    aspect="square"
+                    href={`/protected/media/${item.type}/${id}`}
+                    fallbackIcon={item.type === "album" ? Disc3 : Music2}
+                    badge={queued ? <Badge variant="solid">In queue</Badge> : undefined}
+                    actions={
+                      queued ? undefined : (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          aria-label={`Add ${item.title} to queue`}
+                          disabled={addingKey === id}
+                          onClick={() => addToQueue(item)}
+                        >
+                          <Plus aria-hidden="true" />
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+            </MediaGrid>
           ) : (
             <MediaGrid>
-              {recs.map((item) => {
-                const saved = watchlistedIds.has(item.id);
+              {filmRecs.map((item) => {
+                const key = `${item.media_type}:${item.id}`;
+                const saved = watchlistKeys.has(key);
                 const type = item.media_type === "movie" ? "Film" : "TV";
                 return (
                   <MediaCard
-                    key={`${item.media_type}-${item.id}`}
+                    key={key}
                     title={item.title}
                     subtitle={
                       item.vote_average != null && item.vote_average > 0
@@ -520,7 +723,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                           variant="secondary"
                           size="icon"
                           aria-label={`Add ${item.title} to watchlist`}
-                          disabled={addingId === item.id}
+                          disabled={addingKey === key}
                           onClick={() => addToWatchlist(item)}
                         >
                           <Bookmark aria-hidden="true" />

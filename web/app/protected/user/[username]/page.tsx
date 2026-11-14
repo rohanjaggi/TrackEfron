@@ -9,6 +9,8 @@ import {
   Film,
   List,
   Lock,
+  Music2,
+  Disc3,
   Tv,
   UserCheck,
   UserMinus,
@@ -58,7 +60,28 @@ type UserList = {
   name: string;
   emoji: string | null;
   description: string | null;
+  list_type: string | null;
   list_items: { count: number }[];
+};
+
+type ListenLog = {
+  id: string;
+  title: string;
+  artist: string | null;
+  media_type: "album" | "track";
+  rating: number;
+  image_url: string | null;
+  spotify_id: string | null;
+  created_at: string;
+};
+
+type QueueItem = {
+  id: string;
+  title: string;
+  artist: string | null;
+  media_type: "album" | "track";
+  image_url: string | null;
+  spotify_id: string;
 };
 
 type RelationshipStatus = "self" | "friends" | "pending_sent" | "pending_received" | "none";
@@ -124,6 +147,52 @@ function ProfileSkeleton() {
   );
 }
 
+/** A person's lists for one domain, counted in that domain's own nouns. */
+function ProfileLists({
+  title,
+  lists,
+  noun,
+}: {
+  title: string;
+  lists: UserList[];
+  noun: "film" | "music";
+}) {
+  if (lists.length === 0) return null;
+  return (
+    <section>
+      <SectionHeader title={title} as="h3" />
+      <ul>
+        {lists.map((list) => {
+          const count = list.list_items?.[0]?.count ?? 0;
+          const countLabel =
+            noun === "film"
+              ? count === 1 ? "1 film or show" : `${count} films and shows`
+              : count === 1 ? "1 album or track" : `${count} albums and tracks`;
+          return (
+            <li key={list.id} className="row-item">
+              <Link href={`/protected/lists/${list.id}`} className="flex items-center gap-4 px-2 py-4">
+                <span
+                  className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-surface-2 text-[18px] leading-none"
+                  aria-hidden="true"
+                >
+                  {list.emoji || <List className="size-4 text-dim" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="t-card block truncate">{list.name}</span>
+                  {list.description && (
+                    <span className="t-meta mt-1 line-clamp-1 block">{list.description}</span>
+                  )}
+                </span>
+                <span className="label-upper shrink-0">{countLabel}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export default function UserProfilePage() {
   return (
     <Suspense>
@@ -149,6 +218,8 @@ function UserProfileContent() {
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [lists, setLists] = useState<UserList[]>([]);
+  const [listenLogs, setListenLogs] = useState<ListenLog[]>([]);
+  const [musicQueue, setMusicQueue] = useState<QueueItem[]>([]);
   const [friendDataLoading, setFriendDataLoading] = useState(false);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
 
@@ -225,7 +296,7 @@ function UserProfileContent() {
       try {
         const supabase = createClient();
 
-        const [logsRes, watchlistRes, listsRes] = await Promise.all([
+        const [logsRes, watchlistRes, listsRes, listensRes, queueRes] = await Promise.all([
           supabase
             .from("watch_logs")
             .select("id, title, media_type, rating, review, poster_url, tmdb_id, created_at")
@@ -238,21 +309,34 @@ function UserProfileContent() {
             .order("added_at", { ascending: false }),
           supabase
             .from("lists")
-            .select("id, name, emoji, description, list_items(count)")
+            .select("id, name, emoji, description, list_type, list_items(count)")
             .eq("user_id", profile!.id)
             .order("updated_at", { ascending: false }),
+          supabase
+            .from("listen_logs")
+            .select("id, title, artist, media_type, rating, image_url, spotify_id, created_at")
+            .eq("user_id", profile!.id)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("music_queue")
+            .select("id, title, artist, media_type, image_url, spotify_id")
+            .eq("user_id", profile!.id)
+            .order("added_at", { ascending: false }),
         ]);
 
         setWatchLogs(logsRes.data || []);
         setWatchlist(watchlistRes.data || []);
         setLists((listsRes.data as UserList[]) || []);
+        // Music reads may be refused by database rules; that just means nothing to show.
+        setListenLogs(listensRes.error ? [] : ((listensRes.data as ListenLog[]) ?? []));
+        setMusicQueue(queueRes.error ? [] : ((queueRes.data as QueueItem[]) ?? []));
 
         // Fetch friend's taste fingerprint
         const { data: dnaData } = await supabase
           .from("taste_dna")
           .select("fingerprint")
           .eq("user_id", profile!.id)
-          .single();
+          .maybeSingle();
         if (dnaData?.fingerprint) setFingerprint(dnaData.fingerprint);
       } catch (err) {
         console.error("Failed to fetch friend data:", err);
@@ -415,6 +499,20 @@ function UserProfileContent() {
       : "—",
   };
 
+  const filmLists = lists.filter((l) => l.list_type !== "music");
+  const musicLists = lists.filter((l) => l.list_type === "music");
+  const filmEmpty = watchLogs.length === 0 && watchlist.length === 0 && filmLists.length === 0;
+  const musicEmpty = listenLogs.length === 0 && musicQueue.length === 0 && musicLists.length === 0;
+
+  const musicStats = {
+    listens: listenLogs.length,
+    albums: listenLogs.filter((i) => i.media_type === "album").length,
+    tracks: listenLogs.filter((i) => i.media_type === "track").length,
+    avgRating: listenLogs.length > 0
+      ? (listenLogs.reduce((acc, i) => acc + Number(i.rating), 0) / listenLogs.length).toFixed(1)
+      : "—",
+  };
+
   const recentReviews = watchLogs
     .filter((l) => l.review && l.review.trim().length > 0)
     .slice(0, 5);
@@ -509,124 +607,197 @@ function UserProfileContent() {
           </>
         ) : (
           <>
-            <section aria-label="Figures" className="flex flex-wrap gap-x-12 gap-y-6">
-              <StatBlock label="Watched" value={stats.watched} />
-              <StatBlock label="Films" value={stats.movies} />
-              <StatBlock label="TV shows" value={stats.tvShows} />
-              <StatBlock label="Reviews" value={stats.reviews} />
-              <StatBlock label="Avg rating" value={stats.avgRating} />
-            </section>
+            {/* Film & TV */}
+            <div className="mode-film flex flex-col gap-10">
+              <SectionHeader title="Film & TV" />
 
-            {/* Recent Reviews */}
-            {recentReviews.length > 0 && (
-              <section>
-                <SectionHeader title="Recent reviews" />
-                <ul className="advance">
-                  {recentReviews.map((log) => {
-                    const poster = upscalePoster(log.poster_url);
-                    const FallbackIcon = log.media_type === "movie" ? Film : Tv;
-                    const row = (
-                      <>
-                        <span className="flex h-[72px] w-12 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
-                          {poster ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={poster} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <FallbackIcon className="size-5 text-dim" aria-hidden="true" />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span className="t-card min-w-0 truncate">{log.title}</span>
-                            <Stars value={Number(log.rating)} />
-                          </span>
-                          <span className="t-meta mt-1 block">{formatDate(log.created_at)}</span>
-                          <span className="t-prose mt-2 line-clamp-2">{log.review}</span>
-                        </span>
-                      </>
-                    );
-                    return (
-                      <li key={log.id} className="row-item">
-                        {log.tmdb_id ? (
-                          <Link
-                            href={`/protected/media/${log.media_type}/${log.tmdb_id}`}
-                            className="flex items-start gap-4 px-2 py-4"
-                          >
-                            {row}
-                          </Link>
-                        ) : (
-                          <div className="flex items-start gap-4 px-2 py-4">{row}</div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
+              {filmEmpty ? (
+                <p className="t-meta">No films or shows to show yet.</p>
+              ) : (
+                <>
+                  <section aria-label="Film and TV figures" className="flex flex-wrap gap-x-12 gap-y-6">
+                    <StatBlock label="Watched" value={stats.watched} />
+                    <StatBlock label="Films" value={stats.movies} />
+                    <StatBlock label="TV shows" value={stats.tvShows} />
+                    <StatBlock label="Reviews" value={stats.reviews} />
+                    <StatBlock label="Avg rating" value={stats.avgRating} />
+                  </section>
 
-            {/* Watchlist */}
-            {watchlist.length > 0 && (
-              <section>
-                <SectionHeader
-                  title="Watchlist"
-                  meta={`${watchlist.length} ${watchlist.length === 1 ? "title" : "titles"}`}
-                />
-                <MediaGrid dense>
-                  {watchlist.slice(0, 12).map((item) => (
-                    <MediaCard
-                      key={item.id}
-                      title={item.title}
-                      subtitle={item.media_type === "movie" ? "Film" : "TV"}
-                      image={upscalePoster(item.poster_url, "w342")}
-                      aspect="poster"
-                      href={`/protected/media/${item.media_type}/${item.tmdb_id}`}
-                      fallbackIcon={item.media_type === "movie" ? Film : Tv}
-                    />
-                  ))}
-                </MediaGrid>
-                {watchlist.length > 12 && (
-                  <p className="t-meta mt-8">+{watchlist.length - 12} more</p>
-                )}
-              </section>
-            )}
+                  {recentReviews.length > 0 && (
+                    <section>
+                      <SectionHeader title="Recent reviews" as="h3" />
+                      <ul className="advance">
+                        {recentReviews.map((log) => {
+                          const poster = upscalePoster(log.poster_url);
+                          const FallbackIcon = log.media_type === "movie" ? Film : Tv;
+                          const row = (
+                            <>
+                              <span className="flex h-[72px] w-12 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
+                                {poster ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={poster} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <FallbackIcon className="size-5 text-dim" aria-hidden="true" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <span className="t-card min-w-0 truncate">{log.title}</span>
+                                  <Stars value={Number(log.rating)} />
+                                </span>
+                                <span className="t-meta mt-1 block">{formatDate(log.created_at)}</span>
+                                <span className="t-prose mt-2 line-clamp-2">{log.review}</span>
+                              </span>
+                            </>
+                          );
+                          return (
+                            <li key={log.id} className="row-item">
+                              {log.tmdb_id ? (
+                                <Link
+                                  href={`/protected/media/${log.media_type}/${log.tmdb_id}`}
+                                  className="flex items-start gap-4 px-2 py-4"
+                                >
+                                  {row}
+                                </Link>
+                              ) : (
+                                <div className="flex items-start gap-4 px-2 py-4">{row}</div>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  )}
 
-            {/* Lists */}
-            {lists.length > 0 && (
-              <section>
-                <SectionHeader title="Lists" />
-                <ul>
-                  {lists.map((list) => {
-                    const itemCount = list.list_items?.[0]?.count ?? 0;
-                    return (
-                      <li key={list.id} className="hairline flex items-center gap-4 py-4">
-                        <span
-                          className="flex h-10 w-10 shrink-0 items-center justify-center border border-border bg-surface-2 text-[18px] leading-none"
-                          aria-hidden="true"
-                        >
-                          {list.emoji || <List className="size-4 text-dim" />}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="t-card truncate">{list.name}</h3>
-                          {list.description && (
-                            <p className="t-meta mt-1 line-clamp-1">{list.description}</p>
-                          )}
-                        </div>
-                        <span className="label-upper shrink-0">
-                          {itemCount} {itemCount === 1 ? "title" : "titles"}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
+                  {watchlist.length > 0 && (
+                    <section>
+                      <SectionHeader
+                        title="Watchlist"
+                        as="h3"
+                        meta={`${watchlist.length} ${watchlist.length === 1 ? "film or show" : "films and shows"}`}
+                      />
+                      <MediaGrid dense>
+                        {watchlist.slice(0, 12).map((item) => (
+                          <MediaCard
+                            key={item.id}
+                            title={item.title}
+                            subtitle={item.media_type === "movie" ? "Film" : "TV"}
+                            image={upscalePoster(item.poster_url, "w342")}
+                            aspect="poster"
+                            href={`/protected/media/${item.media_type}/${item.tmdb_id}`}
+                            fallbackIcon={item.media_type === "movie" ? Film : Tv}
+                          />
+                        ))}
+                      </MediaGrid>
+                      {watchlist.length > 12 && (
+                        <p className="t-meta mt-8">+{watchlist.length - 12} more</p>
+                      )}
+                    </section>
+                  )}
 
-            {/* No activity */}
-            {watchLogs.length === 0 && watchlist.length === 0 && lists.length === 0 && (
+                  <ProfileLists title="Film & TV lists" lists={filmLists} noun="film" />
+                </>
+              )}
+            </div>
+
+            {/* Music */}
+            <div className="mode-music flex flex-col gap-10">
+              <SectionHeader title="Music" />
+
+              {musicEmpty ? (
+                <p className="t-meta">No listens to show yet.</p>
+              ) : (
+                <>
+                  <section aria-label="Music figures" className="flex flex-wrap gap-x-12 gap-y-6">
+                    <StatBlock label="Listens" value={musicStats.listens} />
+                    <StatBlock label="Albums" value={musicStats.albums} />
+                    <StatBlock label="Tracks" value={musicStats.tracks} />
+                    <StatBlock label="Avg rating" value={musicStats.avgRating} />
+                  </section>
+
+                  {listenLogs.length > 0 && (
+                    <section>
+                      <SectionHeader title="Recent listens" as="h3" />
+                      <ul className="advance">
+                        {listenLogs.slice(0, 5).map((log) => {
+                          const row = (
+                            <>
+                              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
+                                {log.image_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={log.image_url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <Music2 className="size-5 text-dim" aria-hidden="true" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                  <span className="t-card min-w-0 truncate">{log.title}</span>
+                                  <Stars value={Number(log.rating)} />
+                                </span>
+                                <span className="t-meta mt-1 block">
+                                  {log.artist ? `${log.artist} · ` : ""}
+                                  {formatDate(log.created_at)}
+                                </span>
+                              </span>
+                            </>
+                          );
+                          return (
+                            <li key={log.id} className="row-item">
+                              {log.spotify_id ? (
+                                <Link
+                                  href={`/protected/media/${log.media_type}/${log.spotify_id}`}
+                                  className="flex items-center gap-4 px-2 py-4"
+                                >
+                                  {row}
+                                </Link>
+                              ) : (
+                                <div className="flex items-center gap-4 px-2 py-4">{row}</div>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  )}
+
+                  {musicQueue.length > 0 && (
+                    <section>
+                      <SectionHeader
+                        title="Queue"
+                        as="h3"
+                        meta={`${musicQueue.length} ${musicQueue.length === 1 ? "album or track" : "albums and tracks"}`}
+                      />
+                      <MediaGrid dense>
+                        {musicQueue.slice(0, 12).map((item) => (
+                          <MediaCard
+                            key={item.id}
+                            title={item.title}
+                            subtitle={item.artist ?? (item.media_type === "album" ? "Album" : "Track")}
+                            image={item.image_url}
+                            aspect="square"
+                            href={`/protected/media/${item.media_type}/${item.spotify_id}`}
+                            fallbackIcon={item.media_type === "album" ? Disc3 : Music2}
+                          />
+                        ))}
+                      </MediaGrid>
+                      {musicQueue.length > 12 && (
+                        <p className="t-meta mt-8">+{musicQueue.length - 12} more</p>
+                      )}
+                    </section>
+                  )}
+
+                  <ProfileLists title="Music lists" lists={musicLists} noun="music" />
+                </>
+              )}
+            </div>
+
+            {/* Nothing in either domain */}
+            {filmEmpty && musicEmpty && (
               <EmptyState
                 icon={Film}
                 title={<>{displayName} hasn&apos;t logged anything yet.</>}
-                description="Their watches, reviews, watchlist and lists will show up here once they do."
+                description="Their watches, listens, reviews, watchlist, queue and lists will show up here once they do."
               />
             )}
           </>
@@ -636,7 +807,7 @@ function UserProfileContent() {
         <EmptyState
           icon={Lock}
           title="This profile is private."
-          description={`Add ${displayName} as a friend to see their watched films, reviews, watchlist and lists.`}
+          description={`Add ${displayName} as a friend to see the films, shows and music they have logged, along with their reviews, watchlist, queue and lists.`}
         />
       )}
     </div>

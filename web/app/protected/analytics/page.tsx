@@ -38,7 +38,7 @@ import { TabBar } from "@/components/ui/segmented-control";
 import { Stars } from "@/components/ui/stars";
 
 type WatchLog = {
-  rating: number;
+  rating: number | null;
   media_type: "movie" | "tv";
   watched_date: string | null;
   created_at: string;
@@ -65,7 +65,7 @@ type ListenLog = {
   artist: string | null;
   album_name: string | null;
   image_url: string | null;
-  rating: number;
+  rating: number | null;
   review: string | null;
   listened_date: string | null;
   created_at: string;
@@ -113,6 +113,25 @@ function formatRuntime(minutes: number): string {
 
 function formatDate(value: Date | number | string, options: Intl.DateTimeFormatOptions): string {
   return new Date(value).toLocaleDateString("en-GB", options);
+}
+
+/** "Jun '26", from the one en-GB formatter. */
+function formatMonthYear(value: number): string {
+  return `${formatDate(value, { month: "short" })} '${formatDate(value, { year: "2-digit" })}`;
+}
+
+/** A log counts toward ratings only when it has one (null, undefined and 0 mean unrated). */
+function isRated(l: { rating: number | null | undefined }): boolean {
+  return Number(l.rating) > 0;
+}
+
+/** TMDB movie and TV ids are separate namespaces, so details are keyed by the pair. */
+function detailKey(mediaType: "movie" | "tv", tmdbId: number): string {
+  return `${mediaType}:${tmdbId}`;
+}
+
+function needsDetails(n: number, rated = false): string {
+  return `Needs at least ${n} ${rated ? "rated " : ""}${plural(n, "film", "films")} with details to draw this.`;
 }
 
 function truncate(text: string, max = 14): string {
@@ -173,6 +192,12 @@ const TOOLTIP_PROPS = {
   itemStyle: { color: "var(--text)" },
 };
 const BAR_CURSOR = { fill: "var(--surface-2)" };
+const AXIS_LABEL = {
+  fill: "var(--text-muted)",
+  fontSize: 11,
+  fontFamily: "var(--font-mono)",
+  textAnchor: "middle" as const,
+};
 
 // ─── Local building blocks ──────────────────────────────────────
 
@@ -190,8 +215,7 @@ function Section({
 }) {
   return (
     <section>
-      <SectionHeader title={title} meta={meta} />
-      {note && <p className="t-meta -mt-2 mb-5 max-w-[62ch]">{note}</p>}
+      <SectionHeader title={title} meta={meta} description={note} />
       {children}
     </section>
   );
@@ -386,46 +410,62 @@ function tallySummary(data: Tally[], what: string): string {
   return `${what}: ${data[0].name} leads with ${data[0].count} of ${total}.`;
 }
 
+type RadarTickProps = {
+  x?: number | string;
+  y?: number | string;
+  textAnchor?: string;
+  payload?: { value?: unknown };
+};
+
+/** Full category name, wrapped onto two lines at a space, so no label is clipped. */
+function RadarLabel({ x = 0, y = 0, textAnchor, payload }: RadarTickProps) {
+  const words = String(payload?.value ?? "").split(" ");
+  return (
+    <text x={x} y={y} textAnchor={textAnchor as "start" | "middle" | "end" | undefined} style={{ ...AXIS_TICK, fontSize: 10 }}>
+      {words.map((w, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? "0.32em" : "1.1em"}>
+          {w}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
 /** Category averages: the web chart in a frame, the exact figures beside it. */
 function CategoryProfile({ data }: { data: CategoryAverage[] }) {
   const rated = data.filter((c) => c.count > 0);
   const best = rated.reduce((a, b) => (b.avg > a.avg ? b : a), rated[0]);
   const worst = rated.reduce((a, b) => (b.avg < a.avg ? b : a), rated[0]);
   return (
-    <div className="grid items-start gap-x-10 gap-y-6 md:grid-cols-[minmax(0,1fr)_260px]">
-      <ChartFigure
-        title="Average by category"
-        summary={`Highest: ${best.full} at ${best.avg.toFixed(1)} out of 5. Lowest: ${worst.full} at ${worst.avg.toFixed(1)}.`}
-      >
-        <ResponsiveContainer width="100%" height={280} minWidth={0}>
-          <RadarChart data={data} cx="50%" cy="50%" outerRadius="68%">
-            <PolarGrid stroke={GRID_STROKE} />
-            <PolarAngleAxis dataKey="label" tick={AXIS_TICK} tickLine={false} stroke={GRID_STROKE} />
-            <PolarRadiusAxis
-              angle={90}
-              domain={[0, 5]}
-              tickCount={6}
-              tick={AXIS_TICK}
-              axisLine={false}
-              stroke={GRID_STROKE}
-            />
-            <RechartsRadar
-              dataKey="avg"
-              name="Average"
-              stroke={CHART[0]}
-              fill={CHART[0]}
-              fillOpacity={0.2}
-              strokeWidth={1.5}
-              isAnimationActive={false}
-            />
-            <Tooltip {...TOOLTIP_PROPS} formatter={(value) => [Number(value).toFixed(1), "Average"]} />
-          </RadarChart>
-        </ResponsiveContainer>
-      </ChartFigure>
-      <div>
+    <div className="grid items-start gap-x-10 gap-y-6 md:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <div className="min-w-0 max-w-[420px]">
+        <ChartFigure
+          title="Average by category"
+          summary={`Highest: ${best.full} at ${best.avg.toFixed(1)} out of 5. Lowest: ${worst.full} at ${worst.avg.toFixed(1)}.`}
+        >
+          <ResponsiveContainer width="100%" aspect={1} minWidth={0}>
+            <RadarChart data={data} cx="50%" cy="50%" outerRadius="54%">
+              <PolarGrid stroke={GRID_STROKE} />
+              <PolarAngleAxis dataKey="full" tick={RadarLabel} tickLine={false} stroke={GRID_STROKE} />
+              <PolarRadiusAxis angle={90} domain={[0, 5]} tickCount={6} tick={false} axisLine={false} />
+              <RechartsRadar
+                dataKey="avg"
+                name="Average"
+                stroke={CHART[0]}
+                fill={CHART[0]}
+                fillOpacity={0.2}
+                strokeWidth={1.5}
+                isAnimationActive={false}
+              />
+              <Tooltip {...TOOLTIP_PROPS} formatter={(value) => [Number(value).toFixed(1), "Average"]} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </ChartFigure>
+      </div>
+      <div className="min-w-0">
         <SubHeading>Averages out of 5</SubHeading>
         {data.map((c) => (
-          <LeaderRow key={c.full} label={c.full} value={c.count > 0 ? c.avg.toFixed(1) : "—"} />
+          <LeaderRow key={c.full} truncate label={c.full} value={c.count > 0 ? c.avg.toFixed(1) : "—"} />
         ))}
       </div>
     </div>
@@ -507,11 +547,28 @@ function CrowdPick({ pick, kind }: { pick: ControversialPick; kind: "gem" | "unp
   );
 }
 
-function DetailsNotice({ failed, className }: { failed: number; className?: string }) {
+function DetailsNotice({
+  failed,
+  onRetry,
+  className,
+}: {
+  failed: number;
+  onRetry: () => void;
+  className?: string;
+}) {
   return (
-    <Notice tone="error" title="Some details didn't load" className={className}>
+    <Notice
+      tone="error"
+      title="Some details didn't load"
+      className={className}
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    >
       We couldn&apos;t fetch film and TV details for {failed} {plural(failed, "title", "titles")}, so
-      the figures here may be incomplete. Reload the page to try again.
+      the figures here may be incomplete.
     </Notice>
   );
 }
@@ -544,14 +601,16 @@ function FilmAnalytics({
   totalEpisodes,
   detailsLoading,
   detailsFailed,
+  onRetry,
 }: {
   watchLogs: WatchLog[];
-  tmdbDetails: Map<number, TmdbDetail>;
+  tmdbDetails: Map<string, TmdbDetail>;
   totalRuntime: number | null;
   totalSeasons: number | null;
   totalEpisodes: number | null;
   detailsLoading: boolean;
   detailsFailed: number;
+  onRetry: () => void;
 }) {
   const [tab, setTab] = useState<FilmTab>("overview");
   const idBase = "analytics-film";
@@ -559,7 +618,12 @@ function FilmAnalytics({
 
   const movieCount = watchLogs.filter((l) => l.media_type === "movie").length;
   const tvCount = watchLogs.filter((l) => l.media_type === "tv").length;
-  const avgRating = (watchLogs.reduce((acc, l) => acc + Number(l.rating), 0) / watchLogs.length).toFixed(1);
+  // Unrated entries still count as logged, but never as a rating of zero
+  const ratedLogs = watchLogs.filter(isRated);
+  const avgRating =
+    ratedLogs.length > 0
+      ? (ratedLogs.reduce((acc, l) => acc + Number(l.rating), 0) / ratedLogs.length).toFixed(1)
+      : "—";
 
   // Total views including rewatches
   const totalViews = watchLogs.reduce((acc, l) => {
@@ -574,7 +638,7 @@ function FilmAnalytics({
   const allRatings = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.5);
   const ratingBuckets: Record<string, number> = {};
   allRatings.forEach((r) => { ratingBuckets[String(r)] = 0; });
-  watchLogs.forEach((l) => {
+  ratedLogs.forEach((l) => {
     const key = String(Number(l.rating));
     if (key in ratingBuckets) ratingBuckets[key]++;
   });
@@ -609,20 +673,21 @@ function FilmAnalytics({
   ).length;
 
   // Highest and lowest rated (earliest log wins a tie)
-  const sortedByDate = [...watchLogs].sort((a, b) =>
+  const sortedByDate = [...ratedLogs].sort((a, b) =>
     (a.watched_date || a.created_at).localeCompare(b.watched_date || b.created_at),
   );
   const highestRated = sortedByDate.reduce<WatchLog | null>(
-    (best, l) => (!best || l.rating > best.rating ? l : best),
+    (best, l) => (!best || Number(l.rating) > Number(best.rating) ? l : best),
     null,
   );
   const lowestRated = sortedByDate.reduce<WatchLog | null>(
-    (worst, l) => (!worst || l.rating < worst.rating ? l : worst),
+    (worst, l) => (!worst || Number(l.rating) < Number(worst.rating) ? l : worst),
     null,
   );
 
   // Everything below depends on the film and TV details fetched per title
-  const detailFor = (l: WatchLog) => (l.tmdb_id ? tmdbDetails.get(l.tmdb_id) : undefined);
+  const detailFor = (l: WatchLog) =>
+    l.tmdb_id ? tmdbDetails.get(detailKey(l.media_type, l.tmdb_id)) : undefined;
 
   const genreData = tally(watchLogs.flatMap((l) => detailFor(l)?.genres ?? [])).slice(0, 10);
 
@@ -662,6 +727,13 @@ function FilmAnalytics({
     scatterData.push({ watchDate: watchTs, releaseYear: d.releaseYear, title: l.title });
   });
   const releaseYears = scatterData.map((p) => p.releaseYear);
+  // Release axis: earliest decade up to the current year, whole-year ticks
+  const yearNow = now.getFullYear();
+  const yearMin = releaseYears.length > 0 ? Math.floor(Math.min(...releaseYears) / 10) * 10 : yearNow - 10;
+  const yearMax = Math.max(yearNow, ...releaseYears);
+  const yearStep = yearMax - yearMin > 60 ? 20 : 10;
+  const yearTicks: number[] = [];
+  for (let y = yearMin; y <= yearMax; y += yearStep) yearTicks.push(y);
 
   const topDirectors = tally(watchLogs.flatMap((l) => detailFor(l)?.directors ?? [])).slice(0, 5);
   const topActors = tally(watchLogs.flatMap((l) => detailFor(l)?.topCast ?? [])).slice(0, 5);
@@ -670,13 +742,14 @@ function FilmAnalytics({
   const controversialPicks = watchLogs.reduce<{ gem: ControversialPick | null; unpopular: ControversialPick | null }>(
     (acc, l) => {
       const d = detailFor(l);
-      if (!d || d.voteAvg === null) return acc;
-      const userOn10 = l.rating * 2; // 0.5–5 → 1–10
+      if (!d || d.voteAvg === null || !isRated(l)) return acc;
+      const userRating = Number(l.rating);
+      const userOn10 = userRating * 2; // 0.5–5 → 1–10
       const delta = userOn10 - d.voteAvg;
       const pick: ControversialPick = {
         title: l.title,
         posterUrl: l.poster_url || d.posterUrl,
-        userRating: l.rating,
+        userRating,
         tmdbRating: Math.round(d.voteAvg * 10) / 10,
         delta: Math.round(delta * 10) / 10,
       };
@@ -744,12 +817,16 @@ function FilmAnalytics({
               >
                 <MonthlyBars data={monthlyData} nameA="Films" nameB="TV" />
               </ChartFigure>
-              <ChartFigure
-                title="How you rate"
-                summary={`Your most common rating is ${commonRating.name} out of 5, given ${commonRating.count} of ${watchLogs.length} times.`}
-              >
-                <TallyBars data={ratingData} seriesName="Logs" labelWidth={32} />
-              </ChartFigure>
+              {ratedLogs.length > 0 ? (
+                <ChartFigure
+                  title="How you rate"
+                  summary={`Your most common rating is ${commonRating.name} out of 5, given ${commonRating.count} of ${ratedLogs.length} times.`}
+                >
+                  <TallyBars data={ratingData} seriesName="Logs" labelWidth={32} />
+                </ChartFigure>
+              ) : (
+                <Hint>Rate at least 1 watch to see how you rate.</Hint>
+              )}
             </div>
           </Section>
 
@@ -761,7 +838,7 @@ function FilmAnalytics({
                   title={highestRated.title}
                   image={highestRated.poster_url}
                   aspect="poster"
-                  rating={highestRated.rating}
+                  rating={Number(highestRated.rating)}
                   fallbackIcon={Film}
                 />
                 <TitleRow
@@ -769,7 +846,7 @@ function FilmAnalytics({
                   title={lowestRated.title}
                   image={lowestRated.poster_url}
                   aspect="poster"
-                  rating={lowestRated.rating}
+                  rating={Number(lowestRated.rating)}
                   fallbackIcon={Film}
                 />
               </ul>
@@ -798,7 +875,7 @@ function FilmAnalytics({
             title="You and the crowd"
             note="Your rating next to the public average on TMDB, the film database this app uses. TMDB scores are out of 10, so your rating is doubled to compare."
           >
-            {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} className="mb-5" />}
+            {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} onRetry={onRetry} className="mb-5" />}
             {detailsLoading ? (
               <div className="grid gap-6 md:grid-cols-2">
                 <ChartSkeleton label="Loading comparisons" className="h-[190px]" />
@@ -810,7 +887,7 @@ function FilmAnalytics({
                 {unpopularOpinion && <CrowdPick pick={unpopularOpinion} kind="unpopular" />}
               </div>
             ) : (
-              <Hint>Log 1 more watch picked from search to see how your rating compares.</Hint>
+              <Hint>{needsDetails(1, true)}</Hint>
             )}
           </Section>
         </TabPanel>
@@ -818,7 +895,7 @@ function FilmAnalytics({
 
       {tab === "library" && (
         <TabPanel key="library" idBase={idBase} value="library">
-          {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} />}
+          {detailsFailed > 0 && <DetailsNotice failed={detailsFailed} onRetry={onRetry} />}
 
           <Section title="Genres and decades" note="What you watch and when it was made.">
             <div className="grid items-start gap-x-10 gap-y-8 md:grid-cols-2">
@@ -829,7 +906,7 @@ function FilmAnalytics({
                 ) : genreData.length > 0 ? (
                   <RankedList items={genreData} unit={(n) => plural(n, "title", "titles")} />
                 ) : (
-                  <Hint>Log 1 more watch picked from search to see your genres.</Hint>
+                  <Hint>{needsDetails(1)}</Hint>
                 )}
               </div>
               {detailsLoading ? (
@@ -853,7 +930,7 @@ function FilmAnalytics({
                   </ResponsiveContainer>
                 </ChartFigure>
               ) : (
-                <Hint>Log 1 more watch picked from search to see your decades.</Hint>
+                <Hint>{needsDetails(1)}</Hint>
               )}
             </div>
           </Section>
@@ -879,7 +956,7 @@ function FilmAnalytics({
                     </ChartFigure>
                   </>
                 ) : (
-                  <Hint>Log 1 more film picked from search to see film lengths.</Hint>
+                  <Hint>{needsDetails(1)}</Hint>
                 )}
               </div>
               {detailsLoading ? (
@@ -890,23 +967,29 @@ function FilmAnalytics({
                   summary={`${scatterData.length} titles, released between ${Math.min(...releaseYears)} and ${Math.max(...releaseYears)}, plotted by the date you watched them.`}
                 >
                   <ResponsiveContainer width="100%" height={280} minWidth={0}>
-                    <ScatterChart margin={{ left: -8, right: 12, bottom: 0, top: 4 }}>
+                    <ScatterChart margin={{ left: 4, right: 16, bottom: 20, top: 8 }}>
                       <CartesianGrid stroke={GRID_STROKE} />
                       <XAxis
                         dataKey="watchDate"
                         type="number"
                         domain={["dataMin", "dataMax"]}
                         tickCount={4}
-                        tickFormatter={(v) => formatDate(Number(v), { month: "short", year: "2-digit" })}
+                        tickFormatter={(v) => formatMonthYear(Number(v))}
                         name="Watched"
+                        padding={{ left: 16, right: 16 }}
+                        label={{ value: "Watched", position: "insideBottom", offset: -14, ...AXIS_LABEL }}
                         {...AXIS_PROPS}
                       />
                       <YAxis
                         dataKey="releaseYear"
                         type="number"
-                        domain={["dataMin - 5", "dataMax + 5"]}
+                        domain={[yearMin, yearMax]}
+                        ticks={yearTicks}
                         allowDecimals={false}
                         name="Release year"
+                        width={52}
+                        padding={{ top: 8, bottom: 16 }}
+                        label={{ value: "Released", angle: -90, position: "insideLeft", offset: 8, ...AXIS_LABEL }}
                         {...AXIS_PROPS}
                       />
                       <ZAxis range={[40, 40]} />
@@ -929,11 +1012,7 @@ function FilmAnalytics({
                   </ResponsiveContainer>
                 </ChartFigure>
               ) : (
-                <Hint>
-                  Log {MIN_POINTS - scatterData.length} more{" "}
-                  {plural(MIN_POINTS - scatterData.length, "watch", "watches")} picked from search to
-                  see release year against watch date.
-                </Hint>
+                <Hint>{needsDetails(MIN_POINTS)}</Hint>
               )}
             </div>
           </Section>
@@ -960,7 +1039,7 @@ function FilmAnalytics({
                 )}
               </div>
             ) : (
-              <Hint>Log 1 more watch picked from search to see directors and actors.</Hint>
+              <Hint>{needsDetails(1)}</Hint>
             )}
           </Section>
         </TabPanel>
@@ -1057,7 +1136,11 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
 
   const albumCount = listenLogs.filter((l) => l.media_type === "album").length;
   const trackCount = listenLogs.filter((l) => l.media_type === "track").length;
-  const avgRating = (listenLogs.reduce((acc, l) => acc + Number(l.rating), 0) / listenLogs.length).toFixed(1);
+  const ratedLogs = listenLogs.filter(isRated);
+  const avgRating =
+    ratedLogs.length > 0
+      ? (ratedLogs.reduce((acc, l) => acc + Number(l.rating), 0) / ratedLogs.length).toFixed(1)
+      : "—";
 
   const topArtists = tally(listenLogs.map((l) => l.artist)).slice(0, 10);
 
@@ -1072,11 +1155,11 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
     }
   });
 
-  const topAlbums = listenLogs
+  const topAlbums = ratedLogs
     .filter((l) => l.media_type === "album")
     .sort((a, b) => Number(b.rating) - Number(a.rating))
     .slice(0, 5);
-  const topTracks = listenLogs
+  const topTracks = ratedLogs
     .filter((l) => l.media_type === "track")
     .sort((a, b) => Number(b.rating) - Number(a.rating))
     .slice(0, 5);
@@ -1173,7 +1256,7 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
                         meta={item.artist}
                         image={item.image_url}
                         aspect="square"
-                        rating={item.rating}
+                        rating={Number(item.rating)}
                         fallbackIcon={Disc3}
                       />
                     ))}
@@ -1193,7 +1276,7 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
                         meta={item.artist}
                         image={item.image_url}
                         aspect="square"
-                        rating={item.rating}
+                        rating={Number(item.rating)}
                         fallbackIcon={Music2}
                       />
                     ))}
@@ -1214,140 +1297,186 @@ function MusicAnalytics({ listenLogs }: { listenLogs: ListenLog[] }) {
 
 export default function AnalyticsPage() {
   const { mode } = useMode();
+  const isMusic = mode === "music";
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [listenLogs, setListenLogs] = useState<ListenLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filmError, setFilmError] = useState(false);
-  const [musicError, setMusicError] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [detailsFailed, setDetailsFailed] = useState(0);
   const [totalRuntime, setTotalRuntime] = useState<number | null>(null);
   const [totalSeasons, setTotalSeasons] = useState<number | null>(null);
   const [totalEpisodes, setTotalEpisodes] = useState<number | null>(null);
-  const [tmdbDetails, setTmdbDetails] = useState<Map<number, TmdbDetail>>(new Map());
+  const [tmdbDetails, setTmdbDetails] = useState<Map<string, TmdbDetail>>(new Map());
+  const [attempt, setAttempt] = useState(0);
 
+  // Only the current mode's data is fetched. The effect re-runs on a mode change
+  // (or a retry); `cancelled` stops the previous run from writing into the new one.
   useEffect(() => {
-    async function fetchData() {
-      let logs: WatchLog[] = [];
-      try {
-        const supabase = createClient();
-        const [filmResult, musicResult] = await Promise.all([
-          supabase
-            .from("watch_logs")
-            .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
-            .order("watched_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("listen_logs")
-            .select("id, media_type, title, artist, album_name, image_url, rating, review, listened_date, created_at, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating, listened_on, listening_context")
-            .order("listened_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-        ]);
+    let cancelled = false;
 
-        if (filmResult.error) {
-          setFilmError(true);
-        } else {
-          logs = (filmResult.data as WatchLog[] | null) || [];
-          setWatchLogs(logs);
-        }
-        if (musicResult.error) {
-          setMusicError(true);
-        } else {
-          setListenLogs((musicResult.data as ListenLog[] | null) || []);
-        }
-      } catch {
-        setFilmError(true);
-        setMusicError(true);
-      } finally {
+    async function fetchFilm(userId: string) {
+      const supabase = createClient();
+      const result = await supabase
+        .from("watch_logs")
+        .select("rating, media_type, watched_date, created_at, tmdb_id, title, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_on, discovered_via, rewatchability, times_watched, poster_url, review")
+        .eq("user_id", userId)
+        .in("media_type", ["movie", "tv"])
+        .order("watched_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+      if (cancelled) return;
+      if (result.error) {
+        setLoadError(true);
         setLoading(false);
+        setDetailsLoading(false);
+        return;
       }
+      const logs = (result.data as WatchLog[] | null) || [];
+      setWatchLogs(logs);
+      setLoading(false);
 
       // Fetch film and TV details for runtime, seasons, genres, people and public scores
       try {
-        const uniqueIds = new Map<number, "movie" | "tv">();
+        const uniqueIds = new Map<string, { id: number; type: "movie" | "tv" }>();
         logs.forEach((l) => {
-          if (l.tmdb_id && !uniqueIds.has(l.tmdb_id)) {
-            uniqueIds.set(l.tmdb_id, l.media_type);
-          }
+          if (!l.tmdb_id) return;
+          const key = detailKey(l.media_type, l.tmdb_id);
+          if (!uniqueIds.has(key)) uniqueIds.set(key, { id: l.tmdb_id, type: l.media_type });
         });
+        if (uniqueIds.size === 0) return;
 
-        if (uniqueIds.size > 0) {
-          const entries = Array.from(uniqueIds.entries());
-          // Fetch in batches of 10
-          const details = new Map<number, TmdbDetail>();
-          let failed = 0;
-          for (let i = 0; i < entries.length; i += 10) {
-            const batch = entries.slice(i, i + 10);
-            const results = await Promise.all(
-              batch.map(async ([tmdbId, mediaType]) => {
-                try {
-                  const res = await fetch(`/api?action=detail&type=${mediaType}&id=${tmdbId}`);
-                  if (!res.ok) return null;
-                  const d = await res.json();
-                  const genres = (d.genres || []).map((g: { name: string }) => g.name);
-                  const directors = (d.credits?.crew || [])
-                    .filter((c: { job: string }) => c.job === "Director")
-                    .map((c: { name: string }) => c.name);
-                  const topCast = (d.credits?.cast || [])
-                    .sort((a: { order: number }, b: { order: number }) => a.order - b.order)
-                    .slice(0, 5)
-                    .map((c: { name: string }) => c.name);
-                  const relDate = d.release_date || d.first_air_date || "";
-                  const releaseYear = relDate ? parseInt(relDate.slice(0, 4), 10) : null;
-                  return {
-                    id: tmdbId,
-                    runtime: d.runtime || undefined,
-                    seasons: d.number_of_seasons || undefined,
-                    episodes: d.number_of_episodes || undefined,
-                    genres,
-                    directors,
-                    topCast,
-                    voteAvg: d.vote_average ?? null,
-                    releaseYear: releaseYear && !isNaN(releaseYear) ? releaseYear : null,
-                    posterUrl: d.poster_url || null,
-                  };
-                } catch {
-                  return null;
-                }
-              })
-            );
-            results.forEach((r) => {
-              if (r) {
-                const { id, ...rest } = r;
-                details.set(id, rest);
-              } else {
-                failed++;
+        const entries = Array.from(uniqueIds.entries());
+        // Fetch in batches of 10
+        const details = new Map<string, TmdbDetail>();
+        let failed = 0;
+        for (let i = 0; i < entries.length; i += 10) {
+          const batch = entries.slice(i, i + 10);
+          const results = await Promise.all(
+            batch.map(async ([key, { id: tmdbId, type: mediaType }]) => {
+              try {
+                const res = await fetch(`/api?action=detail&type=${mediaType}&id=${tmdbId}`);
+                if (!res.ok) return null;
+                const d = await res.json();
+                const genres = (d.genres || []).map((g: { name: string }) => g.name);
+                const directors = (d.credits?.crew || [])
+                  .filter((c: { job: string }) => c.job === "Director")
+                  .map((c: { name: string }) => c.name);
+                const topCast = (d.credits?.cast || [])
+                  .sort((a: { order: number }, b: { order: number }) => a.order - b.order)
+                  .slice(0, 5)
+                  .map((c: { name: string }) => c.name);
+                const relDate = d.release_date || d.first_air_date || "";
+                const releaseYear = relDate ? parseInt(relDate.slice(0, 4), 10) : null;
+                return {
+                  key,
+                  runtime: d.runtime || undefined,
+                  seasons: d.number_of_seasons || undefined,
+                  episodes: d.number_of_episodes || undefined,
+                  genres,
+                  directors,
+                  topCast,
+                  voteAvg: d.vote_average ?? null,
+                  releaseYear: releaseYear && !isNaN(releaseYear) ? releaseYear : null,
+                  posterUrl: d.poster_url || null,
+                };
+              } catch {
+                return null;
               }
-            });
-          }
-          setTmdbDetails(details);
-          setDetailsFailed(failed);
-
-          let rtSum = 0;
-          let sSum = 0;
-          let eSum = 0;
-          logs.forEach((l) => {
-            if (!l.tmdb_id) return;
-            const d = details.get(l.tmdb_id);
-            if (!d) return;
-            if (l.media_type === "movie" && d.runtime) rtSum += d.runtime;
-            if (l.media_type === "tv") {
-              if (d.seasons) sSum += d.seasons;
-              if (d.episodes) eSum += d.episodes;
+            }),
+          );
+          if (cancelled) return;
+          results.forEach((r) => {
+            if (r) {
+              const { key, ...rest } = r;
+              details.set(key, rest);
+            } else {
+              failed++;
             }
           });
-          if (rtSum > 0) setTotalRuntime(rtSum);
-          if (sSum > 0) setTotalSeasons(sSum);
-          if (eSum > 0) setTotalEpisodes(eSum);
         }
+        if (cancelled) return;
+        setTmdbDetails(details);
+        setDetailsFailed(failed);
+
+        let rtSum = 0;
+        let sSum = 0;
+        let eSum = 0;
+        logs.forEach((l) => {
+          if (!l.tmdb_id) return;
+          const d = details.get(detailKey(l.media_type, l.tmdb_id));
+          if (!d) return;
+          if (l.media_type === "movie" && d.runtime) rtSum += d.runtime;
+          if (l.media_type === "tv") {
+            if (d.seasons) sSum += d.seasons;
+            if (d.episodes) eSum += d.episodes;
+          }
+        });
+        if (rtSum > 0) setTotalRuntime(rtSum);
+        if (sSum > 0) setTotalSeasons(sSum);
+        if (eSum > 0) setTotalEpisodes(eSum);
       } finally {
+        if (!cancelled) setDetailsLoading(false);
+      }
+    }
+
+    async function fetchMusic(userId: string) {
+      const supabase = createClient();
+      const result = await supabase
+        .from("listen_logs")
+        .select("id, media_type, title, artist, album_name, image_url, rating, review, listened_date, created_at, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating, listened_on, listening_context")
+        .eq("user_id", userId)
+        .in("media_type", ["album", "track"])
+        .order("listened_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+      if (cancelled) return;
+      if (result.error) {
+        setLoadError(true);
+      } else {
+        setListenLogs((result.data as ListenLog[] | null) || []);
+      }
+      setLoading(false);
+    }
+
+    async function run() {
+      setLoading(true);
+      setLoadError(false);
+      setWatchLogs([]);
+      setListenLogs([]);
+      setTmdbDetails(new Map());
+      setDetailsLoading(!isMusic);
+      setDetailsFailed(0);
+      setTotalRuntime(null);
+      setTotalSeasons(null);
+      setTotalEpisodes(null);
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+        if (cancelled) return;
+        const user = data.user;
+        if (!user) {
+          setLoadError(true);
+          setLoading(false);
+          setDetailsLoading(false);
+          return;
+        }
+        if (isMusic) await fetchMusic(user.id);
+        else await fetchFilm(user.id);
+      } catch {
+        if (cancelled) return;
+        setLoadError(true);
+        setLoading(false);
         setDetailsLoading(false);
       }
     }
-    fetchData();
-  }, []);
 
-  const isMusic = mode === "music";
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMusic, attempt]);
+
+  const retry = () => setAttempt((n) => n + 1);
+
   const header = (
     <PageHeader
       title={
@@ -1381,12 +1510,20 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (isMusic ? musicError : filmError) {
+  if (loadError) {
     return (
       <div>
         {header}
-        <Notice tone="error" title={isMusic ? "Couldn't load your listens" : "Couldn't load your watches"}>
-          Check your connection and reload the page. Nothing you have logged is lost.
+        <Notice
+          tone="error"
+          title={isMusic ? "Couldn't load your listens" : "Couldn't load your watches"}
+          action={
+            <Button variant="outline" size="sm" onClick={retry}>
+              Try again
+            </Button>
+          }
+        >
+          Check your connection and try again. Nothing you have logged is lost.
         </Notice>
       </div>
     );
@@ -1423,9 +1560,10 @@ export default function AnalyticsPage() {
     <div>
       {header}
       {isMusic ? (
-        <MusicAnalytics listenLogs={listenLogs} />
+        <MusicAnalytics key="music" listenLogs={listenLogs} />
       ) : (
         <FilmAnalytics
+          key="film"
           watchLogs={watchLogs}
           tmdbDetails={tmdbDetails}
           totalRuntime={totalRuntime}
@@ -1433,6 +1571,7 @@ export default function AnalyticsPage() {
           totalEpisodes={totalEpisodes}
           detailsLoading={detailsLoading}
           detailsFailed={detailsFailed}
+          onRetry={retry}
         />
       )}
     </div>

@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactElement } from "react";
 import Link from "next/link";
 import {
-  ChevronDown,
-  ChevronUp,
   Eye,
   Film,
   Headphones,
@@ -16,9 +14,11 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { LoadingLine, Skeleton } from "@/components/ui/loading";
 import { LeaderRow, Notice, SectionHeader } from "@/components/ui/page";
 import { useToast } from "@/components/ui/toast";
+import { useMode } from "@/lib/mode-context";
 
 interface Identity {
   core: string;
@@ -52,7 +52,9 @@ function formatDate(value: string): string {
   });
 }
 
-/** A ruled, collapsible section of the profile. Not a box: a hairline and a heading. */
+const PROSE = "max-w-[68ch]";
+
+/** A ruled, collapsible section of the profile: the shared Disclosure with an icon and optional count. */
 function Section({
   icon: Icon,
   title,
@@ -66,54 +68,39 @@ function Section({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const panelId = useId();
+  const id = useId();
 
   return (
-    <div className="hairline">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen(!open)}
-        className="group flex w-full items-center gap-3 py-3.5 text-left"
-      >
-        <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
-        <span className="label-upper min-w-0 flex-1 text-foreground transition-colors duration-cut ease-mech group-hover:text-primary">
+    <Disclosure
+      id={id}
+      defaultOpen={defaultOpen}
+      title={
+        <span className="inline-flex items-center gap-3">
+          <Icon className="size-4 shrink-0 text-primary" aria-hidden="true" />
           {title}
+          {count != null && <Badge variant="outline">{count}</Badge>}
         </span>
-        {count != null && <Badge variant="outline">{count}</Badge>}
-        {open ? (
-          <ChevronUp className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        )}
-      </button>
-      {open && (
-        <div
-          id={panelId}
-          className="drawer-in flex max-w-[68ch] flex-col gap-3 pb-5 leading-relaxed text-muted-foreground"
-        >
-          {children}
-        </div>
-      )}
-    </div>
+      }
+    >
+      <div className="flex flex-col gap-3 leading-relaxed text-muted-foreground">{children}</div>
+    </Disclosure>
   );
 }
 
 function IdentitySection({ data }: { data: Identity }) {
   return (
     <>
-      <p>{data.core}</p>
-      {data.aspect_lens && <p>{data.aspect_lens}</p>}
-      {data.patterns && <p>{data.patterns}</p>}
-      {data.rating_style && <p className="italic">{data.rating_style}</p>}
+      <p className={PROSE}>{data.core}</p>
+      {data.aspect_lens && <p className={PROSE}>{data.aspect_lens}</p>}
+      {data.patterns && <p className={PROSE}>{data.patterns}</p>}
+      {data.rating_style && <p className={`${PROSE} italic`}>{data.rating_style}</p>}
     </>
   );
 }
 
 export function TasteDNACard() {
   const toast = useToast();
+  const { mode } = useMode();
   const [dna, setDna] = useState<TasteDNAData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -231,6 +218,20 @@ export function TasteDNACard() {
 
   const hasCounts = dna.film_log_count != null || dna.music_log_count != null;
 
+  // Both identities stay available; the current mode's comes first and starts open.
+  const filmSection = dna.film_identity?.core ? (
+    <Section key={`film-${mode}`} icon={Film} title="Film identity" defaultOpen={mode === "film"}>
+      <IdentitySection data={dna.film_identity} />
+    </Section>
+  ) : null;
+  const musicSection = dna.music_identity?.core ? (
+    <Section key={`music-${mode}`} icon={Headphones} title="Music identity" defaultOpen={mode === "music"}>
+      <IdentitySection data={dna.music_identity} />
+    </Section>
+  ) : null;
+  const identities = (mode === "music" ? [musicSection, filmSection] : [filmSection, musicSection])
+    .filter((node): node is ReactElement => node !== null);
+
   return (
     <section className="frame p-6">
       <SectionHeader
@@ -254,24 +255,14 @@ export function TasteDNACard() {
         &ldquo;{dna.fingerprint}&rdquo;
       </p>
 
-      <div className="border-t border-border">
-        {dna.film_identity?.core && (
-          <Section icon={Film} title="Film identity" defaultOpen>
-            <IdentitySection data={dna.film_identity} />
-          </Section>
-        )}
-
-        {dna.music_identity?.core && (
-          <Section icon={Headphones} title="Music identity">
-            <IdentitySection data={dna.music_identity} />
-          </Section>
-        )}
+      <div className="border-b border-border">
+        {identities}
 
         {dna.cross_domain?.thread && (
           <Section icon={Link2} title="The thread between">
-            <p>{dna.cross_domain.thread}</p>
+            <p className={PROSE}>{dna.cross_domain.thread}</p>
             {dna.cross_domain.surprising_connection && (
-              <p className="italic">{dna.cross_domain.surprising_connection}</p>
+              <p className={`${PROSE} italic`}>{dna.cross_domain.surprising_connection}</p>
             )}
           </Section>
         )}
@@ -302,7 +293,7 @@ export function TasteDNACard() {
       </div>
 
       {(dna.generated_at || hasCounts) && (
-        <div className="mt-5 max-w-sm">
+        <div className="mt-5">
           {dna.generated_at && <LeaderRow label="Generated" value={formatDate(dna.generated_at)} />}
           {dna.film_log_count != null && (
             <LeaderRow label="Films and shows read" value={dna.film_log_count} />

@@ -10,6 +10,15 @@ The mode is `data-mode="film|music"` on `<html>`. Components never branch on mod
 
 Live catalogue: run the app and open `/dev/kit` (development only). Source of truth: `web/app/globals.css`, `web/tailwind.config.ts`, `web/components/ui/*`.
 
+## Film and music stay apart
+
+- Film mode shows films and TV only (`watch_logs`, `watchlist`, TMDB, posters 2:3, "watch", "watchlist"). Music mode shows albums and tracks only (`listen_logs`, `music_queue`, Spotify, square covers, "listen", "queue"). No screen mixes the two in one list, count or sentence.
+- Each mode fetches only its own tables, and only the signed-in user's rows (`.eq("user_id", user.id)`).
+- A page about one item follows the item: it calls `useSyncMode(domain)` so the app moves to that item's mode (media detail, a list, a log being edited).
+- The two legitimately cross-domain surfaces are a friend's profile and the taste profile. They show Film & TV and Music as separate labelled sections; wrap each in `mode-film` / `mode-music` so it wears its own colours.
+- Film and TV ids are different namespaces: match and key on (`media_type`, `tmdb_id`), never `tmdb_id` alone.
+- On a mode switch, clear search text, open result panels and mode-specific filters, and ignore responses still in flight from the old mode.
+
 ## Non-negotiables
 
 1. **Nothing is rounded.** Every Tailwind radius resolves to 0. Do not write `rounded-*` or `border-radius`.

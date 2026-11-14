@@ -25,9 +25,11 @@ import { MediaCard, MediaGrid } from "@/components/ui/media-card";
 import { EmptyState, Field, Notice, PageHeader, SectionHeader } from "@/components/ui/page";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
+import { useSyncMode } from "@/lib/mode-context";
 
 type ListMeta = {
   id: string;
+  user_id: string;
   name: string;
   description: string | null;
   emoji: string | null;
@@ -103,6 +105,20 @@ function typeLabel(mediaType: string): string {
   return mediaType === "movie" ? "Film" : "TV show";
 }
 
+/** Key for "already on the list" checks: film ids are only unique per media type. */
+function itemKey(mediaType: string, tmdbId: number | string | null, spotifyId?: string | null): string {
+  if (isMusicType(mediaType)) return `spotify:${spotifyId || tmdbId}`;
+  return `${mediaType}:${tmdbId}`;
+}
+
+/** "3 films and shows", "1 album or track". */
+function countLabel(count: number, music: boolean): string {
+  const noun = music
+    ? count === 1 ? "album or track" : "albums and tracks"
+    : count === 1 ? "film or show" : "films and shows";
+  return `${count} ${noun}`;
+}
+
 function BackLink() {
   return (
     <Button asChild variant="ghost" size="sm" className="-ml-3 mb-6">
@@ -132,8 +148,10 @@ function ListDetailContent() {
   const [list, setList] = useState<ListMeta | null>(null);
   const [items, setItems] = useState<ListItem[]>([]);
   const [status, setStatus] = useState<LoadStatus>("loading");
+  const [isOwner, setIsOwner] = useState(false);
 
   const isMusic = list?.list_type === "music";
+  useSyncMode(list ? list.list_type : null);
 
   // Edit state
   const [isEditing, setIsEditing] = useState(false);
@@ -158,6 +176,13 @@ function ListDetailContent() {
     try {
       const supabase = createClient();
 
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+      if (!user) {
+        setStatus("missing");
+        return false;
+      }
+
       const [listRes, itemsRes] = await Promise.all([
         supabase.from("lists").select("*").eq("id", listId).single(),
         supabase
@@ -177,6 +202,7 @@ function ListDetailContent() {
         return false;
       }
       setList(listRes.data);
+      setIsOwner(listRes.data.user_id === user.id);
       setEditName(listRes.data.name);
       setEditDescription(listRes.data.description || "");
       setItems(itemsRes.data || []);
@@ -200,9 +226,11 @@ function ListDetailContent() {
       setAddResults([]);
       setShowAddDropdown(false);
       setSearchFailed(false);
+      setIsSearching(false);
       return;
     }
 
+    let cancelled = false;
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
@@ -223,24 +251,30 @@ function ListDetailContent() {
                 image_url: r.image_url,
               }))
             : [];
+          if (cancelled) return;
           setAddResults(data);
         } else {
           const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
           if (!res.ok) throw new Error("Search failed");
           const data: unknown = await res.json();
+          if (cancelled) return;
           setAddResults(Array.isArray(data) ? (data as SearchResult[]) : []);
         }
         setShowAddDropdown(true);
       } catch {
+        if (cancelled) return;
         setAddResults([]);
         setShowAddDropdown(false);
         setSearchFailed(true);
       } finally {
-        setIsSearching(false);
+        if (!cancelled) setIsSearching(false);
       }
     }, 350);
 
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [addQuery, isMusic]);
 
   // Close dropdown on outside click
@@ -255,6 +289,7 @@ function ListDetailContent() {
   }, []);
 
   async function handleAddItem(result: SearchResult) {
+    if (!isOwner) return;
     const label = result.title || result.name || "Untitled";
     setAddingId(result.spotify_id || result.id);
     try {
@@ -307,6 +342,7 @@ function ListDetailContent() {
   }
 
   async function handleRemoveItem(item: ListItem) {
+    if (!isOwner) return;
     let failed = false;
     try {
       const supabase = createClient();
@@ -338,7 +374,7 @@ function ListDetailContent() {
   }
 
   async function handleSaveEdit() {
-    if (!editName.trim()) return;
+    if (!isOwner || !editName.trim()) return;
     setSaving(true);
     try {
       const supabase = createClient();
@@ -370,6 +406,7 @@ function ListDetailContent() {
   }
 
   async function handleDeleteList() {
+    if (!isOwner) return;
     let failed = false;
     try {
       const supabase = createClient();
@@ -388,9 +425,7 @@ function ListDetailContent() {
     router.push(LISTS_HREF);
   }
 
-  const existingIds = new Set(
-    items.map((i) => i.spotify_id || String(i.tmdb_id))
-  );
+  const existingKeys = new Set(items.map((i) => itemKey(i.media_type, i.tmdb_id, i.spotify_id)));
 
   if (status === "loading") {
     return (
@@ -451,11 +486,17 @@ function ListDetailContent() {
           <>
             {list.description && <span className="mb-2 block">{list.description}</span>}
             <span className="label-upper">
-              {items.length} {items.length === 1 ? "title" : "titles"} · Created {formatDate(list.created_at)}
+              {countLabel(items.length, isMusic)} · Created {formatDate(list.created_at)}
             </span>
+            {!isOwner && (
+              <span className="mt-2 block">
+                <Badge variant="outline">Shared list</Badge>
+              </span>
+            )}
           </>
         }
         actions={
+          isOwner &&
           !isEditing && (
             <>
               <Button variant="outline" onClick={() => setIsEditing(true)}>
@@ -472,7 +513,7 @@ function ListDetailContent() {
         }
       />
 
-      {isEditing && (
+      {isOwner && isEditing && (
         <form
           className="frame drawer-in mb-12 flex max-w-xl flex-col gap-5 p-5"
           onSubmit={(e) => {
@@ -510,129 +551,135 @@ function ListDetailContent() {
       )}
 
       {/* Add items search */}
-      <div
-        ref={searchRef}
-        className="relative max-w-xl"
-        onKeyDown={(e) => {
-          if (e.key === "Escape") setShowAddDropdown(false);
-        }}
-      >
-        <Field label="Add to this list" htmlFor="list-add-search">
-          <div className="relative">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              ref={searchInputRef}
-              id="list-add-search"
-              type="search"
-              autoComplete="off"
-              placeholder={isMusic ? "Search for an album or track" : "Search for a film or TV show"}
-              value={addQuery}
-              onChange={(e) => setAddQuery(e.target.value)}
-              onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
-              className="pl-9"
-            />
-          </div>
-        </Field>
+      {isOwner && (
+        <div
+          ref={searchRef}
+          className="relative max-w-xl"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setShowAddDropdown(false);
+          }}
+        >
+          <Field label="Add to this list" htmlFor="list-add-search">
+            <div className="relative">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                ref={searchInputRef}
+                id="list-add-search"
+                type="search"
+                autoComplete="off"
+                placeholder={isMusic ? "Search for an album or track" : "Search for a film or TV show"}
+                value={addQuery}
+                onChange={(e) => setAddQuery(e.target.value)}
+                onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
+                className="pl-9"
+              />
+            </div>
+          </Field>
 
-        {isSearching && <LoadingLine label="Searching" className="mt-3" />}
+          {isSearching && <LoadingLine label="Searching" className="mt-3" />}
 
-        {searchFailed && !isSearching && (
-          <Notice tone="error" className="mt-3">
-            Search isn&apos;t responding right now. Try again in a moment.
-          </Notice>
-        )}
+          {searchFailed && !isSearching && (
+            <Notice tone="error" className="mt-3">
+              Search isn&apos;t responding right now. Try again in a moment.
+            </Notice>
+          )}
 
-        {showAddDropdown && !isSearching && query && addResults.length === 0 && (
-          <p className="t-meta mt-3" role="status">
-            Nothing found for &ldquo;{query}&rdquo;. Try a different spelling.
-          </p>
-        )}
+          {showAddDropdown && !isSearching && query && addResults.length === 0 && (
+            <p className="t-meta mt-3" role="status">
+              Nothing found for &ldquo;{query}&rdquo;. Try a different spelling.
+            </p>
+          )}
 
-        {showAddDropdown && addResults.length > 0 && (
-          <ul className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
-            {addResults.slice(0, 8).map((result) => {
-              const label = result.title || result.name || "Untitled";
-              const year = (result.release_date || result.first_air_date || "").slice(0, 4);
-              const resultKey = result.spotify_id || String(result.id);
-              const alreadyAdded = existingIds.has(resultKey);
-              const resultIsMusic = isMusicType(result.media_type);
-              const art = resultIsMusic ? result.image_url || result.poster_url : result.poster_url;
-              const adding = addingId === (result.spotify_id || result.id);
-              const FallbackIcon = resultIsMusic ? Disc3 : result.media_type === "movie" ? Film : Tv;
-              return (
-                <li key={`${result.media_type}-${resultKey}`} className="row-item flex items-center gap-3 px-3 py-2.5">
-                  <div
-                    className={`flex shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2 ${
-                      resultIsMusic ? "h-10 w-10" : "h-12 w-8"
-                    }`}
-                  >
-                    {art ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={art} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <FallbackIcon className="size-4 text-dim" aria-hidden="true" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">{label}</p>
-                    <p className="t-meta flex items-center gap-2">
-                      <span className="shrink-0">{typeLabel(result.media_type)}</span>
-                      {resultIsMusic
-                        ? result.artist && <span className="truncate">· {result.artist}</span>
-                        : year && <span className="shrink-0">· {year}</span>}
-                      {!resultIsMusic && result.vote_average != null && result.vote_average > 0 && (
-                        <span className="flex shrink-0 items-center gap-1">
-                          ·
-                          <Star className="size-3 fill-primary text-primary" aria-hidden="true" />
-                          <span className="sr-only">Average score</span>
-                          {result.vote_average.toFixed(1)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  {alreadyAdded ? (
-                    <Badge variant="outline">Added</Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      disabled={adding}
-                      aria-label={`Add ${label}`}
-                      onClick={() => handleAddItem(result)}
+          {showAddDropdown && addResults.length > 0 && (
+            <ul className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
+              {addResults.slice(0, 8).map((result) => {
+                const label = result.title || result.name || "Untitled";
+                const year = (result.release_date || result.first_air_date || "").slice(0, 4);
+                const resultKey = result.spotify_id || String(result.id);
+                const alreadyAdded = existingKeys.has(itemKey(result.media_type, result.id, result.spotify_id));
+                const resultIsMusic = isMusicType(result.media_type);
+                const art = resultIsMusic ? result.image_url || result.poster_url : result.poster_url;
+                const adding = addingId === (result.spotify_id || result.id);
+                const FallbackIcon = resultIsMusic ? Disc3 : result.media_type === "movie" ? Film : Tv;
+                return (
+                  <li key={`${result.media_type}-${resultKey}`} className="row-item flex items-center gap-3 px-3 py-2.5">
+                    <div
+                      className={`flex shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2 ${
+                        resultIsMusic ? "h-10 w-10" : "h-12 w-8"
+                      }`}
                     >
-                      <Plus aria-hidden="true" /> {adding ? "Adding" : "Add"}
-                    </Button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                      {art ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={art} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <FallbackIcon className="size-4 text-dim" aria-hidden="true" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-foreground">{label}</p>
+                      <p className="t-meta flex items-center gap-2">
+                        <span className="shrink-0">{typeLabel(result.media_type)}</span>
+                        {resultIsMusic
+                          ? result.artist && <span className="truncate">· {result.artist}</span>
+                          : year && <span className="shrink-0">· {year}</span>}
+                        {!resultIsMusic && result.vote_average != null && result.vote_average > 0 && (
+                          <span className="flex shrink-0 items-center gap-1">
+                            ·
+                            <Star className="size-3 fill-primary text-primary" aria-hidden="true" />
+                            <span className="sr-only">Average score</span>
+                            {result.vote_average.toFixed(1)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    {alreadyAdded ? (
+                      <Badge variant="outline">Added</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={adding}
+                        aria-label={`Add ${label}`}
+                        onClick={() => handleAddItem(result)}
+                      >
+                        <Plus aria-hidden="true" /> {adding ? "Adding" : "Add"}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Items */}
       <section className="mt-16">
         <SectionHeader
           title="On this list"
-          meta={`${items.length} ${items.length === 1 ? "title" : "titles"}`}
+          meta={countLabel(items.length, isMusic)}
         />
         {items.length === 0 ? (
           <EmptyState
             icon={isMusic ? Music2 : Film}
-            title="This list is empty"
+            title={isOwner ? "This list is empty" : "Nothing on this list yet."}
             description={
-              isMusic
-                ? "Use the search above to add albums and tracks."
-                : "Use the search above to add films and TV shows."
+              isOwner
+                ? isMusic
+                  ? "Use the search above to add albums and tracks."
+                  : "Use the search above to add films and TV shows."
+                : undefined
             }
             action={
-              <Button variant="outline" onClick={() => searchInputRef.current?.focus()}>
-                <Search aria-hidden="true" /> Find something to add
-              </Button>
+              isOwner ? (
+                <Button variant="outline" onClick={() => searchInputRef.current?.focus()}>
+                  <Search aria-hidden="true" /> Find something to add
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -659,6 +706,7 @@ function ListDetailContent() {
                   href={href}
                   fallbackIcon={itemIsMusic ? Disc3 : item.media_type === "movie" ? Film : Tv}
                   actions={
+                    isOwner ? (
                     <ConfirmButton
                       iconOnly
                       label={`Remove ${item.title} from this list`}
@@ -666,6 +714,7 @@ function ListDetailContent() {
                       className="bg-surface-2"
                       onConfirm={() => handleRemoveItem(item)}
                     />
+                    ) : undefined
                   }
                 />
               );

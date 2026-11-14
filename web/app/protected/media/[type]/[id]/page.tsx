@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookmarkMinus,
@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/loading";
 import { EmptyState, LeaderRow, SectionHeader } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
+import { useSyncMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -145,11 +146,21 @@ function SpotifyMark({ className }: { className?: string }) {
   );
 }
 
+/** Goes back when there is history to go back to; otherwise it is a plain link to Discover. */
 function BackLink() {
+  const router = useRouter();
   return (
     <Button asChild variant="ghost" size="sm" className="-ml-3 mb-6">
-      <Link href="/protected/discover">
-        <ArrowLeft aria-hidden="true" /> Back to Discover
+      <Link
+        href="/protected/discover"
+        onClick={(e) => {
+          if (window.history.length > 1) {
+            e.preventDefault();
+            router.back();
+          }
+        }}
+      >
+        <ArrowLeft aria-hidden="true" /> Back
       </Link>
     </Button>
   );
@@ -207,6 +218,9 @@ function MediaDetailContent() {
   const isMusic = type === "album" || type === "track";
   const isFilm = type === "movie" || type === "tv";
   const invalidType = !isFilm && !isMusic;
+
+  // The page follows the item: its domain decides the app mode.
+  useSyncMode(isFilm ? "film" : isMusic ? "music" : null);
 
   const [detail, setDetail] = useState<MediaDetail | null>(null);
   const [musicDetail, setMusicDetail] = useState<MusicDetail | null>(null);
@@ -283,6 +297,7 @@ function MediaDetailContent() {
             supabase
               .from("listen_logs")
               .select("id, rating, review, listened_date, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating")
+              .eq("user_id", user.id)
               .eq("spotify_id", id)
               .order("created_at", { ascending: false })
               .limit(1)
@@ -290,7 +305,9 @@ function MediaDetailContent() {
             supabase
               .from("music_queue")
               .select("id")
+              .eq("user_id", user.id)
               .eq("spotify_id", id)
+              .limit(1)
               .maybeSingle(),
           ]);
 
@@ -305,14 +322,19 @@ function MediaDetailContent() {
             supabase
               .from("watch_logs")
               .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
+              .eq("user_id", user.id)
               .eq("tmdb_id", tmdbId)
+              .eq("media_type", type)
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle(),
             supabase
               .from("watchlist")
               .select("id")
+              .eq("user_id", user.id)
               .eq("tmdb_id", tmdbId)
+              .eq("media_type", type)
+              .limit(1)
               .maybeSingle(),
           ]);
 
@@ -327,20 +349,31 @@ function MediaDetailContent() {
         const { data: allLists } = await supabase
           .from("lists")
           .select("id, name, emoji")
+          .eq("user_id", user.id)
           .eq("list_type", listMode)
           .order("updated_at", { ascending: false });
 
         if (allLists) {
           // Check which lists already contain this item
-          const matchCol = isMusic ? "spotify_id" : "tmdb_id";
-          const matchVal = isMusic ? id : Number(id);
-          const { data: listItemsData } = await supabase
+          const listIds = allLists.map((l) => l.id);
+          let itemQuery = supabase
             .from("list_items")
-            .select("list_id")
-            .eq(matchCol, matchVal);
+            .select("list_id, media_type, tmdb_id, spotify_id")
+            .in("list_id", listIds);
+          itemQuery = isMusic
+            ? itemQuery.eq("spotify_id", id)
+            : itemQuery.eq("tmdb_id", Number(id)).eq("media_type", type);
+          const { data: listItemsData } = listIds.length > 0 ? await itemQuery : { data: [] };
 
+          // Membership is keyed on the full identity of the item, never a bare id.
+          const itemKey = isMusic ? `${type}:${id}` : `${type}:${Number(id)}`;
           const listsWithItem = new Set(
-            (listItemsData || []).map((li: { list_id: string }) => li.list_id)
+            (listItemsData || [])
+              .filter(
+                (li: { media_type: string; tmdb_id: number | null; spotify_id: string | null }) =>
+                  `${li.media_type}:${isMusic ? li.spotify_id : li.tmdb_id}` === itemKey
+              )
+              .map((li: { list_id: string }) => li.list_id)
           );
 
           setUserLists(
@@ -359,7 +392,7 @@ function MediaDetailContent() {
       }
     }
     fetchUserData();
-  }, [id, isMusic]);
+  }, [id, type, isMusic]);
 
   const displayTitle = isMusic
     ? musicDetail?.name || "Unknown"
@@ -418,8 +451,21 @@ function MediaDetailContent() {
       let itemId: string | null = data?.id ?? null;
       if (!itemId) {
         const existing = isMusic
-          ? await supabase.from("music_queue").select("id").eq("spotify_id", id).maybeSingle()
-          : await supabase.from("watchlist").select("id").eq("tmdb_id", Number(id)).maybeSingle();
+          ? await supabase
+              .from("music_queue")
+              .select("id")
+              .eq("user_id", user.id)
+              .eq("spotify_id", id)
+              .limit(1)
+              .maybeSingle()
+          : await supabase
+              .from("watchlist")
+              .select("id")
+              .eq("user_id", user.id)
+              .eq("tmdb_id", Number(id))
+              .eq("media_type", type)
+              .limit(1)
+              .maybeSingle();
         itemId = existing.data?.id ?? null;
       }
       setIsSaved(true);
@@ -449,9 +495,15 @@ function MediaDetailContent() {
     }
     try {
       const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        failed();
+        return;
+      }
       const { error } = await supabase
         .from(isMusic ? "music_queue" : "watchlist")
         .delete()
+        .eq("user_id", user.id)
         .eq("id", savedItemId);
       if (error) {
         failed();
@@ -478,9 +530,15 @@ function MediaDetailContent() {
       });
     try {
       const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        failed();
+        return;
+      }
       const { error } = await supabase
         .from(isMusic ? "listen_logs" : "watch_logs")
         .delete()
+        .eq("user_id", user.id)
         .eq("id", logId);
       if (error) {
         failed();
@@ -518,7 +576,8 @@ function MediaDetailContent() {
               .from("list_items")
               .delete()
               .eq("list_id", list.id)
-              .eq("tmdb_id", Number(id));
+              .eq("tmdb_id", Number(id))
+              .eq("media_type", type);
         if (error) {
           failed();
           return;
@@ -798,13 +857,15 @@ function MediaDetailContent() {
                 <>
                   {log ? (
                     <Button asChild>
-                      <Link href={`/protected/log?edit=${log.id}`}>
+                      <Link href={`/protected/log?edit=${log.id}&kind=${isMusic ? "music" : "film"}`}>
                         <Pencil aria-hidden="true" /> Edit your log
                       </Link>
                     </Button>
                   ) : (
                     <Button asChild>
-                      <Link href="/protected/log">
+                      <Link
+                        href={`/protected/log?type=${type}&id=${encodeURIComponent(id)}&title=${encodeURIComponent(displayTitle)}`}
+                      >
                         <Plus aria-hidden="true" /> {isMusic ? "Log a listen" : "Log a watch"}
                       </Link>
                     </Button>
@@ -880,14 +941,16 @@ function MediaDetailContent() {
               <div className="mt-8 max-w-md">
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <h2 className="label-upper">Where to watch</h2>
-                  <a
-                    href={`https://www.justwatch.com/us/${isMovie ? "movie" : "tv-show"}/${displayTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="t-meta underline underline-offset-4 transition-colors duration-cut ease-mech hover:text-primary"
-                  >
-                    See it on JustWatch
-                  </a>
+                  {providers?.link && (
+                    <a
+                      href={providers.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="t-meta underline underline-offset-4 transition-colors duration-cut ease-mech hover:text-primary"
+                    >
+                      See all options
+                    </a>
+                  )}
                 </div>
                 <ul className="flex flex-wrap gap-2">
                   {whereToWatch.map((p) => (

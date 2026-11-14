@@ -1,12 +1,17 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 
-export async function syncProfile(supabase: SupabaseClient) {
+/**
+ * Copies the signed-in user's account details into the public `profiles` row
+ * that friend search and profile pages read. Returns whether it worked, so a
+ * caller that just saved can tell the user if their public profile is stale.
+ */
+export async function syncProfile(supabase: SupabaseClient): Promise<boolean> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return false;
 
-  await supabase.from("profiles").upsert(
+  const { error } = await supabase.from("profiles").upsert(
     {
       id: user.id,
       username: user.user_metadata?.username || "",
@@ -16,4 +21,5 @@ export async function syncProfile(supabase: SupabaseClient) {
     },
     { onConflict: "id" }
   );
+  return !error;
 }

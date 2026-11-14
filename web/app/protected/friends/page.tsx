@@ -46,6 +46,10 @@ type SearchResultUser = Profile & {
 
 const TAB_ID_BASE = "friends";
 
+/** Strips every character that could change the structure of a PostgREST `or` filter. */
+const sanitizeSearchTerm = (raw: string) =>
+  raw.replace(/[,()*%\\"]/g, "").trim().slice(0, 50).trim();
+
 const displayName = (profile: Profile) => profile.full_name || profile.username;
 
 /** One person in a ruled list: square avatar, name linking to their page, then the row's action. */
@@ -111,9 +115,9 @@ export default function FriendsPage() {
     init();
   }, []);
 
-  async function fetchFriends(userId: string) {
+  async function fetchFriends(userId: string, showSkeleton = false) {
     try {
-      setFriendsLoading(true);
+      if (showSkeleton) setFriendsLoading(true);
       setFriendsError(false);
       const supabase = createClient();
 
@@ -170,9 +174,9 @@ export default function FriendsPage() {
     }
   }
 
-  async function fetchRequests(userId: string) {
+  async function fetchRequests(userId: string, showSkeleton = false) {
     try {
-      setRequestsLoading(true);
+      if (showSkeleton) setRequestsLoading(true);
       setRequestsError(false);
       const supabase = createClient();
 
@@ -241,13 +245,16 @@ export default function FriendsPage() {
 
   // Debounced search
   useEffect(() => {
-    const q = searchQuery.trim();
+    const q = sanitizeSearchTerm(searchQuery);
     if (!q || !currentUserId) {
       setSearchResults([]);
       setSearchError(false);
+      setIsSearching(false);
       return;
     }
 
+    // A slower, earlier search must never overwrite a newer one.
+    let cancelled = false;
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
@@ -260,6 +267,7 @@ export default function FriendsPage() {
           .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
           .neq("id", currentUserId)
           .limit(20);
+        if (cancelled) return;
         if (profilesError) throw profilesError;
 
         if (!profiles || profiles.length === 0) {
@@ -276,6 +284,7 @@ export default function FriendsPage() {
           .or(
             `and(requester_id.eq.${currentUserId},addressee_id.in.(${resultIds.join(",")})),and(addressee_id.eq.${currentUserId},requester_id.in.(${resultIds.join(",")}))`
           );
+        if (cancelled) return;
         if (friendshipsError) throw friendshipsError;
 
         const friendshipMap = new Map<string, { status: string; friendshipId: string; direction: "sent" | "received" }>();
@@ -302,15 +311,19 @@ export default function FriendsPage() {
 
         setSearchResults(results);
       } catch (err) {
+        if (cancelled) return;
         console.error("Friend search failed:", err);
         setSearchResults([]);
         setSearchError(true);
       } finally {
-        setIsSearching(false);
+        if (!cancelled) setIsSearching(false);
       }
     }, 350);
 
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [searchQuery, currentUserId]);
 
   async function handleSendRequest(target: Profile) {
@@ -346,6 +359,8 @@ export default function FriendsPage() {
   async function handleAcceptRequest(friendshipId: string, from: Profile) {
     if (!currentUserId) return;
     setActioningId(friendshipId);
+    const previousIncoming = incoming;
+    setIncoming((prev) => prev.filter((r) => r.id !== friendshipId));
     const supabase = createClient();
     const { error } = await supabase
       .from("friendships")
@@ -354,6 +369,7 @@ export default function FriendsPage() {
     setActioningId(null);
 
     if (error) {
+      setIncoming(previousIncoming);
       console.error("handleAcceptRequest failed:", error);
       toast({
         mark: "Failed",
@@ -374,10 +390,16 @@ export default function FriendsPage() {
 
   async function handleDeclineOrCancel(friendshipId: string, other: Profile, kind: "decline" | "cancel") {
     if (!currentUserId) return;
+    const previousIncoming = incoming;
+    const previousSent = sent;
+    setIncoming((prev) => prev.filter((r) => r.id !== friendshipId));
+    setSent((prev) => prev.filter((r) => r.id !== friendshipId));
     const supabase = createClient();
     const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
 
     if (error) {
+      setIncoming(previousIncoming);
+      setSent(previousSent);
       console.error("handleDeclineOrCancel failed:", error);
       toast({
         mark: "Failed",
@@ -425,7 +447,7 @@ export default function FriendsPage() {
   return (
     <div>
       <PageHeader
-        title="Friends"
+        title={<>Your <em>friends</em></>}
         description={
           mode === "music" ? "Connect with other music lovers" : "Connect with other film lovers"
         }
@@ -438,8 +460,14 @@ export default function FriendsPage() {
         onChange={setActiveTab}
         tabs={[
           { value: "friends", label: "Friends", icon: Users, count: friends.length > 0 ? friends.length : undefined },
-          { value: "requests", label: "Requests", icon: Mail, count: pendingCount > 0 ? pendingCount : undefined },
-          { value: "find", label: "Find friends", icon: Search },
+          {
+            value: "requests",
+            label: "Requests",
+            icon: Mail,
+            count: pendingCount > 0 ? pendingCount : undefined,
+            countTone: "alert",
+          },
+          { value: "find", label: "Find", icon: Search },
         ]}
       />
 
@@ -461,7 +489,7 @@ export default function FriendsPage() {
                   variant="outline"
                   size="sm"
                   className="mt-3"
-                  onClick={() => fetchFriends(currentUserId)}
+                  onClick={() => fetchFriends(currentUserId, true)}
                 >
                   Try again
                 </Button>
@@ -513,7 +541,7 @@ export default function FriendsPage() {
                   variant="outline"
                   size="sm"
                   className="mt-3"
-                  onClick={() => fetchRequests(currentUserId)}
+                  onClick={() => fetchRequests(currentUserId, true)}
                 >
                   Try again
                 </Button>
@@ -549,6 +577,7 @@ export default function FriendsPage() {
                         <ConfirmButton
                           label="Decline"
                           confirmLabel="Confirm decline"
+                          tone="neutral"
                           icon={X}
                           disabled={actioningId === req.id}
                           onConfirm={() => handleDeclineOrCancel(req.id, req.profile, "decline")}
@@ -584,6 +613,7 @@ export default function FriendsPage() {
                         <ConfirmButton
                           label="Cancel request"
                           confirmLabel="Confirm cancel"
+                          tone="neutral"
                           icon={X}
                           onConfirm={() => handleDeclineOrCancel(req.id, req.profile, "cancel")}
                         />

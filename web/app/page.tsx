@@ -12,10 +12,6 @@ import { cn } from "@/lib/utils";
 
 const WRAP = "mx-auto w-full max-w-[1200px] px-4 sm:px-6";
 
-/* Pins the accent for a subtree so both modes can sit side by side.
-   The music side takes the whole music character through `data-mode`. */
-const FILM_SCOPE = "[--mode-accent:var(--film)]";
-
 type Rating = [label: string, value: number];
 
 const FILM_RATINGS: Rating[] = [
@@ -206,7 +202,7 @@ export default function Home() {
             </div>
           </div>
 
-          <figure className="light-leak min-w-0">
+          <figure className="light-leak mode-film min-w-0">
             <div className="frame frame-accent frame-raised ticks p-5 sm:p-6">
               <div className="flex gap-4 sm:gap-5">
                 <Artwork icon={Film} shape="poster" className="w-24 self-start sm:w-32" />
@@ -244,7 +240,7 @@ export default function Home() {
           </SectionHead>
 
           <div className="advance grid gap-x-10 gap-y-14 md:grid-cols-2">
-            <div className={cn(FILM_SCOPE, "flex min-w-0 flex-col gap-7")}>
+            <div className="mode-film flex min-w-0 flex-col gap-7">
               <div className="frame frame-accent p-5">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="t-title flex items-center gap-2.5">
@@ -269,7 +265,7 @@ export default function Home() {
               <EntryList label="Recently watched" entries={RECENT_WATCHES} shape="poster" />
             </div>
 
-            <div data-mode="music" className="flex min-w-0 flex-col gap-7">
+            <div className="mode-music flex min-w-0 flex-col gap-7">
               <div className="frame frame-accent p-5">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="t-title flex items-center gap-2.5">

@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Camera, Disc3, Eye, EyeOff, Key, Unplug } from "lucide-react";
+import { Camera, Disc3, Key, Unplug } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { LoadingLine } from "@/components/ui/loading";
 import {
   Avatar,
@@ -17,6 +17,7 @@ import {
   StatBlock,
 } from "@/components/ui/page";
 import { useToast } from "@/components/ui/toast";
+import { useMode, type AppMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
 import { syncProfile } from "@/lib/sync-profile";
 import { TasteDNACard } from "@/components/taste-dna-card";
@@ -34,11 +35,17 @@ interface ProfileProps {
   };
 }
 
-type WatchLog = {
-  rating: number;
+/** One logged film, show, album or track; only what the figures need. */
+type StatLog = {
+  rating: number | null;
   review: string | null;
-  media_type: "movie" | "tv";
-  created_at: string;
+  media_type: string;
+};
+
+type StatsData = {
+  mode: AppMode;
+  logs: StatLog[];
+  listCount: number;
 };
 
 type AiKeyInfo = {
@@ -49,6 +56,58 @@ type AiKeyInfo = {
 };
 
 const TRY_AGAIN = "Check your connection and try again.";
+
+/** Plain words for a failed profile save; never blames the connection unless it was one. */
+function saveErrorMessage(err: unknown): string {
+  const rec = typeof err === "object" && err !== null ? (err as Record<string, unknown>) : {};
+  const code = typeof rec.code === "string" ? rec.code : "";
+  const message = typeof rec.message === "string" ? rec.message.toLowerCase() : "";
+  const status = rec.status;
+
+  if (
+    status === 429 ||
+    code.startsWith("over_") ||
+    message.includes("rate limit") ||
+    message.includes("for security purposes")
+  ) {
+    return "Too many attempts. Wait a moment, then try again.";
+  }
+  if (
+    code === "session_not_found" ||
+    code === "refresh_token_not_found" ||
+    rec.name === "AuthSessionMissingError" ||
+    message.includes("session missing") ||
+    message.includes("jwt expired")
+  ) {
+    return "Your session has expired. Sign in again to save your changes.";
+  }
+  if (
+    code === "email_exists" ||
+    code === "user_already_exists" ||
+    message.includes("already registered")
+  ) {
+    return "That email is already in use.";
+  }
+  if (code === "email_address_invalid" || message.includes("invalid email")) {
+    return "That email address isn't valid.";
+  }
+  if (code === "23505" || (message.includes("username") && message.includes("already"))) {
+    return "That username is already taken. Try another.";
+  }
+  if (message.includes("username") && message.includes("invalid")) {
+    return "That username isn't valid. Use lowercase letters, numbers and underscores.";
+  }
+  if (
+    rec.name === "AuthRetryableFetchError" ||
+    status === 0 ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("load failed")
+  ) {
+    return `We couldn't reach TrackEfron. ${TRY_AGAIN}`;
+  }
+  return "Something went wrong saving your profile. Try again in a moment.";
+}
 
 const formatMonthYear = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
@@ -111,6 +170,7 @@ function extractDominantColor(file: File): Promise<string> {
 export function ProfileClient({ profile }: ProfileProps) {
   const searchParams = useSearchParams();
   const toast = useToast();
+  const { mode } = useMode();
 
   // Profile details
   const [saved, setSaved] = useState({ fullName: profile.fullName, username: profile.username });
@@ -119,7 +179,7 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [nameError, setNameError] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Photo
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl);
@@ -129,9 +189,7 @@ export function ProfileClient({ profile }: ProfileProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Stats
-  const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
-  const [watchlistCount, setWatchlistCount] = useState(0);
-  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsData, setStatsData] = useState<StatsData | null>(null);
   const [statsError, setStatsError] = useState(false);
 
   // Spotify
@@ -140,7 +198,6 @@ export function ProfileClient({ profile }: ProfileProps) {
 
   // AI key
   const [aiKeyInput, setAiKeyInput] = useState("");
-  const [showAiKey, setShowAiKey] = useState(false);
   const [aiKeyInfo, setAiKeyInfo] = useState<AiKeyInfo | null>(null);
   const [aiKeyLoading, setAiKeyLoading] = useState(true);
   const [aiKeyLoadError, setAiKeyLoadError] = useState(false);
@@ -148,27 +205,55 @@ export function ProfileClient({ profile }: ProfileProps) {
   const [aiKeyError, setAiKeyError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Only the current mode's tables are read; a response from a previous mode is dropped.
+    let cancelled = false;
     async function fetchStats() {
       try {
         const supabase = createClient();
-        const [logsRes, watchlistRes] = await Promise.all([
-          supabase.from("watch_logs").select("rating, review, media_type, created_at"),
-          supabase.from("watchlist").select("id", { count: "exact", head: true }),
-        ]);
-        if (logsRes.error || watchlistRes.error) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (!user) {
           setStatsError(true);
           return;
         }
-        setWatchLogs(logsRes.data || []);
-        setWatchlistCount(watchlistRes.count || 0);
+        const [logsRes, listRes] =
+          mode === "music"
+            ? await Promise.all([
+                supabase
+                  .from("listen_logs")
+                  .select("rating, review, media_type")
+                  .eq("user_id", user.id),
+                supabase
+                  .from("music_queue")
+                  .select("id", { count: "exact", head: true })
+                  .eq("user_id", user.id),
+              ])
+            : await Promise.all([
+                supabase
+                  .from("watch_logs")
+                  .select("rating, review, media_type")
+                  .eq("user_id", user.id),
+                supabase
+                  .from("watchlist")
+                  .select("id", { count: "exact", head: true })
+                  .eq("user_id", user.id),
+              ]);
+        if (cancelled) return;
+        if (logsRes.error || listRes.error) {
+          setStatsError(true);
+          return;
+        }
+        setStatsError(false);
+        setStatsData({ mode, logs: logsRes.data ?? [], listCount: listRes.count ?? 0 });
       } catch {
-        setStatsError(true);
-      } finally {
-        setStatsLoading(false);
+        if (!cancelled) setStatsError(true);
       }
     }
     fetchStats();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   useEffect(() => {
     fetch("/api/ai/settings")
@@ -204,7 +289,6 @@ export function ProfileClient({ profile }: ProfileProps) {
       }
       setAiKeyInfo(data);
       setAiKeyInput("");
-      setShowAiKey(false);
       toast({ mark: "Saved", title: "API key saved" });
     } catch {
       setAiKeyError(`Couldn't save your API key. ${TRY_AGAIN}`);
@@ -234,15 +318,21 @@ export function ProfileClient({ profile }: ProfileProps) {
         ? "OpenAI"
         : null;
 
+  // Loading until the figures for the current mode have arrived.
+  const statsLoading = !statsError && statsData?.mode !== mode;
+  const statsLogs = statsData?.mode === mode ? statsData.logs : [];
+  const countType = (type: string) => statsLogs.filter((i) => i.media_type === type).length;
+  const rated = statsLogs.filter((i) => Number(i.rating) > 0);
   const stats = {
-    watched: watchLogs.length,
-    movies: watchLogs.filter((i) => i.media_type === "movie").length,
-    tvShows: watchLogs.filter((i) => i.media_type === "tv").length,
-    reviews: watchLogs.filter((i) => i.review && i.review.trim().length > 0).length,
-    avgRating: watchLogs.length > 0
-      ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
-      : "—",
-    watchlist: watchlistCount,
+    logged: statsLogs.length,
+    first: countType(mode === "music" ? "album" : "movie"),
+    second: countType(mode === "music" ? "track" : "tv"),
+    reviews: statsLogs.filter((i) => i.review && i.review.trim().length > 0).length,
+    avgRating:
+      rated.length > 0
+        ? (rated.reduce((acc, i) => acc + Number(i.rating), 0) / rated.length).toFixed(1)
+        : "—",
+    list: statsData?.mode === mode ? statsData.listCount : 0,
   };
 
   const handleSpotifyDisconnect = async () => {
@@ -266,7 +356,7 @@ export function ProfileClient({ profile }: ProfileProps) {
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSaving) return;
-    setSaveError(false);
+    setSaveError(null);
 
     const nextNameError = !fullName.trim() ? "Name cannot be empty" : null;
     const nextUsernameError =
@@ -293,8 +383,15 @@ export function ProfileClient({ profile }: ProfileProps) {
 
       if (error) throw error;
 
-      // Keep profiles table in sync
-      await syncProfile(supabase);
+      // Keep the public profiles row (friend search, profile pages) in step with the account.
+      if (!(await syncProfile(supabase))) {
+        toast({
+          mark: "Failed",
+          tone: "error",
+          title: "Your public profile didn't update",
+          description: "Friends may still see your old details. Try saving again.",
+        });
+      }
 
       setFullName(nextFullName);
       setUsername(nextUsername);
@@ -302,7 +399,7 @@ export function ProfileClient({ profile }: ProfileProps) {
       toast({ mark: "Saved", title: "Profile updated" });
     } catch (err: unknown) {
       console.error("Profile save failed:", err);
-      setSaveError(true);
+      setSaveError(saveErrorMessage(err));
     } finally {
       setIsSaving(false);
     }
@@ -313,7 +410,7 @@ export function ProfileClient({ profile }: ProfileProps) {
     setUsername(saved.username);
     setNameError(null);
     setUsernameError(null);
-    setSaveError(false);
+    setSaveError(null);
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -361,8 +458,14 @@ export function ProfileClient({ profile }: ProfileProps) {
 
       if (updateError) throw updateError;
 
-      // Keep profiles table in sync
-      await syncProfile(supabase);
+      if (!(await syncProfile(supabase))) {
+        toast({
+          mark: "Failed",
+          tone: "error",
+          title: "Your public profile didn't update",
+          description: "Friends may still see your old photo. Try uploading again.",
+        });
+      }
 
       setAvatarUrl(`${publicUrl}?t=${Date.now()}`);
       setProfileColor(dominantColor);
@@ -439,19 +542,29 @@ export function ProfileClient({ profile }: ProfileProps) {
       </div>
 
       {/* Stats */}
-      <section aria-label="Your figures">
+      <section aria-label={mode === "music" ? "Music figures" : "Film & TV figures"}>
+        <SectionHeader title={mode === "music" ? "Music figures" : "Film & TV figures"} />
         {statsError ? (
           <Notice tone="error" title="Couldn't load your figures">
             Reload the page to try again.
           </Notice>
-        ) : (
+        ) : mode === "music" ? (
           <div className="flex flex-wrap gap-x-12 gap-y-6">
-            <StatBlock label="Watched" value={stats.watched} loading={statsLoading} />
-            <StatBlock label={stats.movies === 1 ? "Film" : "Films"} value={stats.movies} loading={statsLoading} />
-            <StatBlock label={stats.tvShows === 1 ? "TV show" : "TV shows"} value={stats.tvShows} loading={statsLoading} />
+            <StatBlock label="Listens" value={stats.logged} loading={statsLoading} />
+            <StatBlock label={stats.first === 1 ? "Album" : "Albums"} value={stats.first} loading={statsLoading} />
+            <StatBlock label={stats.second === 1 ? "Track" : "Tracks"} value={stats.second} loading={statsLoading} />
             <StatBlock label={stats.reviews === 1 ? "Review" : "Reviews"} value={stats.reviews} loading={statsLoading} />
             <StatBlock label="Avg rating" value={stats.avgRating} loading={statsLoading} />
-            <StatBlock label="Watchlist" value={stats.watchlist} loading={statsLoading} />
+            <StatBlock label="Queue" value={stats.list} loading={statsLoading} />
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-x-12 gap-y-6">
+            <StatBlock label="Watched" value={stats.logged} loading={statsLoading} />
+            <StatBlock label={stats.first === 1 ? "Film" : "Films"} value={stats.first} loading={statsLoading} />
+            <StatBlock label={stats.second === 1 ? "TV show" : "TV shows"} value={stats.second} loading={statsLoading} />
+            <StatBlock label={stats.reviews === 1 ? "Review" : "Reviews"} value={stats.reviews} loading={statsLoading} />
+            <StatBlock label="Avg rating" value={stats.avgRating} loading={statsLoading} />
+            <StatBlock label="Watchlist" value={stats.list} loading={statsLoading} />
           </div>
         )}
       </section>
@@ -465,7 +578,7 @@ export function ProfileClient({ profile }: ProfileProps) {
         <form onSubmit={handleSave} noValidate className="flex max-w-xl flex-col gap-6">
           {saveError && (
             <Notice tone="error" title="Couldn't save your profile">
-              {TRY_AGAIN} Your changes are still here.
+              {saveError} Your changes are still here.
             </Notice>
           )}
 
@@ -478,8 +591,6 @@ export function ProfileClient({ profile }: ProfileProps) {
                 setFullName(e.target.value);
                 setNameError(null);
               }}
-              aria-invalid={nameError ? true : undefined}
-              aria-describedby={nameError ? "fullName-error" : undefined}
             />
           </Field>
 
@@ -499,8 +610,6 @@ export function ProfileClient({ profile }: ProfileProps) {
                 setUsername(e.target.value.toLowerCase());
                 setUsernameError(null);
               }}
-              aria-invalid={usernameError ? true : undefined}
-              aria-describedby={usernameError ? "username-error" : "username-hint"}
             />
           </Field>
 
@@ -510,19 +619,24 @@ export function ProfileClient({ profile }: ProfileProps) {
               type="email"
               value={profile.email}
               readOnly
-              aria-describedby="email-hint"
               className="text-muted-foreground"
             />
           </Field>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button type="submit" disabled={isSaving || !isDirty}>
+            <Button
+              type="submit"
+              variant={isDirty ? "default" : "outline"}
+              disabled={isSaving || !isDirty}
+            >
               {isSaving ? "Saving…" : "Save changes"}
             </Button>
-            {isDirty && (
+            {isDirty ? (
               <Button variant="ghost" onClick={handleDiscard} disabled={isSaving}>
                 Discard changes
               </Button>
+            ) : (
+              <span className="t-meta">No changes to save</span>
             )}
           </div>
         </form>
@@ -655,36 +769,20 @@ export function ProfileClient({ profile }: ProfileProps) {
                 }
               >
                 <div className="flex flex-wrap gap-2">
-                  <div className="relative min-w-0 flex-1 basis-56">
-                    <Input
-                      id="ai-api-key"
-                      type={showAiKey ? "text" : "password"}
-                      value={aiKeyInput}
-                      onChange={(e) => {
-                        setAiKeyInput(e.target.value);
-                        setAiKeyError(null);
-                      }}
-                      placeholder="sk-ant-... / sk-... / AIza..."
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      aria-describedby="ai-api-key-hint"
-                      className="pr-11"
-                    />
-                    <button
-                      type="button"
-                      aria-label="Show API key"
-                      aria-pressed={showAiKey}
-                      onClick={() => setShowAiKey((shown) => !shown)}
-                      className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground transition-colors duration-cut ease-mech hover:text-foreground aria-pressed:text-primary"
-                    >
-                      {showAiKey ? (
-                        <EyeOff aria-hidden="true" className="size-3.5" />
-                      ) : (
-                        <Eye aria-hidden="true" className="size-3.5" />
-                      )}
-                    </button>
-                  </div>
+                  <PasswordInput
+                    id="ai-api-key"
+                    noun="API key"
+                    wrapperClassName="min-w-0 flex-1 basis-56"
+                    value={aiKeyInput}
+                    onChange={(e) => {
+                      setAiKeyInput(e.target.value);
+                      setAiKeyError(null);
+                    }}
+                    placeholder="sk-ant-... / sk-... / AIza..."
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
                   <Button
                     type="submit"
                     variant="outline"
@@ -703,21 +801,9 @@ export function ProfileClient({ profile }: ProfileProps) {
       {/* Danger zone */}
       <section>
         <SectionHeader title="Danger zone" />
-        <div className="frame flex flex-wrap items-center justify-between gap-x-6 gap-y-4 border-danger/50 p-5">
-          <div className="min-w-0 flex-1 basis-64">
-            <p className="t-card">Delete account</p>
-            <p className="t-meta mt-1.5">
-              Once you delete your account, there is no going back. Please be certain.
-            </p>
-            <p className="t-meta mt-1.5">Account deletion isn&rsquo;t available here yet.</p>
-          </div>
-          <ConfirmButton
-            label="Delete account"
-            confirmLabel="Confirm delete"
-            disabled
-            onConfirm={() => {}}
-          />
-        </div>
+        <Notice tone="warning" title="Account deletion isn't available yet" className="max-w-xl">
+          You can&rsquo;t delete your account from the app yet. Nothing here will remove it.
+        </Notice>
       </section>
     </div>
   );

@@ -2,12 +2,12 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Disc3, Film, Music2, Search, Tv } from "lucide-react";
+import { ArrowLeft, Check, Disc3, Film, Music2, Search, Tv } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine, PageLoading } from "@/components/ui/loading";
 import { Field, Notice, PageHeader } from "@/components/ui/page";
@@ -15,7 +15,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { StarInput, Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
-import { useMode } from "@/lib/mode-context";
+import { useMode, useSyncMode } from "@/lib/mode-context";
 import { cn } from "@/lib/utils";
 
 type MediaType = "movie" | "tv" | "album" | "track";
@@ -45,7 +45,17 @@ type SpotifyHit = {
   release_date?: string;
 };
 
-type SearchState = { key: string; type: MediaType; results: TmdbResult[]; failed: boolean };
+type OtherType = { type: MediaType; count: number };
+type SearchState = {
+  key: string;
+  type: MediaType;
+  results: TmdbResult[];
+  failed: boolean;
+  /** Results of the mode's other type, offered when the chosen type has none. */
+  other: OtherType | null;
+};
+type Prefill = { type: MediaType; id: string; title: string };
+type Domain = "film" | "music";
 type SaveIntent = "done" | "another";
 type FormError = { title?: string; message: string };
 type Choice = { value: string; label: string };
@@ -121,42 +131,57 @@ export default function LogWatchPage() {
   );
 }
 
-/** A closed-by-default section: a real button that owns a panel. */
-function Disclosure({
-  id,
-  title,
-  summary,
-  open,
-  onToggle,
-  children,
-}: {
-  id: string;
-  title: string;
-  summary: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  const Chevron = open ? ChevronUp : ChevronDown;
+const MEDIA_TYPES: readonly MediaType[] = ["movie", "tv", "album", "track"];
+const domainOf = (type: MediaType): Domain => (isMusicType(type) ? "music" : "film");
+
+function parsePrefill(params: URLSearchParams): Prefill | null {
+  if (params.get("edit")) return null;
+  const type = params.get("type");
+  if (!type || !MEDIA_TYPES.includes(type as MediaType)) return null;
+  return { type: type as MediaType, id: params.get("id") ?? "", title: (params.get("title") ?? "").trim() };
+}
+
+/** Spotify search for one music type. Throws when the server reports an error. */
+async function searchMusic(query: string, type: MediaType): Promise<TmdbResult[]> {
+  const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(query)}&type=${type}`);
+  if (!res.ok) throw new Error("Search failed");
+  const raw: unknown = await res.json();
+  if (!Array.isArray(raw)) return [];
+  return (raw as SpotifyHit[]).map((r, idx) => ({
+    id: idx + 1,
+    media_type: type,
+    spotify_id: r.id,
+    name: r.name,
+    artist: r.artist,
+    album_name: r.album_name,
+    poster_url: r.image_url,
+    release_date: r.release_date,
+  }));
+}
+
+/** Result thumbnail: artwork when it loads, otherwise the type's icon. */
+function ResultThumb({ src, music, Icon }: { src?: string | null; music: boolean; Icon: LucideIcon }) {
+  const [failed, setFailed] = useState(false);
   return (
-    <div className="hairline">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={`${id}-panel`}
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-4 py-3.5 text-left text-foreground transition-colors duration-cut ease-mech hover:text-primary"
-      >
-        <span className="text-[11px] font-medium uppercase tracking-[0.1em]">{title}</span>
-        <span className="flex shrink-0 items-center gap-3">
-          <span className="t-meta">{summary}</span>
-          <Chevron className="size-3.5" aria-hidden="true" />
-        </span>
-      </button>
-      <div id={`${id}-panel`} hidden={!open}>
-        {open && <div className="drawer-in pb-6 pt-2">{children}</div>}
-      </div>
-    </div>
+    <span
+      className={cn(
+        "relative flex shrink-0 items-center justify-center overflow-hidden bg-surface-2",
+        music ? "h-8 w-8" : "h-[38px] w-[26px]",
+      )}
+    >
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src.replace(/\/w\d+\//, "/w342/")}
+          alt=""
+          loading="eager"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <Icon className="size-3.5 text-dim" aria-hidden="true" />
+      )}
+    </span>
   );
 }
 
@@ -166,25 +191,32 @@ function LogWatchForm() {
   const { mode } = useMode();
   const toast = useToast();
   const editId = searchParams.get("edit");
+  const editKind = searchParams.get("kind");
   const isEditMode = !!editId;
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Links like ?type=tv&id=1399&title=Game+of+Thrones open the form pre-filled (create mode only).
+  const [initialPrefill] = useState(() => parsePrefill(searchParams));
+  const prefillRef = useRef<Prefill | null>(initialPrefill);
+  const chooseRef = useRef<(item: TmdbResult) => void>(() => {});
+
   const [editLoading, setEditLoading] = useState(!!editId);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [editDomain, setEditDomain] = useState<Domain | null>(null);
   // Pre-select based on current mode (music → album, film → movie)
   // In edit mode this will be overwritten by loadExisting()
   const [mediaType, setMediaType] = useState<MediaType | null>(
-    isEditMode ? null : mode === "music" ? "album" : "movie",
+    isEditMode ? null : (initialPrefill?.type ?? (mode === "music" ? "album" : "movie")),
   );
   const [syncedMode, setSyncedMode] = useState(mode);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialPrefill?.title ?? "");
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState("");
   const [watchedDate, setWatchedDate] = useState(today);
   const [savingIntent, setSavingIntent] = useState<SaveIntent | null>(null);
   const [error, setError] = useState<FormError | null>(null);
   const [search, setSearch] = useState<SearchState | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(!!initialPrefill?.title);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedMovie, setSelectedMovie] = useState<TmdbResult | null>(null);
   const [showCategories, setShowCategories] = useState(false);
@@ -221,13 +253,18 @@ function LogWatchForm() {
     setAlbumName("");
   };
 
+  // A single item's page follows the item: an edited log or a pre-filled link moves the app to its mode.
+  useSyncMode(isEditMode ? editDomain : initialPrefill ? domainOf(initialPrefill.type) : null);
+
   // If the app's mode flips while logging something new, follow it: the type
-  // choice only offers the current mode's two types. The typed title is kept.
+  // choice only offers the current mode's two types. The typed title is kept;
+  // the chosen item and the open results belong to the old mode and are dropped.
   if (syncedMode !== mode) {
     setSyncedMode(mode);
     if (!isEditMode && isMusicType(mediaType) !== (mode === "music")) {
       setMediaType(mode === "music" ? "album" : "movie");
       clearSelection();
+      setSearchOpen(false);
       setActiveIndex(-1);
     }
   }
@@ -236,11 +273,11 @@ function LogWatchForm() {
   const query = title.trim();
   const searchKey = `${mediaType}:${query}`;
   const selectedLabel = selectedMovie ? labelOf(selectedMovie) : null;
-  // No lookup while editing a matched log (as before), or right after choosing a match.
-  const canSearch =
-    !!mediaType && !!query && !(isEditMode && selectedMovie) && selectedLabel !== title;
+  // No lookup right after choosing a match (or while an edited log still has its own title).
+  const canSearch = !!mediaType && !!query && selectedLabel !== title;
   const searchPending = canSearch && search?.key !== searchKey;
   const searchFailed = canSearch && !searchPending && !!search?.failed;
+  const otherType = !searchPending && search?.type === mediaType ? search.other : null;
   const visibleResults = canSearch && search && search.type === mediaType ? search.results.slice(0, 8) : [];
   const panelOpen = searchOpen && canSearch;
   const activeOption = panelOpen && activeIndex >= 0 && activeIndex < visibleResults.length ? activeIndex : -1;
@@ -253,36 +290,46 @@ function LogWatchForm() {
     const t = setTimeout(async () => {
       try {
         let data: TmdbResult[];
+        let other: OtherType | null = null;
         if (isMusicType(type)) {
-          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(query)}&type=${type}`);
-          const raw: unknown = await res.json();
-          data = Array.isArray(raw)
-            ? (raw as SpotifyHit[]).map((r, idx) => ({
-                id: idx + 1,
-                media_type: type,
-                spotify_id: r.id,
-                name: r.name,
-                artist: r.artist,
-                album_name: r.album_name,
-                poster_url: r.image_url,
-                release_date: r.release_date,
-              }))
-            : [];
+          data = await searchMusic(query, type);
+          if (data.length === 0) {
+            // The Spotify search is per type: look for the sibling type to offer it.
+            const sibling: MediaType = type === "album" ? "track" : "album";
+            try {
+              const found = await searchMusic(query, sibling);
+              if (found.length > 0) other = { type: sibling, count: found.length };
+            } catch {
+              // The hint is optional.
+            }
+          }
         } else {
           const res = await fetch(`/api?action=search&q=${encodeURIComponent(query)}`);
+          if (!res.ok) throw new Error("Search failed");
           const raw: unknown = await res.json();
+          const all = Array.isArray(raw) ? (raw as TmdbResult[]) : [];
           // The film search returns films and shows together: keep the chosen type.
-          data = Array.isArray(raw)
-            ? (raw as TmdbResult[]).filter((r) => !r.media_type || r.media_type === type)
-            : [];
+          data = all.filter((r) => !r.media_type || r.media_type === type);
+          const sibling: MediaType = type === "movie" ? "tv" : "movie";
+          const siblingCount = all.filter((r) => r.media_type === sibling).length;
+          if (data.length === 0 && siblingCount > 0) other = { type: sibling, count: siblingCount };
         }
         if (!cancelled) {
-          setSearch({ key: searchKey, type, results: data, failed: false });
+          setSearch({ key: searchKey, type, results: data, failed: false, other });
           setActiveIndex(-1);
+          // A pre-filled link selects its item when the first result is that item.
+          const pf = prefillRef.current;
+          if (pf && pf.type === type && pf.title === query) {
+            prefillRef.current = null;
+            const first = data[0];
+            if (first && pf.id && (isMusicType(type) ? first.spotify_id === pf.id : String(first.id) === pf.id)) {
+              chooseRef.current(first);
+            }
+          }
         }
       } catch {
         if (!cancelled) {
-          setSearch({ key: searchKey, type, results: [], failed: true });
+          setSearch({ key: searchKey, type, results: [], failed: true, other: null });
           setActiveIndex(-1);
         }
       }
@@ -303,17 +350,30 @@ function LogWatchForm() {
   // Load existing log for edit mode (watch_logs for film, listen_logs for music)
   useEffect(() => {
     if (!editId) return;
+    let cancelled = false;
     async function loadExisting() {
       try {
         const supabase = createClient();
-        // Try watch_logs first
-        const { data: filmData } = await supabase
-          .from("watch_logs")
-          .select("*")
-          .eq("id", editId)
-          .single();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          if (!cancelled) setLoadFailed(true);
+          return;
+        }
+        // ?kind=film or ?kind=music names the table; with no kind, watch_logs then listen_logs.
+        let filmData = null;
+        if (editKind !== "music") {
+          const res = await supabase
+            .from("watch_logs")
+            .select("*")
+            .eq("id", editId)
+            .eq("user_id", user.id)
+            .maybeSingle();
+          filmData = res.data;
+        }
+        if (cancelled) return;
 
         if (filmData) {
+          setEditDomain("film");
           setMediaType(filmData.media_type);
           setTitle(filmData.title);
           setRating(filmData.rating);
@@ -332,7 +392,12 @@ function LogWatchForm() {
           setPacingRating(filmData.pacing_rating || 0);
           setCastingRating(filmData.casting_rating || 0);
           if (filmData.tmdb_id) {
-            setSelectedMovie({ id: filmData.tmdb_id, title: filmData.title, poster_url: filmData.poster_url } as TmdbResult);
+            setSelectedMovie({
+              id: filmData.tmdb_id,
+              media_type: filmData.media_type,
+              title: filmData.title,
+              poster_url: filmData.poster_url,
+            });
           }
           if (filmData.plot_rating || filmData.cinematography_rating || filmData.acting_rating ||
               filmData.soundtrack_rating || filmData.pacing_rating || filmData.casting_rating) {
@@ -343,13 +408,19 @@ function LogWatchForm() {
             setShowMoreDetails(true);
           }
         } else {
-          // Try listen_logs (music)
-          const { data: musicData } = await supabase
-            .from("listen_logs")
-            .select("*")
-            .eq("id", editId)
-            .single();
+          let musicData = null;
+          if (editKind !== "film") {
+            const res = await supabase
+              .from("listen_logs")
+              .select("*")
+              .eq("id", editId)
+              .eq("user_id", user.id)
+              .maybeSingle();
+            musicData = res.data;
+          }
+          if (cancelled) return;
           if (musicData) {
+            setEditDomain("music");
             setMediaType(musicData.media_type);
             setTitle(musicData.title);
             setRating(musicData.rating);
@@ -369,12 +440,13 @@ function LogWatchForm() {
             if (musicData.spotify_id) {
               setSelectedMovie({
                 id: 0,
+                media_type: musicData.media_type,
                 spotify_id: musicData.spotify_id,
                 name: musicData.title,
                 artist: musicData.artist,
                 poster_url: musicData.image_url,
                 release_date: musicData.release_date,
-              } as TmdbResult);
+              });
             }
             if (musicData.lyrics_rating || musicData.production_rating || musicData.vocals_rating ||
                 musicData.melody_rating || musicData.replay_rating || musicData.energy_rating) {
@@ -388,19 +460,22 @@ function LogWatchForm() {
           }
         }
       } catch {
-        setLoadFailed(true);
+        if (!cancelled) setLoadFailed(true);
       } finally {
-        setEditLoading(false);
+        if (!cancelled) setEditLoading(false);
       }
     }
     loadExisting();
-  }, [editId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, editKind]);
 
   const resetForm = () => {
     setTitle("");
     setRating(0);
     setReview("");
-    setWatchedDate(today());
+    // The date and type stay: logging a backlog means the same day, often the same kind.
     clearSelection();
     setSearch(null);
     setSearchOpen(false);
@@ -430,7 +505,7 @@ function LogWatchForm() {
   };
 
   /** Writes the log. "ok" only when Supabase reports no error. */
-  const persist = async (): Promise<"ok" | "signed-out" | "failed"> => {
+  const persist = async (): Promise<"ok" | "signed-out" | "failed" | "missing"> => {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return "signed-out";
@@ -456,11 +531,13 @@ function LogWatchForm() {
         replay_rating: replayRating || null,
         energy_rating: energyRating || null,
       };
-      const { error: saveError } =
+      const { data: saved, error: saveError } =
         isEditMode && editId
-          ? await supabase.from("listen_logs").update(musicData).eq("id", editId)
-          : await supabase.from("listen_logs").insert({ user_id: user.id, ...musicData });
-      return saveError ? "failed" : "ok";
+          ? await supabase.from("listen_logs").update(musicData).eq("id", editId).eq("user_id", user.id).select("id")
+          : await supabase.from("listen_logs").insert({ user_id: user.id, ...musicData }).select("id");
+      if (saveError) return "failed";
+      if (!saved || saved.length === 0) return isEditMode ? "missing" : "failed";
+      return "ok";
     }
 
     const logData = {
@@ -484,11 +561,13 @@ function LogWatchForm() {
       pacing_rating: pacingRating || null,
       casting_rating: castingRating || null,
     };
-    const { error: saveError } =
+    const { data: saved, error: saveError } =
       isEditMode && editId
-        ? await supabase.from("watch_logs").update(logData).eq("id", editId)
-        : await supabase.from("watch_logs").insert({ user_id: user.id, ...logData });
-    return saveError ? "failed" : "ok";
+        ? await supabase.from("watch_logs").update(logData).eq("id", editId).eq("user_id", user.id).select("id")
+        : await supabase.from("watch_logs").insert({ user_id: user.id, ...logData }).select("id");
+    if (saveError) return "failed";
+    if (!saved || saved.length === 0) return isEditMode ? "missing" : "failed";
+    return "ok";
   };
 
   const save = async (intent: SaveIntent) => {
@@ -506,7 +585,7 @@ function LogWatchForm() {
     }
 
     setSavingIntent(intent);
-    let outcome: "ok" | "signed-out" | "failed";
+    let outcome: "ok" | "signed-out" | "failed" | "missing";
     try {
       outcome = await persist();
     } catch {
@@ -520,10 +599,12 @@ function LogWatchForm() {
               title: "You're signed out",
               message: "Sign in again in another tab, then save. Everything you entered is still here.",
             }
-          : {
-              title: "Couldn't save",
-              message: "Check your connection and try again. Everything you entered is still here.",
-            },
+          : outcome === "missing"
+            ? { message: "That log couldn't be updated. It may have been deleted." }
+            : {
+                title: "Couldn't save",
+                message: "Check your connection and try again. Everything you entered is still here.",
+              },
       );
       setSavingIntent(null);
       return;
@@ -554,7 +635,9 @@ function LogWatchForm() {
     setTitle(value);
     setSearchOpen(true);
     setActiveIndex(-1);
-    if (!value.trim()) clearSelection();
+    // Retyping away from a chosen match drops its ids and artwork (the text stays).
+    // When editing, the log keeps its identity unless a different result is picked.
+    if (!isEditMode && selectedMovie && value !== labelOf(selectedMovie)) clearSelection();
   };
 
   const handleTypeChange = (type: MediaType) => {
@@ -577,6 +660,10 @@ function LogWatchForm() {
     }
   };
 
+  useEffect(() => {
+    chooseRef.current = chooseResult;
+  });
+
   const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       if (!canSearch) return;
@@ -595,10 +682,10 @@ function LogWatchForm() {
             : activeOption - 1,
       );
     } else if (e.key === "Enter") {
-      // With the list open, Enter chooses; it never submits the form by accident.
-      if (!panelOpen) return;
+      // Enter chooses only a highlighted option; otherwise it submits the form as usual.
+      if (activeOption < 0) return;
       e.preventDefault();
-      if (activeOption >= 0) chooseResult(visibleResults[activeOption]);
+      chooseResult(visibleResults[activeOption]);
     } else if (e.key === "Escape") {
       if (!panelOpen) return;
       e.preventDefault();
@@ -628,8 +715,11 @@ function LogWatchForm() {
   }
 
   const meta = TYPE_META[mediaType];
-  const TypeIcon = meta.icon;
-  const ArtIcon = isSelectedMusic ? Disc3 : Film;
+  const ArtIcon = meta.icon;
+  const goBack = () => {
+    if (window.history.length > 1) router.back();
+    else router.push("/protected");
+  };
   const isSaving = savingIntent !== null;
 
   const categories: { key: string; label: string; value: number; setter: (v: number) => void }[] = isSelectedMusic
@@ -668,48 +758,40 @@ function LogWatchForm() {
   const ratedCount = categories.filter((c) => c.value > 0).length;
   const detailCount = details.filter((d) => d.value !== "").length;
 
+  const typeLabel = isEditMode ? "Type" : isSelectedMusic ? "What did you listen to?" : "What did you watch?";
+
   return (
     <div>
       <PageHeader
+        className="lg:max-w-[984px]"
         title={
           isEditMode ? (
             <>Edit your <em>log</em></>
-          ) : mode === "music" ? (
+          ) : isSelectedMusic ? (
             <>Log a <em>listen</em></>
           ) : (
             <>Log a <em>watch</em></>
           )
         }
         actions={
-          <Button asChild variant="ghost">
-            <Link href={isEditMode ? "/protected/library" : "/protected"}>
-              <ArrowLeft aria-hidden="true" />
-              {isEditMode ? "Back to library" : "Back to dashboard"}
-            </Link>
+          <Button variant="ghost" onClick={goBack}>
+            <ArrowLeft aria-hidden="true" />
+            Back
           </Button>
         }
       />
 
       <div className="grid grid-cols-1 items-start gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,640px)_280px]">
         <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-7">
-          {/* Type: two choices per mode; fixed once a log exists */}
+          {/* Type: two choices per domain; when editing, only the row's own domain */}
           <div className="flex flex-col items-start gap-2">
-            <span className="label-upper">
-              {isEditMode ? "Type" : mode === "music" ? "What did you listen to?" : "What did you watch?"}
-            </span>
-            {isEditMode ? (
-              <Badge>
-                <TypeIcon className="size-3" aria-hidden="true" />
-                {meta.label}
-              </Badge>
-            ) : (
-              <SegmentedControl<MediaType>
-                label={mode === "music" ? "What did you listen to?" : "What did you watch?"}
-                options={mode === "music" ? MUSIC_TYPES : FILM_TYPES}
-                value={mediaType}
-                onChange={handleTypeChange}
-              />
-            )}
+            <span className="label-upper">{typeLabel}</span>
+            <SegmentedControl<MediaType>
+              label={typeLabel}
+              options={isSelectedMusic ? MUSIC_TYPES : FILM_TYPES}
+              value={mediaType}
+              onChange={handleTypeChange}
+            />
           </div>
 
           {/* Title search */}
@@ -750,7 +832,7 @@ function LogWatchForm() {
 
             {panelOpen && (
               <div
-                className="drawer-in max-h-72 overflow-auto border border-border-strong bg-popover"
+                className="drawer-in max-h-[min(360px,50vh)] overflow-y-auto border border-border-strong bg-popover"
                 // Keep focus in the field so a click or scroll here doesn't close the list first.
                 onMouseDown={(e) => e.preventDefault()}
               >
@@ -768,21 +850,7 @@ function LogWatchForm() {
                         onClick={() => chooseResult(r)}
                         className="flex cursor-pointer items-center gap-3 border-b border-border px-3.5 py-2.5 transition-colors duration-cut ease-mech last:border-b-0 hover:bg-primary/10 aria-selected:bg-primary/10"
                       >
-                        <span
-                          className={cn(
-                            "relative shrink-0 overflow-hidden bg-surface-2",
-                            isSelectedMusic ? "h-8 w-8" : "h-[38px] w-[26px]",
-                          )}
-                        >
-                          {r.poster_url && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={r.poster_url.replace(/\/w\d+\//, "/w342/")}
-                              alt=""
-                              className="h-full w-full object-cover"
-                            />
-                          )}
-                        </span>
+                        <ResultThumb src={r.poster_url} music={isSelectedMusic} Icon={ArtIcon} />
                         <span className="min-w-0 flex-1">
                           <span className="t-card block truncate">{lbl}</span>
                           {isSelectedMusic && r.artist && (
@@ -800,7 +868,21 @@ function LogWatchForm() {
                   </p>
                 )}
                 {!searchPending && !searchFailed && visibleResults.length === 0 && (
-                  <p className="px-3.5 py-3 text-[12px] text-muted-foreground">No matches</p>
+                  <div className="px-3.5 py-3 text-[12px] text-muted-foreground">
+                    <p>No matches</p>
+                    {otherType && (
+                      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>
+                          Found {otherType.count}{" "}
+                          {otherType.count === 1 ? TYPE_META[otherType.type].label : TYPE_META[otherType.type].plural}{" "}
+                          with that title.
+                        </span>
+                        <Button variant="outline" size="sm" onClick={() => handleTypeChange(otherType.type)}>
+                          Switch to {TYPE_META[otherType.type].label}
+                        </Button>
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -854,13 +936,13 @@ function LogWatchForm() {
           </Field>
 
           {/* Optional extras, closed until wanted */}
-          <div className="border-t border-border">
+          <div>
             <Disclosure
               id="log-categories"
               title="Rate by category"
               summary={ratedCount > 0 ? `${ratedCount} of ${categories.length} rated` : "Optional"}
               open={showCategories}
-              onToggle={() => setShowCategories((v) => !v)}
+              onOpenChange={setShowCategories}
             >
               <div className="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
                 {categories.map(({ key, label, value, setter }) => (
@@ -875,9 +957,9 @@ function LogWatchForm() {
             <Disclosure
               id="log-details"
               title="More details"
-              summary={detailCount > 0 ? `${detailCount} added` : "Optional"}
+              summary={detailCount > 0 ? `${detailCount} ${detailCount === 1 ? "detail" : "details"} added` : "Optional"}
               open={showMoreDetails}
-              onToggle={() => setShowMoreDetails((v) => !v)}
+              onOpenChange={setShowMoreDetails}
             >
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 {details.map(({ key, label, value, setter, options }) => (
@@ -928,7 +1010,8 @@ function LogWatchForm() {
         <aside
           aria-label="Preview"
           className={cn(
-            "mx-auto w-full max-w-[280px] lg:sticky lg:top-20 lg:mx-0",
+            "w-full lg:sticky lg:top-20",
+            isSelectedMusic ? "max-w-[260px]" : "max-w-[240px]",
             !selectedMovie && "hidden lg:block",
           )}
         >

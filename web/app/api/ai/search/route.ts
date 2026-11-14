@@ -72,13 +72,19 @@ export async function POST(request: Request) {
 
   const validated: VibeSearchResult[] = [];
 
-  for (const item of aiResponse.results) {
+  // Keep only results that belong to the requested mode; anything else is dropped before lookup.
+  const allowedTypes: readonly string[] = mode === "music" ? ["album", "track"] : ["movie", "tv"];
+  const modeResults = (Array.isArray(aiResponse.results) ? aiResponse.results : []).filter(
+    (item) => allowedTypes.includes(item.type),
+  );
+
+  for (const item of modeResults) {
     if (validated.length >= 12) break;
 
     if (mode === "music") {
       try {
         const searchQ = item.artist ? `${item.artist} ${item.title}` : item.title;
-        const spotifyResults = await searchSpotify(searchQ, item.type as "album" | "track", 3);
+        const spotifyResults = await searchSpotify(searchQ, item.type === "track" ? "track" : "album", 3);
         const match = spotifyResults[0];
         if (match) {
           validated.push({

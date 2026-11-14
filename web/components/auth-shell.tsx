@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Eye, EyeOff } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+/** One implementation lives in `ui/input`; forms keep importing it from here. */
+export { PasswordInput };
 
 /**
  * The one composition every auth page shares: wordmark linking home, then a
@@ -61,29 +62,6 @@ export function AuthLink({
       )}
       {...props}
     />
-  );
-}
-
-/** A password `Input` with a show/hide toggle inside the field. */
-export function PasswordInput({
-  className,
-  ...props
-}: Omit<React.ComponentProps<typeof Input>, "type">) {
-  const [visible, setVisible] = React.useState(false);
-  return (
-    <div className="relative">
-      <Input type={visible ? "text" : "password"} className={cn("pr-11", className)} {...props} />
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "Hide password" : "Show password"}
-        aria-pressed={visible}
-        className="absolute right-0.5 top-0.5 focus-visible:-outline-offset-2"
-      >
-        {visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-      </Button>
-    </div>
   );
 }
 

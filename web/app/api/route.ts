@@ -8,10 +8,13 @@ export async function GET(request: Request) {
   if (action === "trending") {
     try {
       const results = await getTrending();
-      const enrichedResults = results.map((result: any) => ({
-        ...result,
-        poster_url: result.poster_path ? getPoster(result.poster_path, "w342") : null,
-      }));
+      // TMDB trending can include people; keep films and TV only.
+      const enrichedResults = results
+        .filter((result: { media_type?: string }) => result.media_type === "movie" || result.media_type === "tv")
+        .map((result: any) => ({
+          ...result,
+          poster_url: result.poster_path ? getPoster(result.poster_path, "w342") : null,
+        }));
       return NextResponse.json(enrichedResults);
     } catch (error: any) {
       return NextResponse.json({ error: error.message }, { status: 500 });
