@@ -12,7 +12,6 @@ import {
   BookOpen,
   Clock,
   Calendar,
-  Users,
   UserPlus,
   UserCheck,
   Loader2,

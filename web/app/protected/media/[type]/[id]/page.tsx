@@ -21,7 +21,6 @@ import {
   Trash2,
   ListPlus,
   Disc3,
-  Music2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useClickOutside } from "@/hooks/use-click-outside";

@@ -18,7 +18,6 @@ function ArtistGroup({ label, artists }: { label: string; artists: StripArtist[]
             className="shrink-0 w-[72px] group"
           >
             {artist.image_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={artist.image_url}
                 alt={artist.name}

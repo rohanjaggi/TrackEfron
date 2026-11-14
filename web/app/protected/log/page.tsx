@@ -216,7 +216,7 @@ function LogWatchForm() {
       setListeningContext("");
 
       router.push("/protected/library");
-    } catch (err) {
+    } catch {
       setError("Failed to save. Please try again.");
     } finally {
       setIsLoading(false);

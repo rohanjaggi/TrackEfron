@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -262,7 +261,7 @@ function WatchlistPageContent() {
     }
   }
 
-  function handleMarkWatched(item: WatchlistItem) {
+  function handleMarkWatched() {
     router.push("/protected/log");
   }
 
@@ -327,7 +326,6 @@ function WatchlistPageContent() {
     return matchesFilter && matchesSearch;
   });
 
-  const isMusicFilter = filter === "music" || filter === "albums";
   const effectiveViewType = filter === "all" ? "list" : viewType;
 
   const stats = mode === "music"
@@ -737,7 +735,6 @@ function WatchlistPageContent() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {filteredItems.map((item) => {
                 const isMusic = item.media_type === "album" || item.media_type === "track";
-                const logLabel = isMusic ? "Listened" : "Watched";
                 return (
                   <div
                     key={item.id}
@@ -763,7 +760,7 @@ function WatchlistPageContent() {
                         <Button
                           size="sm"
                           className="bg-green-500 hover:bg-green-600"
-                          onClick={(e) => { e.stopPropagation(); handleMarkWatched(item); }}
+                          onClick={(e) => { e.stopPropagation(); handleMarkWatched(); }}
                         >
                           <Check className="w-4 h-4" />
                         </Button>
@@ -839,7 +836,7 @@ function WatchlistPageContent() {
                       <Button
                         size="sm"
                         className="bg-green-500 hover:bg-green-600"
-                        onClick={(e) => { e.stopPropagation(); handleMarkWatched(item); }}
+                        onClick={(e) => { e.stopPropagation(); handleMarkWatched(); }}
                         title={isMusic ? "Mark as listened" : "Mark as watched"}
                       >
                         <Check className="w-4 h-4 mr-1" />

@@ -170,7 +170,6 @@ export default function LibraryPage() {
     });
 
   const filmItems = watchedItems.filter((i) => i.media_type === "movie" || i.media_type === "tv");
-  const musicItems = watchedItems.filter((i) => i.media_type === "album" || i.media_type === "track");
 
   const stats = {
     total: watchedItems.length,
@@ -184,7 +183,6 @@ export default function LibraryPage() {
   };
 
   // Whether the current filter shows music content (square art) or film content (portrait art)
-  const isFilmFilter = filter === "film" || filter === "movies" || filter === "tv";
   const isMusicFilter = filter === "music" || filter === "albums" || filter === "tracks";
   // In "all" mode, list view is better — auto-switch viewType
   const effectiveViewType = filter === "all" ? "list" : viewType;

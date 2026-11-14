@@ -6,7 +6,6 @@ import {
   Film,
   Tv,
   Plus,
-  ChevronRight,
   Bookmark,
   BookmarkCheck,
   Music2,
@@ -193,7 +192,7 @@ function FeaturedCard({
             className="mt-2 text-[11px] line-clamp-2 italic"
             style={{ color: "var(--text-muted)" }}
           >
-            "{item.review}"
+            &quot;{item.review}&quot;
           </p>
         )}
       </div>
