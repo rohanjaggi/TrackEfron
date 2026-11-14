@@ -26,12 +26,21 @@ import {
   Bookmark,
   BookmarkCheck,
   Disc3,
-  Music2,
   Headphones,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
-import type { SpotifyArtistResult } from "@/app/api/spotify/me/route";
+import { RightNowStrip } from "@/components/discover/right-now-strip";
+import type {
+  Confidence,
+  FilmRecommendation,
+  MusicRecommendation,
+  MusicRecsResponse,
+  RecsResponse,
+  RightNow,
+  VibeSearchResponse,
+  VibeSearchResult,
+} from "@/lib/ai/types";
 
 // ─── Types ───
 
@@ -76,25 +85,30 @@ type MusicMediaItem = {
   type: "album" | "track";
 };
 
+type RecsLoad<T> =
+  | { kind: "ok"; data: T }
+  | { kind: "no_key" }
+  | { kind: "error" };
+
+// Shared by the film and music For You fetches (402 means no API key; any other failure is an error).
+async function loadRecs<T>(url: string): Promise<RecsLoad<T>> {
+  try {
+    const res = await fetch(url);
+    if (res.status === 402) return { kind: "no_key" };
+    if (!res.ok) return { kind: "error" };
+    return { kind: "ok", data: (await res.json()) as T };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
+// Why a For You section has nothing to show (null while it has picks or is loading).
+type RecsEmpty = "not_enough_logs" | "error" | null;
+
+const NOT_ENOUGH_LOGS_COPY = "Log and rate at least 5 titles to get recommendations.";
+const RECS_ERROR_COPY = "Couldn't build recommendations. Try again.";
+
 // ─── Constants ───
-
-const MOOD_PILLS = [
-  { label: "Chill", query: "chill vibes" },
-  { label: "Workout", query: "workout motivation" },
-  { label: "Study", query: "study focus lofi" },
-  { label: "Party", query: "party hits" },
-  { label: "Sleep", query: "sleep calm ambient" },
-  { label: "Focus", query: "deep focus concentration" },
-];
-
-const MUSIC_GENRE_QUERIES = [
-  { title: "Hot in Pop", subtitle: "Chart-topping pop releases", query: "pop hits 2024" },
-  { title: "Hip-Hop Now", subtitle: "Latest rap and hip-hop", query: "hip hop rap 2024" },
-  { title: "R&B & Soul", subtitle: "Smooth soul and R&B", query: "r&b soul neo soul" },
-  { title: "Electronic & Dance", subtitle: "Electronic beats and dance", query: "electronic dance edm" },
-  { title: "Indie Picks", subtitle: "Independent and alternative", query: "indie alternative indie pop" },
-  { title: "Jazz & Blues", subtitle: "Classic and contemporary", query: "jazz blues piano" },
-];
 
 const DEFAULT_GENRE_PILLS = [
   { id: 28, name: "Action" },
@@ -151,6 +165,16 @@ function ExplanationTooltip({ explanation, children }: { explanation?: string; c
   );
 }
 
+// ─── Stretch tag — marks a deliberate reach pick ───
+
+function StretchTag() {
+  return (
+    <span className="absolute top-0 left-0 bg-background/90 border-b-2 border-r-2 border-border px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground leading-none">
+      Stretch
+    </span>
+  );
+}
+
 // ─── RecMediaCard — MediaCard variant with inline watchlist button ───
 
 function RecMediaCard({
@@ -159,12 +183,14 @@ function RecMediaCard({
   onWatchlist,
   watchlisted,
   rank,
+  stretch,
 }: {
   item: MediaItem;
   onClick: (item: MediaItem) => void;
   onWatchlist: (item: MediaItem) => void;
   watchlisted: boolean;
   rank?: number;
+  stretch?: boolean;
 }) {
   const title = item.title || item.name || "Untitled";
   const year = (item.release_date || item.first_air_date || "").slice(0, 4);
@@ -183,6 +209,7 @@ function RecMediaCard({
             <Film className="w-6 h-6 text-muted-foreground/50" />
           </div>
         )}
+        {stretch && <StretchTag />}
         {rank != null && (
           <span className="absolute bottom-0 left-0 bg-background/90 border-t-2 border-r-2 border-border px-1.5 py-0.5 text-xs font-bold text-primary font-display leading-none">
             #{rank}
@@ -372,10 +399,12 @@ function MusicCard({
   item,
   onQueue,
   queued,
+  stretch,
 }: {
   item: MusicMediaItem;
   onQueue: (item: MusicMediaItem) => void;
   queued: boolean;
+  stretch?: boolean;
 }) {
   return (
     <div className="shrink-0 w-[130px] md:w-[150px] group">
@@ -391,6 +420,7 @@ function MusicCard({
             <Disc3 className="w-6 h-6 text-muted-foreground/50" />
           </div>
         )}
+        {stretch && <StretchTag />}
         <button
           onClick={() => onQueue(item)}
           disabled={queued}
@@ -505,26 +535,18 @@ type Tab = "for-you" | "browse";
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const { mode } = useMode();
+  const { mode, ready: modeReady } = useMode();
   const searchRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<Tab>("for-you");
 
   // Music state
-  const [newReleases, setNewReleases] = useState<MusicMediaItem[]>([]);
-  const [musicLoading, setMusicLoading] = useState(false);
   const [musicFetched, setMusicFetched] = useState(false);
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const [musicSearchResults, setMusicSearchResults] = useState<MusicMediaItem[]>([]);
-  const [activeMoodPill, setActiveMoodPill] = useState<string | null>(null);
-  const [moodResults, setMoodResults] = useState<MusicMediaItem[]>([]);
-  const [moodLoading, setMoodLoading] = useState(false);
-  const [musicGenreRows, setMusicGenreRows] = useState<{ title: string; subtitle: string; items: MusicMediaItem[] }[]>([]);
-  const [musicGenreLoading, setMusicGenreLoading] = useState(false);
   const [personalMusicRows, setPersonalMusicRows] = useState<{ title: string; items: MusicMediaItem[] }[]>([]);
   const [personalMusicLoading, setPersonalMusicLoading] = useState(false);
   const [personalMusicFetched, setPersonalMusicFetched] = useState(false);
   const [spotifyTopTracks, setSpotifyTopTracks] = useState<MusicMediaItem[]>([]);
-  const [spotifyTopArtists, setSpotifyTopArtists] = useState<SpotifyArtistResult[]>([]);
   const [spotifyOAuthConnected, setSpotifyOAuthConnected] = useState<boolean | null>(null);
   const [spotifyOAuthLoading, setSpotifyOAuthLoading] = useState(false);
   const [spotifyOAuthFetched, setSpotifyOAuthFetched] = useState(false);
@@ -553,23 +575,21 @@ export default function DiscoverPage() {
   // Browse data fetched flag
   const [browseFetched, setBrowseFetched] = useState(false);
 
-  // ML recommendations (For You tab)
-  const [mlRecs, setMlRecs] = useState<MediaItem[]>([]);
-  const [mlLoading, setMlLoading] = useState(false);
-  const [mlFetched, setMlFetched] = useState(false);
-  const [mlWatchlistedIds, setMlWatchlistedIds] = useState<Set<number>>(new Set());
-  const [refreshStatus, setRefreshStatus] = useState<"idle" | "ok" | "error">("idle");
-
   // AI recommendations
-  const [aiMusicRecs, setAiMusicRecs] = useState<(MusicMediaItem & { explanation?: string })[]>([]);
+  const [aiMusicRecs, setAiMusicRecs] = useState<(MusicMediaItem & { explanation?: string; confidence?: Confidence })[]>([]);
   const [aiMusicLoading, setAiMusicLoading] = useState(false);
   const [aiMusicFetched, setAiMusicFetched] = useState(false);
-  const [aiFilmRecs, setAiFilmRecs] = useState<(MediaItem & { explanation?: string; source?: string })[]>([]);
+  const [aiMusicEmpty, setAiMusicEmpty] = useState<RecsEmpty>(null);
+  const [rightNow, setRightNow] = useState<RightNow | null>(null);
+  const [aiFilmRecs, setAiFilmRecs] = useState<(MediaItem & { explanation?: string; confidence?: Confidence })[]>([]);
   const [aiFilmLoading, setAiFilmLoading] = useState(false);
   const [aiFilmFetched, setAiFilmFetched] = useState(false);
+  const [aiFilmEmpty, setAiFilmEmpty] = useState<RecsEmpty>(null);
+  const [filmWatchlistedIds, setFilmWatchlistedIds] = useState<Set<number>>(new Set());
 
   // Vibe search
-  const [vibeResults, setVibeResults] = useState<any[]>([]);
+  const vibeRequestRef = useRef(0);
+  const [vibeResults, setVibeResults] = useState<VibeSearchResult[]>([]);
   const [vibeInterpretation, setVibeInterpretation] = useState<string>("");
   const [vibeLoading, setVibeLoading] = useState(false);
   const [isVibeQuery, setIsVibeQuery] = useState(false);
@@ -577,23 +597,10 @@ export default function DiscoverPage() {
   // AI key status
   const [aiNotConfigured, setAiNotConfigured] = useState(false);
 
-  // ─── Fetch music browse data (lazy — only when mode is music) ───
+  // ─── Fetch the music queue (lazy — only when mode is music) ───
   useEffect(() => {
     if (mode !== "music" || musicFetched) return;
     setMusicFetched(true);
-    setMusicLoading(true);
-
-    async function fetchMusicBrowse() {
-      try {
-        const res = await fetch("/api/spotify?action=new-releases");
-        const data = await res.json();
-        if (Array.isArray(data)) setNewReleases(data);
-      } catch {
-        // silently fail
-      } finally {
-        setMusicLoading(false);
-      }
-    }
 
     async function fetchQueuedIds() {
       try {
@@ -610,29 +617,7 @@ export default function DiscoverPage() {
       }
     }
 
-    async function fetchMusicGenres() {
-      setMusicGenreLoading(true);
-      try {
-        const rows = await Promise.all(
-          MUSIC_GENRE_QUERIES.map(async (g) => {
-            try {
-              const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(g.query)}&type=album`);
-              const data = await res.json();
-              return { title: g.title, subtitle: g.subtitle, items: Array.isArray(data) ? data : [] };
-            } catch {
-              return { title: g.title, subtitle: g.subtitle, items: [] };
-            }
-          })
-        );
-        setMusicGenreRows(rows.filter((r) => r.items.length > 0));
-      } finally {
-        setMusicGenreLoading(false);
-      }
-    }
-
-    fetchMusicBrowse();
     fetchQueuedIds();
-    fetchMusicGenres();
   }, [mode, musicFetched]);
 
   // ─── Personalised music rows (lazy — top artists from listen_logs) ───
@@ -687,7 +672,7 @@ export default function DiscoverPage() {
     fetchPersonalMusic();
   }, [mode, personalMusicFetched]);
 
-  // ─── Fetch Spotify OAuth personalised data (lazy — top tracks & artists) ───
+  // ─── Fetch Spotify OAuth personalised data (lazy — top tracks) ───
   useEffect(() => {
     if (mode !== "music" || spotifyOAuthFetched) return;
     setSpotifyOAuthFetched(true);
@@ -695,20 +680,15 @@ export default function DiscoverPage() {
 
     async function fetchSpotifyOAuth() {
       try {
-        const [tracksRes, artistsRes] = await Promise.all([
-          fetch("/api/spotify/me?action=top-tracks"),
-          fetch("/api/spotify/me?action=top-artists"),
-        ]);
+        const tracksRes = await fetch("/api/spotify/me?action=top-tracks");
         const tracksData = await tracksRes.json();
-        const artistsData = await artistsRes.json();
 
-        if (tracksData.connected === false || artistsData.connected === false) {
+        if (tracksData.connected === false) {
           setSpotifyOAuthConnected(false);
           return;
         }
         setSpotifyOAuthConnected(true);
         if (Array.isArray(tracksData)) setSpotifyTopTracks(tracksData);
-        if (Array.isArray(artistsData)) setSpotifyTopArtists(artistsData);
       } catch {
         setSpotifyOAuthConnected(false);
       } finally {
@@ -719,93 +699,71 @@ export default function DiscoverPage() {
     fetchSpotifyOAuth();
   }, [mode, spotifyOAuthFetched]);
 
-  // ─── Fetch ML recommendations (lazy — only when For You tab is first opened) ───
-  useEffect(() => {
-    if (activeTab !== "for-you" || mlFetched) return;
-    setMlFetched(true);
-    setMlLoading(true);
+  // ─── AI recommendations ───
 
-    async function fetchMlRecs() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
-        const data = await res.json();
-        if (Array.isArray(data)) setMlRecs(data);
-      } catch {
-        // silently fail — ML backend may not be running
-      } finally {
-        setMlLoading(false);
-      }
+  const fetchAiMusicRecs = useCallback(async (refresh = false) => {
+    setAiMusicLoading(true);
+    setAiMusicEmpty(null);
+    const result = await loadRecs<MusicRecsResponse>(`/api/ai/recommend?mode=music${refresh ? "&refresh=true" : ""}`);
+    if (result.kind === "no_key") {
+      setAiNotConfigured(true);
+    } else if (result.kind === "error") {
+      setAiMusicEmpty("error");
+    } else {
+      const { status, items, right_now } = result.data;
+      setRightNow(right_now ?? null);
+      setAiMusicRecs(items.map((r: MusicRecommendation) => ({
+        id: r.spotify_id || r.title,
+        name: r.title,
+        artist: r.artist,
+        album_name: r.album_name || "",
+        image_url: r.image_url || null,
+        release_date: "",
+        type: r.type || "album",
+        explanation: r.explanation,
+        confidence: r.confidence,
+      })));
+      setAiMusicEmpty(status === "not_enough_logs" ? "not_enough_logs" : status === "empty" ? "error" : null);
     }
+    setAiMusicLoading(false);
+  }, []);
 
-    fetchMlRecs();
-  }, [activeTab, mlFetched]);
+  const fetchAiFilmRecs = useCallback(async (refresh = false) => {
+    setAiFilmLoading(true);
+    setAiFilmEmpty(null);
+    const result = await loadRecs<RecsResponse<FilmRecommendation>>(`/api/ai/recommend?mode=film${refresh ? "&refresh=true" : ""}`);
+    if (result.kind === "no_key") {
+      setAiNotConfigured(true);
+    } else if (result.kind === "error") {
+      setAiFilmEmpty("error");
+    } else {
+      const { status, items } = result.data;
+      setAiFilmRecs(items.map((r) => ({
+        id: r.tmdb_id,
+        title: r.title,
+        media_type: r.media_type,
+        poster_url: r.poster_url,
+        explanation: r.explanation,
+        confidence: r.confidence,
+      })));
+      setAiFilmEmpty(status === "not_enough_logs" ? "not_enough_logs" : status === "empty" ? "error" : null);
+    }
+    setAiFilmLoading(false);
+  }, []);
 
-  // ─── Fetch AI music recommendations (lazy — only when mode is music) ───
+  // Music: lazy, only when mode is music.
   useEffect(() => {
     if (mode !== "music" || aiMusicFetched) return;
     setAiMusicFetched(true);
-    setAiMusicLoading(true);
-
-    async function fetchAiMusicRecs() {
-      try {
-        const res = await fetch("/api/ai/recommend?mode=music");
-        const data = await res.json();
-        if (data?.code === "NO_API_KEY") {
-          setAiNotConfigured(true);
-        } else if (Array.isArray(data)) {
-          setAiMusicRecs(data.map((r: any) => ({
-            id: r.spotify_id || r.title,
-            name: r.title,
-            artist: r.artist,
-            album_name: r.album_name || "",
-            image_url: r.image_url || null,
-            release_date: "",
-            type: r.type || "album",
-            explanation: r.explanation,
-          })));
-        }
-      } catch {
-        // AI endpoint may not be configured
-      } finally {
-        setAiMusicLoading(false);
-      }
-    }
-
     fetchAiMusicRecs();
-  }, [mode, aiMusicFetched]);
+  }, [mode, aiMusicFetched, fetchAiMusicRecs]);
 
-  // ─── Fetch AI film recommendations (lazy — only when For You tab + film mode) ───
+  // Film: lazy, only on the For You tab in film mode, and not before the stored mode is known.
   useEffect(() => {
-    if (mode === "music" || activeTab !== "for-you" || aiFilmFetched) return;
+    if (!modeReady || mode !== "film" || activeTab !== "for-you" || aiFilmFetched) return;
     setAiFilmFetched(true);
-    setAiFilmLoading(true);
-
-    async function fetchAiFilmRecs() {
-      try {
-        const res = await fetch("/api/ai/recommend?mode=film");
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setAiFilmRecs(data.map((r: any) => ({
-            id: r.tmdb_id,
-            title: r.title,
-            media_type: r.media_type,
-            poster_url: r.poster_url,
-            explanation: r.explanation,
-            source: r.source,
-          })));
-        }
-      } catch {
-        // AI endpoint may not be configured
-      } finally {
-        setAiFilmLoading(false);
-      }
-    }
-
     fetchAiFilmRecs();
-  }, [mode, activeTab, aiFilmFetched]);
+  }, [mode, modeReady, activeTab, aiFilmFetched, fetchAiFilmRecs]);
 
   // ─── Fetch browse data (lazy — only when browse tab is first opened) ───
   useEffect(() => {
@@ -991,53 +949,14 @@ export default function DiscoverPage() {
     fetchPersonalized();
   }, [activeTab, browseFetched]);
 
-  // ─── Vibe query detection ───
-  function detectVibeQuery(q: string): boolean {
-    const vibeWords = ["something", "vibe", "mood", "feel", "for a", "that feels", "like a", "similar to", "reminds me", "give me", "recommend", "suggest"];
-    const lower = q.toLowerCase();
-    return vibeWords.some((w) => lower.includes(w)) || (q.length > 20 && !q.includes('"'));
-  }
-
-  // ─── Search ───
+  // ─── Search (title search only; vibe search runs on Enter) ───
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
       setSearchResults([]);
       setMusicSearchResults([]);
-      setVibeResults([]);
-      setVibeInterpretation("");
-      setIsVibeQuery(false);
       setShowDropdown(false);
       return;
-    }
-
-    const isVibe = detectVibeQuery(q);
-    setIsVibeQuery(isVibe);
-
-    if (isVibe) {
-      const t = setTimeout(async () => {
-        try {
-          setVibeLoading(true);
-          setShowDropdown(true);
-          const res = await fetch("/api/ai/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
-          });
-          const data = await res.json();
-          if (data?.code === "NO_API_KEY") {
-            setAiNotConfigured(true);
-          } else if (data.results) {
-            setVibeResults(data.results);
-            setVibeInterpretation(data.interpretation || "");
-          }
-        } catch {
-          // silently fail
-        } finally {
-          setVibeLoading(false);
-        }
-      }, 800);
-      return () => clearTimeout(t);
     }
 
     const t = setTimeout(async () => {
@@ -1079,7 +998,7 @@ export default function DiscoverPage() {
 
   // ─── Handlers ───
 
-  async function handleAddMlToWatchlist(item: MediaItem) {
+  async function handleAddRecToWatchlist(item: MediaItem) {
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -1091,69 +1010,39 @@ export default function DiscoverPage() {
         media_type: item.media_type,
         poster_url: item.poster_url || null,
       });
-      setMlWatchlistedIds((prev) => new Set([...prev, item.id]));
+      setFilmWatchlistedIds((prev) => new Set([...prev, item.id]));
     } catch {
       // silently fail (e.g. duplicate)
     }
   }
 
-  async function handleRefreshMlRecs() {
-    setMlLoading(true);
-    setRefreshStatus("idle");
+  async function handleVibeSearch() {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const requestId = ++vibeRequestRef.current;
+    setIsVibeQuery(true);
+    setVibeResults([]);
+    setVibeInterpretation("");
+    setVibeLoading(true);
+    setShowDropdown(true);
     try {
-      const res = await fetch("/api?action=refresh_profile", { method: "POST" });
-      setRefreshStatus(res.ok ? "ok" : "error");
-    } catch {
-      setRefreshStatus("error");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    setMlRecs([]);
-    setMlFetched(false);
-  }
-
-  async function handleRefreshAiMusicRecs() {
-    setAiMusicLoading(true);
-    try {
-      const res = await fetch("/api/ai/recommend?mode=music&refresh=true");
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setAiMusicRecs(data.map((r: any) => ({
-          id: r.spotify_id || r.title,
-          name: r.title,
-          artist: r.artist,
-          album_name: r.album_name || "",
-          image_url: r.image_url || null,
-          release_date: "",
-          type: r.type || "album",
-          explanation: r.explanation,
-        })));
+      const res = await fetch("/api/ai/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q, mode: mode === "music" ? "music" : "film" }),
+      });
+      const data: (VibeSearchResponse & { code?: string }) | null = await res.json();
+      if (requestId !== vibeRequestRef.current) return;
+      if (data?.code === "NO_API_KEY") {
+        setAiNotConfigured(true);
+      } else if (data?.results) {
+        setVibeResults(data.results);
+        setVibeInterpretation(data.interpretation || "");
       }
     } catch {
       // silently fail
     } finally {
-      setAiMusicLoading(false);
-    }
-  }
-
-  async function handleRefreshAiFilmRecs() {
-    setAiFilmLoading(true);
-    try {
-      const res = await fetch("/api/ai/recommend?mode=film&refresh=true");
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setAiFilmRecs(data.map((r: any) => ({
-          id: r.tmdb_id,
-          title: r.title,
-          media_type: r.media_type,
-          poster_url: r.poster_url,
-          explanation: r.explanation,
-          source: r.source,
-        })));
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setAiFilmLoading(false);
+      if (requestId === vibeRequestRef.current) setVibeLoading(false);
     }
   }
 
@@ -1205,25 +1094,6 @@ export default function DiscoverPage() {
     }
   }
 
-  async function handleMoodClick(pill: { label: string; query: string }) {
-    if (activeMoodPill === pill.label) {
-      setActiveMoodPill(null);
-      setMoodResults([]);
-      return;
-    }
-    setActiveMoodPill(pill.label);
-    setMoodLoading(true);
-    try {
-      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(pill.query)}&type=album,track`);
-      const data = await res.json();
-      if (Array.isArray(data)) setMoodResults(data);
-    } catch {
-      setMoodResults([]);
-    } finally {
-      setMoodLoading(false);
-    }
-  }
-
   const filterWatched = (items: MediaItem[]) =>
     watchedIds.size > 0 ? items.filter((i) => !watchedIds.has(i.id)) : items;
 
@@ -1247,7 +1117,19 @@ export default function DiscoverPage() {
             placeholder={mode === "music" ? "Search albums and tracks..." : "Search movies and TV shows..."}
             className="pl-11 py-5 text-base bg-card border-2 border-border"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              // Typing drops any vibe search and goes back to title search.
+              vibeRequestRef.current++;
+              setIsVibeQuery(false);
+              setVibeLoading(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                handleVibeSearch();
+              }
+            }}
             onFocus={() => {
               if (mode === "music" && musicSearchResults.length > 0) setShowDropdown(true);
               if (mode !== "music" && searchResults.length > 0) setShowDropdown(true);
@@ -1274,7 +1156,7 @@ export default function DiscoverPage() {
                   <p className="text-xs text-muted-foreground">Finding the perfect match...</p>
                 </div>
               ) : (
-                vibeResults.map((result: any, i: number) => (
+                vibeResults.map((result, i) => (
                   <button
                     key={i}
                     type="button"
@@ -1291,7 +1173,7 @@ export default function DiscoverPage() {
                           album_name: "",
                           image_url: result.image_url || null,
                           release_date: "",
-                          type: result.type || "album",
+                          type: result.type === "track" ? "track" : "album",
                         });
                       }
                     }}
@@ -1299,7 +1181,7 @@ export default function DiscoverPage() {
                   >
                     {(result.image_url || result.poster_url) ? (
                       <img
-                        src={result.image_url || result.poster_url}
+                        src={result.image_url || result.poster_url || undefined}
                         alt={result.title}
                         className={`${mode === "music" ? "w-10 h-10" : "w-8 h-12"} object-cover shrink-0 border border-border`}
                       />
@@ -1322,7 +1204,7 @@ export default function DiscoverPage() {
             </div>
           )}
           {/* Film search dropdown */}
-          {mode !== "music" && showDropdown && searchResults.length > 0 && (
+          {mode !== "music" && !isVibeQuery && showDropdown && searchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
               {searchResults.slice(0, 8).map((result) => {
                 const label = result.title || result.name || "Untitled";
@@ -1357,7 +1239,7 @@ export default function DiscoverPage() {
             </div>
           )}
           {/* Music search dropdown */}
-          {mode === "music" && showDropdown && musicSearchResults.length > 0 && (
+          {mode === "music" && !isVibeQuery && showDropdown && musicSearchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 border-2 border-border bg-card mt-1 max-h-80 overflow-auto shadow-lg">
               {musicSearchResults.slice(0, 8).map((result) => (
                 <button
@@ -1397,56 +1279,11 @@ export default function DiscoverPage() {
       {/* ─── MUSIC MODE ─── */}
       {mode === "music" && (
         <div className="flex flex-col gap-6">
-          {/* Mood pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-            <span className="text-xs text-muted-foreground uppercase tracking-wider shrink-0 mr-1">Mood</span>
-            {MOOD_PILLS.map((pill) => (
-              <button
-                key={pill.label}
-                onClick={() => handleMoodClick(pill)}
-                className={`shrink-0 px-3 py-1.5 text-xs font-medium border-2 transition-colors ${
-                  activeMoodPill === pill.label
-                    ? "border-[var(--music)] bg-[var(--music)] text-background"
-                    : "border-border hover:border-[var(--music)]/50"
-                }`}
-              >
-                {pill.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Mood results */}
-          {activeMoodPill && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="font-display text-lg font-bold">{activeMoodPill} Music</h2>
-                  <p className="text-xs text-muted-foreground">Albums and tracks for {activeMoodPill.toLowerCase()} vibes</p>
-                </div>
-                <button
-                  onClick={() => { setActiveMoodPill(null); setMoodResults([]); }}
-                  className="w-7 h-7 border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              {moodLoading ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {moodResults.map((item) => (
-                    <MusicCard key={item.id} item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Right now — Spotify listening movement */}
+          {rightNow && <RightNowStrip rightNow={rightNow} />}
 
           {/* AI Music Recommendations — For You */}
-          {!activeMoodPill && (
-            <div className="space-y-4">
+          <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-[var(--music)]" />
@@ -1456,7 +1293,7 @@ export default function DiscoverPage() {
                   variant="ghost"
                   size="sm"
                   className="text-muted-foreground"
-                  onClick={handleRefreshAiMusicRecs}
+                  onClick={() => fetchAiMusicRecs(true)}
                   disabled={aiMusicLoading}
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${aiMusicLoading ? "animate-spin" : ""}`} />
@@ -1464,7 +1301,7 @@ export default function DiscoverPage() {
                 </Button>
               </div>
 
-              {aiMusicLoading ? (
+              {aiMusicLoading || !aiMusicFetched ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
                   {Array.from({ length: 14 }).map((_, i) => <SkeletonMusicCard key={i} />)}
                 </div>
@@ -1472,7 +1309,7 @@ export default function DiscoverPage() {
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
                   {aiMusicRecs.map((item) => (
                     <ExplanationTooltip key={item.id} explanation={item.explanation}>
-                      <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} />
+                      <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} stretch={item.confidence === "discovery"} />
                     </ExplanationTooltip>
                   ))}
                 </div>
@@ -1482,15 +1319,21 @@ export default function DiscoverPage() {
                   <p className="text-sm text-muted-foreground">
                     {aiNotConfigured
                       ? "Add an AI API key in your profile settings to unlock personalized recommendations."
-                      : "Log some music to get AI-powered recommendations"}
+                      : aiMusicEmpty === "not_enough_logs"
+                        ? NOT_ENOUGH_LOGS_COPY
+                        : RECS_ERROR_COPY}
                   </p>
+                  {!aiNotConfigured && aiMusicEmpty !== "not_enough_logs" && (
+                    <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchAiMusicRecs()}>
+                      Try again
+                    </Button>
+                  )}
                 </div>
               ) : null}
-            </div>
-          )}
+          </div>
 
-          {/* Spotify OAuth — top tracks & artists */}
-          {!activeMoodPill && spotifyOAuthLoading && (
+          {/* Spotify OAuth — top tracks */}
+          {spotifyOAuthLoading && (
             <MusicRow
               title="Your Top Tracks"
               subtitle="Loading from Spotify..."
@@ -1501,7 +1344,7 @@ export default function DiscoverPage() {
               queuedIds={queuedIds}
             />
           )}
-          {!activeMoodPill && spotifyOAuthConnected === true && (
+          {spotifyOAuthConnected === true && (
             <>
               {spotifyTopTracks.length > 0 && (
                 <MusicRow
@@ -1513,27 +1356,9 @@ export default function DiscoverPage() {
                   queuedIds={queuedIds}
                 />
               )}
-              {spotifyTopArtists.length > 0 && (
-                <MusicRow
-                  title="Your Top Artists"
-                  subtitle="Artists you listen to most"
-                  icon={TrendingUp}
-                  items={spotifyTopArtists.map((a) => ({
-                    id: a.id,
-                    name: a.name,
-                    artist: a.genres.slice(0, 2).join(", ") || "Artist",
-                    album_name: "",
-                    image_url: a.image_url,
-                    release_date: "",
-                    type: "album" as const,
-                  }))}
-                  onQueue={handleAddToQueue}
-                  queuedIds={queuedIds}
-                />
-              )}
             </>
           )}
-          {!activeMoodPill && spotifyOAuthConnected === false && (
+          {spotifyOAuthConnected === false && (
             <div
               className="border-2 p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4"
               style={{ borderColor: "var(--border-raw)", background: "var(--surface)" }}
@@ -1547,7 +1372,7 @@ export default function DiscoverPage() {
               <div className="flex-1 min-w-0">
                 <p className="font-medium mb-0.5">Connect Spotify for personalised picks</p>
                 <p className="text-xs text-muted-foreground">
-                  See your top tracks and artists right here once you connect your account.
+                  See your top tracks and what is rising in your listening once you connect your account.
                 </p>
               </div>
               <a href="/api/spotify/connect" className="shrink-0">
@@ -1561,22 +1386,8 @@ export default function DiscoverPage() {
             </div>
           )}
 
-          {/* New Releases row */}
-          {!activeMoodPill && (
-            <MusicRow
-              title="New Releases"
-              subtitle="Fresh drops from Spotify"
-              icon={Disc3}
-              items={newReleases}
-              loading={musicLoading}
-              onQueue={handleAddToQueue}
-              queuedIds={queuedIds}
-            />
-          )}
-
           {/* Personalised rows — based on top artists in listen_logs */}
-          {!activeMoodPill && (
-            <>
+          <>
               {personalMusicLoading
                 ? (
                   <MusicRow
@@ -1599,38 +1410,7 @@ export default function DiscoverPage() {
                     queuedIds={queuedIds}
                   />
                 ))}
-            </>
-          )}
-
-          {/* Genre rows */}
-          {!activeMoodPill && (
-            <>
-              {musicGenreLoading
-                ? MUSIC_GENRE_QUERIES.slice(0, 3).map((g) => (
-                  <MusicRow
-                    key={g.title}
-                    title={g.title}
-                    subtitle={g.subtitle}
-                    icon={Music2}
-                    items={[]}
-                    loading
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))
-                : musicGenreRows.map((row) => (
-                  <MusicRow
-                    key={row.title}
-                    title={row.title}
-                    subtitle={row.subtitle}
-                    icon={Music2}
-                    items={row.items}
-                    onQueue={handleAddToQueue}
-                    queuedIds={queuedIds}
-                  />
-                ))}
-            </>
-          )}
+          </>
         </div>
       )}
 
@@ -1677,26 +1457,20 @@ export default function DiscoverPage() {
               <h2 className="text-xl font-semibold">Recommended For You</h2>
             </div>
             <div className="flex items-center gap-2">
-              {refreshStatus === "ok" && !mlLoading && !aiFilmLoading && (
-                <span className="text-xs text-green-500">Updated</span>
-              )}
-              {refreshStatus === "error" && !mlLoading && (
-                <span className="text-xs text-destructive">Refresh failed — ML server may be down</span>
-              )}
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={() => { handleRefreshMlRecs(); handleRefreshAiFilmRecs(); }}
-                disabled={mlLoading || aiFilmLoading}
+                onClick={() => fetchAiFilmRecs(true)}
+                disabled={aiFilmLoading}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${(mlLoading || aiFilmLoading) ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-4 h-4 mr-2 ${aiFilmLoading ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
             </div>
           </div>
 
-          {(mlLoading || aiFilmLoading) && aiFilmRecs.length === 0 && mlRecs.length === 0 ? (
+          {(aiFilmLoading || !aiFilmFetched) && aiFilmRecs.length === 0 ? (
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
@@ -1706,30 +1480,39 @@ export default function DiscoverPage() {
                 {Array.from({ length: 20 }).map((_, i) => <SkeletonCard key={i} className="w-full" />)}
               </div>
             </div>
-          ) : (aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length === 0 ? (
+          ) : aiFilmRecs.length === 0 ? (
             <div className="border-2 border-dashed border-border p-12 text-center">
               <Sparkles className="w-8 h-8 text-primary/40 mx-auto mb-3" />
-              <p className="text-sm font-medium mb-1">Log 5 or more watches to unlock personalised picks</p>
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                The ML engine needs enough signal to build your taste profile. Keep logging!
+              <p className="text-sm font-medium mb-1">
+                {aiNotConfigured
+                  ? "Add an AI API key in your profile settings to unlock personalized recommendations."
+                  : aiFilmEmpty === "not_enough_logs"
+                    ? NOT_ENOUGH_LOGS_COPY
+                    : RECS_ERROR_COPY}
               </p>
+              {!aiNotConfigured && aiFilmEmpty !== "not_enough_logs" && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchAiFilmRecs()}>
+                  Try again
+                </Button>
+              )}
             </div>
           ) : (
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
-                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).length} picks</span>
+                <span className="text-xs text-muted-foreground border border-border px-1.5 py-0.5">{aiFilmRecs.length} picks</span>
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                {(aiFilmRecs.length > 0 ? aiFilmRecs : mlRecs).map((item, idx) => (
-                  <ExplanationTooltip key={`rec-${item.id}-${idx}`} explanation={(item as any).explanation}>
+                {aiFilmRecs.map((item, idx) => (
+                  <ExplanationTooltip key={`rec-${item.id}-${idx}`} explanation={item.explanation}>
                     <RecMediaCard
                       item={item}
                       onClick={handleItemClick}
-                      onWatchlist={handleAddMlToWatchlist}
-                      watchlisted={mlWatchlistedIds.has(item.id)}
+                      onWatchlist={handleAddRecToWatchlist}
+                      watchlisted={filmWatchlistedIds.has(item.id)}
                       rank={idx + 1}
+                      stretch={item.confidence === "discovery"}
                     />
                   </ExplanationTooltip>
                 ))}

@@ -16,6 +16,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import { StarDisplay } from "@/components/ui/star-display";
+import type { FilmRecommendation, RecsResponse } from "@/lib/ai/types";
 
 type WatchLog = {
   id: string;
@@ -34,8 +35,7 @@ type Recommendation = {
   media_type: "movie" | "tv";
   title: string;
   poster_url: string | null;
-  vote_average: number | null;
-  release_date: string | null;
+  year: number | null;
 };
 
 interface DashboardClientProps {
@@ -220,11 +220,12 @@ function FeaturedCard({
 
 
 export function DashboardClient({ userName }: DashboardClientProps) {
-  const { mode } = useMode();
+  const { mode, ready: modeReady } = useMode();
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recsLoading, setRecsLoading] = useState(true);
+  const [recsFetched, setRecsFetched] = useState(false);
   const [watchlistedIds, setWatchlistedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -263,24 +264,39 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       }
     }
 
+    fetchData();
+  }, []);
+
+  // Film picks only: skip until the stored mode is known, and in music mode.
+  useEffect(() => {
+    if (!modeReady || mode !== "film" || recsFetched) return;
+    setRecsFetched(true);
+
     async function fetchRecs() {
       try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
-        const data = await res.json();
-        if (Array.isArray(data)) setRecs(data.slice(0, 5));
+        const res = await fetch("/api/ai/recommend?mode=film");
+        if (!res.ok) return;
+        const data: RecsResponse<FilmRecommendation> = await res.json();
+        if (data.status === "ok") {
+          setRecs(
+            data.items.slice(0, 6).map((r) => ({
+              id: r.tmdb_id,
+              media_type: r.media_type,
+              title: r.title,
+              poster_url: r.poster_url,
+              year: r.year,
+            })),
+          );
+        }
       } catch {
-        /* silently fail — ML backend may not be running */
+        /* silently fail */
       } finally {
         setRecsLoading(false);
       }
     }
 
-    fetchData();
     fetchRecs();
-  }, []);
+  }, [mode, modeReady, recsFetched]);
 
   async function addToWatchlist(item: Recommendation) {
     try {
@@ -569,6 +585,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       </div>
 
       {/* ── Recommendations ────────────────────────────────────── */}
+      {modeReady && mode === "film" && (recsLoading || recs.length > 0) && (
       <div>
         <div
           className="flex items-baseline justify-between pb-3 mb-0"
@@ -581,12 +598,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             >
               Recommended
             </h2>
-            <span
-              className="label-upper px-1.5 py-0.5"
-              style={{ border: `1px solid ${accentColor}`, color: accentColor }}
-            >
-              ML
-            </span>
           </div>
           <Link
             href="/protected/discover"
@@ -601,7 +612,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
         {recsLoading ? (
           <div className="flex flex-col gap-0">
-            {[1, 2, 3, 4, 5].map(i => (
+            {[1, 2, 3, 4, 5, 6].map(i => (
               <div
                 key={i}
                 className="flex items-center gap-4 py-4"
@@ -614,12 +625,6 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                 </div>
               </div>
             ))}
-          </div>
-        ) : recs.length === 0 ? (
-          <div className="py-12 text-center">
-            <p className="font-display italic text-lg" style={{ color: "var(--text-muted)" }}>
-              Log more {mode === "music" ? "listens" : "watches"} to unlock personalised picks
-            </p>
           </div>
         ) : (
           <div>
@@ -660,7 +665,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                   </h3>
                   <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                     {item.media_type === "movie" ? "Movie" : "TV Show"}
-                    {item.vote_average && ` · ${item.vote_average.toFixed(1)} TMDB`}
+                    {item.year && ` · ${item.year}`}
                   </p>
                 </Link>
 
@@ -680,6 +685,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           </div>
         )}
       </div>
+      )}
 
     </div>
   );
