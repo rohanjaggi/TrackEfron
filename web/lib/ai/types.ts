@@ -46,15 +46,41 @@ export interface MusicRecommendation {
   album_name?: string;
 }
 
+export type Confidence = "high" | "medium" | "discovery";
+
 export interface FilmRecommendation {
   tmdb_id: number;
   title: string;
   media_type: "movie" | "tv";
-  poster_url?: string | null;
+  year: number | null;
+  poster_url: string | null;
   explanation: string;
-  source: "ml" | "ai";
-  year?: number;
+  confidence: Confidence;
 }
+
+export interface FilmCandidate {
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  year: number | null;
+  genres: string[];
+  overview: string;
+  poster_url: string | null;
+}
+
+export interface RawFilmPick {
+  tmdb_id: number | null;
+  title: string;
+  year: number | null;
+  media_type: "movie" | "tv";
+  explanation: string;
+  confidence: Confidence;
+}
+
+export type RecsResponse<T> = {
+  status: "ok" | "not_enough_logs" | "empty";
+  items: T[];
+};
 
 export interface VibeSearchResult {
   title: string;

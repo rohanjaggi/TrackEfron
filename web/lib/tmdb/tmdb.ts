@@ -221,3 +221,58 @@ export async function getPersonCredits(personId: number) {
     }
     return response.json();
 }
+export async function getRecommendations(type: "movie" | "tv", id: number) {
+    const url = `${baseUrl}/${type}/${id}/recommendations?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function searchByTitleYear(type: "movie" | "tv", title: string, year: number | null) {
+    const yearParam = year == null ? "" : `&${type === "movie" ? "year" : "first_air_date_year"}=${year}`;
+    const url = `${baseUrl}/search/${type}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&include_adult=false${yearParam}`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
+
+export async function discoverFiltered(
+    type: "movie" | "tv",
+    options: { genreIds: number[]; maxVoteCount?: number; minVoteAverage?: number }
+) {
+    const params = [
+        `with_genres=${options.genreIds.join("|")}`,
+        "sort_by=vote_average.desc",
+        "vote_count.gte=50",
+    ];
+    if (options.maxVoteCount != null) params.push(`vote_count.lte=${options.maxVoteCount}`);
+    if (options.minVoteAverage != null) params.push(`vote_average.gte=${options.minVoteAverage}`);
+    const url = `${baseUrl}/discover/${type}?api_key=${TMDB_API_KEY}&${params.join("&")}&language=en-US&page=1`;
+    const response = await fetch(url, {
+        headers: {
+            Authorization: `Bearer ${TMDB_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.results;
+}
