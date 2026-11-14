@@ -571,19 +571,7 @@ export function ProfileClient({ profile }: ProfileProps) {
             <Loader2 className="w-4 h-4 animate-spin" />
             <span className="text-sm">Loading...</span>
           </div>
-        ) : aiKeyInfo?.source === "env" ? (
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 flex items-center justify-center border-2 border-primary text-primary">
-              <Key className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="font-medium">Server Configured</p>
-              <p className="text-xs text-muted-foreground">
-                AI features are configured by the server ({aiKeyInfo.provider === "openai" ? "OpenAI" : aiKeyInfo.provider === "gemini" ? "Gemini" : "Anthropic"})
-              </p>
-            </div>
-          </div>
-        ) : aiKeyInfo?.hasKey ? (
+        ) : aiKeyInfo?.hasKey && aiKeyInfo.source !== "env" ? (
           <div>
             {aiKeyError && (
               <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
@@ -630,9 +618,11 @@ export function ProfileClient({ profile }: ProfileProps) {
                 <Key className="w-5 h-5" />
               </div>
               <div>
-                <p className="font-medium">No API Key</p>
+                <p className="font-medium">{aiKeyInfo?.source === "env" ? "Server Configured" : "No API Key"}</p>
                 <p className="text-xs text-muted-foreground">
-                  Add an Anthropic or OpenAI key to enable AI-powered features
+                  {aiKeyInfo?.source === "env"
+                    ? `The server's ${aiKeyInfo.provider === "openai" ? "OpenAI" : aiKeyInfo.provider === "gemini" ? "Gemini" : "Anthropic"} key is used until you add your own`
+                    : "Add an Anthropic or OpenAI key to enable AI-powered features"}
                 </p>
               </div>
             </div>

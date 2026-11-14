@@ -42,7 +42,7 @@ function ErrorLine({ error }: { error: CardError }) {
   if (error.kind === "no_key") {
     content = (
       <>
-        Add an Anthropic or OpenAI key in{" "}
+        Add an Anthropic, OpenAI or Gemini key in{" "}
         <Link href="/protected/profile" className="underline text-primary">profile settings</Link>{" "}
         to generate your taste card.
       </>

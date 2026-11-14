@@ -78,14 +78,18 @@ type MusicMediaItem = {
 type RecsLoad<T> =
   | { kind: "ok"; data: T }
   | { kind: "no_key" }
-  | { kind: "error" };
+  | { kind: "error"; detail?: string };
 
 // Shared by the film and music For You fetches (402 means no API key; any other failure is an error).
 async function loadRecs<T>(url: string): Promise<RecsLoad<T>> {
   try {
     const res = await fetch(url);
     if (res.status === 402) return { kind: "no_key" };
-    if (!res.ok) return { kind: "error" };
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const detail = body?.code === "PROVIDER_ERROR" && typeof body?.error === "string" ? body.error : undefined;
+      return { kind: "error", detail };
+    }
     const body = await res.json();
     if (!Array.isArray(body?.items)) return { kind: "error" };
     return { kind: "ok", data: body as T };
@@ -395,11 +399,13 @@ export default function DiscoverPage() {
   const [aiMusicLoading, setAiMusicLoading] = useState(false);
   const [aiMusicFetched, setAiMusicFetched] = useState(false);
   const [aiMusicEmpty, setAiMusicEmpty] = useState<RecsEmpty>(null);
+  const [aiMusicErrorDetail, setAiMusicErrorDetail] = useState<string | null>(null);
   const [rightNow, setRightNow] = useState<RightNow | null>(null);
   const [aiFilmRecs, setAiFilmRecs] = useState<(MediaItem & { explanation?: string; confidence?: Confidence })[]>([]);
   const [aiFilmLoading, setAiFilmLoading] = useState(false);
   const [aiFilmFetched, setAiFilmFetched] = useState(false);
   const [aiFilmEmpty, setAiFilmEmpty] = useState<RecsEmpty>(null);
+  const [aiFilmErrorDetail, setAiFilmErrorDetail] = useState<string | null>(null);
   const [filmWatchlistedIds, setFilmWatchlistedIds] = useState<Set<number>>(new Set());
 
   const vibeRequestRef = useRef(0);
@@ -520,12 +526,14 @@ export default function DiscoverPage() {
   const fetchAiMusicRecs = useCallback(async (refresh = false) => {
     setAiMusicLoading(true);
     setAiMusicEmpty(null);
+    setAiMusicErrorDetail(null);
     const result = await loadRecs<MusicRecsResponse>(`/api/ai/recommend?mode=music${refresh ? "&refresh=true" : ""}`);
     if (result.kind === "no_key") {
       setAiNotConfigured(true);
       setRightNow(null);
     } else if (result.kind === "error") {
       setAiMusicEmpty("error");
+      setAiMusicErrorDetail(result.detail ?? null);
       setRightNow(null);
     } else {
       const { status, items, right_now } = result.data;
@@ -549,11 +557,13 @@ export default function DiscoverPage() {
   const fetchAiFilmRecs = useCallback(async (refresh = false) => {
     setAiFilmLoading(true);
     setAiFilmEmpty(null);
+    setAiFilmErrorDetail(null);
     const result = await loadRecs<RecsResponse<FilmRecommendation>>(`/api/ai/recommend?mode=film${refresh ? "&refresh=true" : ""}`);
     if (result.kind === "no_key") {
       setAiNotConfigured(true);
     } else if (result.kind === "error") {
       setAiFilmEmpty("error");
+      setAiFilmErrorDetail(result.detail ?? null);
     } else {
       const { status, items } = result.data;
       setAiFilmRecs(items.map((r) => ({
@@ -1131,13 +1141,21 @@ export default function DiscoverPage() {
                   {Array.from({ length: 14 }).map((_, i) => <PosterSkeleton key={i} aspect="square" />)}
                 </div>
               ) : aiMusicRecs.length > 0 ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
-                  {aiMusicRecs.map((item) => (
-                    <ExplanationTooltip key={item.id} explanation={item.explanation}>
-                      <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} stretch={item.confidence === "discovery"} />
-                    </ExplanationTooltip>
-                  ))}
-                </div>
+                <>
+                  {aiMusicEmpty === "error" && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">{RECS_ERROR_COPY}</p>
+                      {aiMusicErrorDetail && <p className="text-xs text-muted-foreground">{aiMusicErrorDetail}</p>}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3">
+                    {aiMusicRecs.map((item) => (
+                      <ExplanationTooltip key={item.id} explanation={item.explanation}>
+                        <MusicCard item={item} onQueue={handleAddToQueue} queued={queuedIds.has(item.id)} stretch={item.confidence === "discovery"} />
+                      </ExplanationTooltip>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <div className="border-2 border-dashed border-border p-8 text-center">
                   <Sparkles className="w-6 h-6 text-muted-foreground/40 mx-auto mb-2" />
@@ -1148,6 +1166,9 @@ export default function DiscoverPage() {
                         ? NOT_ENOUGH_LOGS_COPY
                         : RECS_ERROR_COPY}
                   </p>
+                  {!aiNotConfigured && aiMusicEmpty === "error" && aiMusicErrorDetail && (
+                    <p className="text-xs text-muted-foreground">{aiMusicErrorDetail}</p>
+                  )}
                   {!aiNotConfigured && aiMusicEmpty !== "not_enough_logs" && (
                     <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchAiMusicRecs()}>
                       Try again
@@ -1307,6 +1328,9 @@ export default function DiscoverPage() {
                     ? NOT_ENOUGH_LOGS_COPY
                     : RECS_ERROR_COPY}
               </p>
+              {!aiNotConfigured && aiFilmEmpty === "error" && aiFilmErrorDetail && (
+                <p className="text-xs text-muted-foreground">{aiFilmErrorDetail}</p>
+              )}
               {!aiNotConfigured && aiFilmEmpty !== "not_enough_logs" && (
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => fetchAiFilmRecs()}>
                   Try again
@@ -1315,6 +1339,12 @@ export default function DiscoverPage() {
             </div>
           ) : (
             <div>
+              {aiFilmEmpty === "error" && (
+                <div className="mb-4">
+                  <p className="text-sm text-muted-foreground">{RECS_ERROR_COPY}</p>
+                  {aiFilmErrorDetail && <p className="text-xs text-muted-foreground">{aiFilmErrorDetail}</p>}
+                </div>
+              )}
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary shrink-0" />
                 <h2 className="font-display text-base md:text-lg font-bold">Your Picks</h2>
