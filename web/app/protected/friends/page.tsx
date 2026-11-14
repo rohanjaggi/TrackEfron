@@ -17,6 +17,7 @@ import {
   Mail,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { escapeIlike } from "@/lib/postgrest";
 
 type ActiveTab = "friends" | "requests" | "find";
 
@@ -198,7 +199,7 @@ export default function FriendsPage() {
 
   // Debounced search
   useEffect(() => {
-    const q = searchQuery.trim();
+    const q = escapeIlike(searchQuery.trim());
     if (!q || !currentUserId) {
       setSearchResults([]);
       return;
