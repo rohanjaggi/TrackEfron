@@ -26,6 +26,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import type { MediaSearchResult, WatchlistItem } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type ViewType = "grid" | "list";
 type FilterType = "all" | "film" | "movies" | "tv" | "music" | "albums";
@@ -63,11 +64,6 @@ const MUSIC_EMOJI_OPTIONS = [
   "❤️", "🔥", "⭐", "🌙", "💿", "📀", "🎼", "🪩",
   "🎻", "🎺", "🌍", "🏆"
 ];
-
-function upscalePoster(url: string | null, size = "w500"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 function WatchlistPageContent() {
   const router = useRouter();
@@ -776,7 +772,7 @@ function WatchlistPageContent() {
                     <div className={`${isMusic ? "aspect-square" : "aspect-[2/3]"} bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden`}>
                       {item.poster_url ? (
                         <img
-                          src={upscalePoster(item.poster_url)!}
+                          src={resizePoster(item.poster_url, "w500")!}
                           alt={item.title}
                           className="w-full h-full object-cover"
                         />
@@ -837,7 +833,7 @@ function WatchlistPageContent() {
                     }`}>
                       {item.poster_url ? (
                         <img
-                          src={upscalePoster(item.poster_url, "w185")!}
+                          src={resizePoster(item.poster_url, "w185")!}
                           alt={item.title}
                           className="w-full h-full object-cover"
                         />

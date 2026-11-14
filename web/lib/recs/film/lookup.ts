@@ -1,9 +1,10 @@
 import type { FilmCandidate } from "@/lib/ai/types";
+import type { TmdbResult } from "@/lib/tmdb/tmdb";
 import { overlaps } from "../normalise";
 import { toCandidate } from "./candidates";
 import type { Lookup } from "./match";
 
-type Search = (type: "movie" | "tv", title: string, year: number | null) => Promise<unknown[]>;
+type Search = (type: "movie" | "tv", title: string, year: number | null) => Promise<TmdbResult[]>;
 
 /**
  * Adapts a raw TMDB title search to the film matcher's lookup. A result is
@@ -12,7 +13,7 @@ type Search = (type: "movie" | "tv", title: string, year: number | null) => Prom
  */
 export function makeFilmLookup(search: Search): Lookup {
   return async (type, title, year) => {
-    const results = (await search(type, title, year)) as Record<string, unknown>[];
+    const results = await search(type, title, year);
     for (const r of results ?? []) {
       const names = [
         type === "movie" ? r.title : r.name,

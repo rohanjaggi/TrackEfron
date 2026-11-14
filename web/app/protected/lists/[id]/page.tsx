@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { MediaSearchResult } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type ListMeta = {
   id: string;
@@ -44,11 +45,6 @@ type ListItem = {
   added_at: string;
   position: number;
 };
-
-function upscalePoster(url: string | null, size = "w500"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 export default function ListDetailPage() {
   return (
@@ -509,7 +505,7 @@ function ListDetailContent() {
         <div className={`grid ${isMusic ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"} gap-4`}>
           {items.map((item) => {
             const itemIsMusic = item.media_type === "album" || item.media_type === "track";
-            const artUrl = itemIsMusic ? item.image_url : upscalePoster(item.poster_url);
+            const artUrl = itemIsMusic ? item.image_url : resizePoster(item.poster_url, "w500");
             return (
               <div
                 key={item.id}

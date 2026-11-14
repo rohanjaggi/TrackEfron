@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { WatchLog, WatchlistItem } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type Profile = {
   id: string;
@@ -40,11 +41,6 @@ type UserList = {
 };
 
 type RelationshipStatus = "self" | "friends" | "pending_sent" | "pending_received" | "none";
-
-function upscalePoster(url: string | null, size = "w185"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 export default function UserProfilePage() {
   return (
@@ -442,7 +438,7 @@ function UserProfileContent() {
                       <div className="w-12 h-16 border border-primary/30 flex items-center justify-center shrink-0 bg-primary/5 overflow-hidden">
                         {log.poster_url ? (
                           <img
-                            src={upscalePoster(log.poster_url)!}
+                            src={resizePoster(log.poster_url, "w185")!}
                             alt={log.title}
                             className="w-full h-full object-cover"
                           />
@@ -486,7 +482,7 @@ function UserProfileContent() {
                       <div className="aspect-[2/3] bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center overflow-hidden">
                         {item.poster_url ? (
                           <img
-                            src={upscalePoster(item.poster_url)!}
+                            src={resizePoster(item.poster_url, "w185")!}
                             alt={item.title}
                             className="w-full h-full object-cover"
                           />

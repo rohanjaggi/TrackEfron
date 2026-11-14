@@ -37,7 +37,7 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
 
 - Node.js 18+
 - A [Supabase](https://supabase.com) project
-- A [TMDB API](https://developer.themoviedb.org/docs/getting-started) key
+- A [TMDB API](https://developer.themoviedb.org/docs/getting-started) read access token (the v4 bearer token; the v3 API key is not used)
 
 ### Setup
 
@@ -53,7 +53,6 @@ A personal movie and TV show tracking app. Log what you watch, rate it across mu
    ```
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
-   TMDB_API_KEY=your_tmdb_api_key
    TMDB_BEARER_TOKEN=your_tmdb_bearer_token
    SPOTIFY_CLIENT_ID=your_spotify_client_id
    SPOTIFY_CLIENT_SECRET=your_spotify_client_secret

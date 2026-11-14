@@ -18,6 +18,7 @@ import { useMode } from "@/lib/mode-context";
 import { StarDisplay } from "@/components/ui/star-display";
 import type { FilmRecommendation, RecsResponse } from "@/lib/ai/types";
 import type { WatchLog } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type Recommendation = {
   id: number;
@@ -29,11 +30,6 @@ type Recommendation = {
 
 interface DashboardClientProps {
   userName: string;
-}
-
-function upscalePoster(url: string | null, size = "w185"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
 }
 
 // ─── Featured Latest Entry card ───────────────────────────────
@@ -51,9 +47,7 @@ function FeaturedCard({
   mode: "film" | "music";
 }) {
   const isMusic = item ? (item.media_type === "album" || item.media_type === "track") : mode === "music";
-  const posterUrl = item?.poster_url
-    ? item.poster_url.replace(/\/w\d+\//, "/w500/")
-    : null;
+  const posterUrl = resizePoster(item?.poster_url, "w500");
 
   if (loading) {
     return (
@@ -528,7 +522,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                   >
                     {item.poster_url ? (
                       <img
-                        src={upscalePoster(item.poster_url)!}
+                        src={resizePoster(item.poster_url, "w185")!}
                         alt={item.title}
                         className="w-full h-full object-cover"
                       />
@@ -634,7 +628,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                 >
                   {item.poster_url ? (
                     <img
-                      src={upscalePoster(item.poster_url)!}
+                      src={resizePoster(item.poster_url, "w185")!}
                       alt={item.title}
                       className="w-full h-full object-cover"
                     />

@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import { StarDisplay } from "@/components/ui/star-display";
 import type { WatchLog } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type ViewType = "grid" | "list";
 // "film" = movies+tv, "music" = albums+tracks
@@ -47,11 +48,6 @@ const SORT_OPTIONS: { value: SortType; label: string }[] = [
   { value: "date_added_desc", label: "Date Added (Newest)" },
   { value: "date_added_asc", label: "Date Added (Oldest)" },
 ];
-
-function upscalePoster(url: string | null, size = "w342"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
-}
 
 
 export default function LibraryPage() {
@@ -525,7 +521,7 @@ export default function LibraryPage() {
                 >
                   {item.poster_url ? (
                     <img
-                      src={upscalePoster(item.poster_url)!}
+                      src={resizePoster(item.poster_url, "w342")!}
                       alt={item.title}
                       className="group-hover:scale-105 transition-transform duration-500"
                       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
@@ -657,7 +653,7 @@ export default function LibraryPage() {
                   }}
                 >
                   {item.poster_url ? (
-                    <img src={upscalePoster(item.poster_url)!} alt={item.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    <img src={resizePoster(item.poster_url, "w342")!} alt={item.title} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       {item.media_type === "movie" ? <Film className="w-4 h-4" style={{ color: "var(--text-dim)" }} />

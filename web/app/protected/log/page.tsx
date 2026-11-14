@@ -22,6 +22,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
 import type { MediaSearchResult } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
 
 type MediaType = "movie" | "tv" | "album" | "track";
 
@@ -532,7 +533,7 @@ function LogWatchForm() {
                         style={{ width: isFilmResult ? 26 : 32, height: isFilmResult ? 38 : 32, background: "var(--surface-2)", position: "relative" }}
                       >
                         <img
-                          src={r.poster_url.replace(/\/w\d+\//, "/w342/")}
+                          src={r.poster_url}
                           alt={lbl}
                           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                         />
@@ -960,7 +961,7 @@ function LogWatchForm() {
                   >
                     {selectedMovie.poster_url ? (
                       <img
-                        src={selectedMovie.poster_url.replace(/\/w\d+\//, "/w780/")}
+                        src={resizePoster(selectedMovie.poster_url, "w780")!}
                         alt={selectedMovie.title || selectedMovie.name}
                         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                       />
