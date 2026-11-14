@@ -97,12 +97,14 @@ function UserProfileContent() {
         return;
       }
 
-      const { data: friendships } = await supabase
+      const { data: friendships, error: friendshipsError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status")
         .or(
           `and(requester_id.eq.${user.id},addressee_id.eq.${profileData.id}),and(requester_id.eq.${profileData.id},addressee_id.eq.${user.id})`
         );
+
+      if (friendshipsError) throw friendshipsError;
 
       if (friendships && friendships.length > 0) {
         const f = friendships[0];
@@ -119,6 +121,7 @@ function UserProfileContent() {
       }
     } catch (err) {
       console.error("Failed to fetch profile:", err);
+      setActionError("Couldn't load this profile's friendship status. Try again later.");
     } finally {
       setLoading(false);
     }

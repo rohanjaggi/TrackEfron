@@ -85,7 +85,7 @@ export async function refreshAccessToken(
   if (!res.ok) {
     // The body only supplies the error text; fall back to the status line without it.
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Spotify refresh failed: ${err.error ?? res.statusText}|${res.status}`);
+    throw new SpotifyRefreshError(`Spotify refresh failed: ${err.error ?? res.statusText}`, res.status);
   }
 
   const data = await res.json();
@@ -119,6 +119,13 @@ export async function saveTokens(
   if (error) throw new Error(`Saving Spotify tokens failed: ${error.message}`);
 }
 
+/** A non-2xx answer from the Spotify token endpoint, carrying its HTTP status. */
+class SpotifyRefreshError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 export async function getValidToken(
   supabase: SupabaseClient,
   userId: string
@@ -137,12 +144,17 @@ export async function getValidToken(
   if (Date.now() >= expiresAt - fiveMinutes) {
     try {
       const refreshed = await refreshAccessToken(row.refresh_token);
-      await saveTokens(supabase, userId, refreshed);
+      try {
+        await saveTokens(supabase, userId, refreshed);
+      } catch (saveErr) {
+        // The refreshed token is still valid for this call; the next call refreshes again.
+        console.error("Saving the refreshed Spotify token failed:", saveErr);
+      }
       return refreshed.access_token;
     } catch (err) {
-      // invalid_grant means the token was revoked — clean up
       const message = err instanceof Error ? err.message : "";
-      if (message.includes("invalid_grant") || message.includes("400")) {
+      // A 400 from the token endpoint (invalid_grant) means the token was revoked — clean up
+      if (err instanceof SpotifyRefreshError && err.status === 400) {
         // Best-effort cleanup: the token is already unusable, so a failed delete is retried on the next call.
         await supabase.from("spotify_tokens").delete().eq("user_id", userId);
       }

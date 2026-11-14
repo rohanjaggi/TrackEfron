@@ -217,8 +217,10 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             .order("listened_date", { ascending: false, nullsFirst: false })
             .order("created_at", { ascending: false }),
         ]);
-        if (filmRes.error) throw filmRes.error;
-        if (musicRes.error) throw musicRes.error;
+        // Show whatever loaded; flag the part that did not.
+        if (filmRes.error || musicRes.error) {
+          setError("Couldn't load some of your activity. Try refreshing the page.");
+        }
         const musicMapped: WatchLog[] = (musicRes.data || []).map((m) => ({
           id: m.id,
           title: m.title,

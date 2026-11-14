@@ -89,7 +89,10 @@ export default function LibraryPage() {
           .order("created_at", { ascending: false }),
       ]);
 
-      if (filmRes.error || musicRes.error) throw filmRes.error ?? musicRes.error;
+      // Show whatever loaded; flag the part that did not.
+      if (filmRes.error || musicRes.error) {
+        setError("Couldn't load part of your library. Try refreshing the page.");
+      }
 
       const filmItems: WatchLog[] = (filmRes.data || []);
       const musicItems: WatchLog[] = (musicRes.data || []).map((m) => ({
@@ -118,7 +121,7 @@ export default function LibraryPage() {
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; the loading flag is set as the request starts
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on mount; fetchLibrary sets state only after the request resolves, but the rule cannot see through the call
     fetchLibrary();
   }, []);
 

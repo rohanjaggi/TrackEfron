@@ -107,10 +107,11 @@ export default function FriendsPage() {
         return;
       }
 
-      const { data: profiles } = await supabase
+      const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
         .select("id, username, full_name, avatar_url")
         .in("id", friendIds);
+      if (profilesError) throw profilesError;
 
       const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
@@ -147,10 +148,11 @@ export default function FriendsPage() {
 
       let incomingProfiles: Profile[] = [];
       if (incomingIds.length > 0) {
-        const { data } = await supabase
+        const { data, error: profilesError } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .in("id", incomingIds);
+        if (profilesError) throw profilesError;
         incomingProfiles = data || [];
       }
 
@@ -173,10 +175,11 @@ export default function FriendsPage() {
 
       let sentProfiles: Profile[] = [];
       if (sentIds.length > 0) {
-        const { data } = await supabase
+        const { data, error: profilesError } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .in("id", sentIds);
+        if (profilesError) throw profilesError;
         sentProfiles = data || [];
       }
 
@@ -208,13 +211,14 @@ export default function FriendsPage() {
         setIsSearching(true);
         const supabase = createClient();
 
-        const { data: profiles } = await supabase
+        const { data: profiles, error: profilesError } = await supabase
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
           .neq("id", currentUserId)
           .limit(20);
 
+        if (profilesError) throw profilesError;
         if (!profiles || profiles.length === 0) {
           setSearchResults([]);
           return;
@@ -222,12 +226,14 @@ export default function FriendsPage() {
 
         const resultIds = profiles.map((p) => p.id);
 
-        const { data: friendships } = await supabase
+        const { data: friendships, error: friendshipsError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
           .or(
             `and(requester_id.eq.${currentUserId},addressee_id.in.(${resultIds.join(",")})),and(addressee_id.eq.${currentUserId},requester_id.in.(${resultIds.join(",")}))`
           );
+
+        if (friendshipsError) throw friendshipsError;
 
         const friendshipMap = new Map<string, { status: string; friendshipId: string; direction: "sent" | "received" }>();
         for (const f of friendships || []) {

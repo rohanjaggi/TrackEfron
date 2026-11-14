@@ -279,11 +279,14 @@ function LogWatchForm() {
       try {
         const supabase = createClient();
         // Try watch_logs first
-        const { data: filmData } = await supabase
+        const { data: filmData, error: filmError } = await supabase
           .from("watch_logs")
           .select("*")
           .eq("id", editId)
           .single();
+
+        // PGRST116 is "no row": expected here, because music entries live in listen_logs.
+        if (filmError && filmError.code !== "PGRST116") throw filmError;
 
         if (filmData) {
           setMediaType(filmData.media_type);
@@ -312,11 +315,12 @@ function LogWatchForm() {
           }
         } else {
           // Try listen_logs (music)
-          const { data: musicData } = await supabase
+          const { data: musicData, error: musicError } = await supabase
             .from("listen_logs")
             .select("*")
             .eq("id", editId)
             .single();
+          if (musicError) throw musicError;
           if (musicData) {
             setMediaType(musicData.media_type);
             setTitle(musicData.title);
