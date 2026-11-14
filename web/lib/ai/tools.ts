@@ -4,57 +4,57 @@ type Tool = Anthropic.Messages.Tool;
 
 export const tasteDNATool: Tool = {
   name: "generate_taste_dna",
-  description: "Generate a structured taste profile analyzing the user's film and music preferences",
+  description: "Generate a short taste profile of the user's film and music preferences",
   input_schema: {
     type: "object" as const,
     properties: {
       fingerprint: {
         type: "string",
-        description: "One-sentence taste identity, max 120 chars. Punchy and specific, not generic.",
+        description: "One punchy, specific taste-identity line, at most 80 characters.",
+      },
+      pulse: {
+        type: "array",
+        items: { type: "string" },
+        description: "Exactly 3 single words that capture this person's taste. One word each, no spaces.",
+      },
+      observations: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            text: { type: "string", description: "One sentence of at most 20 words about this person's taste" },
+            cited_title: { type: "string", description: "One film, series, album or track from their logs that backs the observation, spelled exactly as given" },
+          },
+          required: ["text", "cited_title"],
+          additionalProperties: false,
+        },
+        description: "2 or 3 observations, no more than 3",
       },
       film_identity: {
         type: "object",
         properties: {
-          core: { type: "string", description: "2-3 sentences: what defines this person's film taste at its core" },
-          aspect_lens: { type: "string", description: "2-3 sentences: which aspects (plot, cinematography, acting, soundtrack, pacing, casting) they weight most and how" },
-          patterns: { type: "string", description: "2-3 sentences: recurring patterns in what they rate high vs low" },
-          rating_style: { type: "string", description: "1-2 sentences: how generous/harsh they are, their rating distribution tendencies" },
+          core: { type: "string", description: "One sentence: what defines this person's film taste at its core" },
+          aspect_lens: { type: "string", description: "One sentence: which aspects (plot, cinematography, acting, soundtrack, pacing, casting) they weight most" },
         },
-        required: ["core", "aspect_lens", "patterns", "rating_style"],
+        required: ["core", "aspect_lens"],
         additionalProperties: false,
       },
       music_identity: {
         type: "object",
         properties: {
-          core: { type: "string", description: "2-3 sentences: what defines this person's music taste at its core" },
-          aspect_lens: { type: "string", description: "2-3 sentences: which aspects (lyrics, production, vocals, melody, replay, energy) they weight most and how" },
-          patterns: { type: "string", description: "2-3 sentences: recurring patterns in what they rate high vs low" },
-          rating_style: { type: "string", description: "1-2 sentences: how generous/harsh they are" },
+          core: { type: "string", description: "One sentence: what defines this person's music taste at its core" },
+          aspect_lens: { type: "string", description: "One sentence: which aspects (lyrics, production, vocals, melody, replay, energy) they weight most" },
         },
-        required: ["core", "aspect_lens", "patterns", "rating_style"],
-        additionalProperties: false,
-      },
-      cross_domain: {
-        type: "object",
-        properties: {
-          thread: { type: "string", description: "2-3 sentences: the connecting thread between their film and music taste" },
-          surprising_connection: { type: "string", description: "1-2 sentences: a non-obvious connection between their film and music preferences" },
-        },
-        required: ["thread", "surprising_connection"],
+        required: ["core", "aspect_lens"],
         additionalProperties: false,
       },
       blind_spots: {
         type: "array",
         items: { type: "string" },
-        description: "2-4 blind spots: genres, eras, or styles they haven't explored that they might enjoy based on their taste",
-      },
-      guilty_pleasures: {
-        type: "array",
-        items: { type: "string" },
-        description: "1-3 guilty pleasures or contradictions in their taste profile",
+        description: "2 to 4 blind spots: genres, eras, or styles they haven't explored that they might enjoy based on their taste",
       },
     },
-    required: ["fingerprint", "film_identity", "music_identity", "cross_domain", "blind_spots", "guilty_pleasures"],
+    required: ["fingerprint", "pulse", "observations", "film_identity", "music_identity", "blind_spots"],
     additionalProperties: false,
   },
 };

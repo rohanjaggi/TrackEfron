@@ -1,23 +1,20 @@
+export interface TasteObservation {
+  text: string;
+  cited_title: string;
+}
+
+export interface TasteIdentity {
+  core: string;
+  aspect_lens: string;
+}
+
 export interface TasteDNA {
   fingerprint: string;
-  film_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  music_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  cross_domain: {
-    thread: string;
-    surprising_connection: string;
-  };
+  pulse: string[];
+  observations: TasteObservation[];
+  film_identity: TasteIdentity;
+  music_identity: TasteIdentity;
   blind_spots: string[];
-  guilty_pleasures: string[];
 }
 
 export interface TasteDNARow {
@@ -26,11 +23,11 @@ export interface TasteDNARow {
   generated_at: string;
   model_version: string;
   fingerprint: string;
-  film_profile: TasteDNA["film_identity"];
-  music_profile: TasteDNA["music_identity"];
-  cross_domain: TasteDNA["cross_domain"];
+  pulse: string[] | null;
+  observations: TasteObservation[] | null;
+  film_profile: TasteIdentity;
+  music_profile: TasteIdentity;
   blind_spots: string[];
-  guilty_pleasures: string[];
   film_log_count: number;
   music_log_count: number;
 }
