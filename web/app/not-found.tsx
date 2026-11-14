@@ -9,7 +9,7 @@ export default function NotFound() {
       <div className="frame mb-5 flex h-14 w-14 items-center justify-center">
         <Film className="size-6 text-muted-foreground" aria-hidden="true" />
       </div>
-      <h1 className="font-display text-[30px] font-light italic leading-[1.1] tracking-[-0.01em] text-foreground">
+      <h1 className="t-voice-lg">
         This reel is missing.
       </h1>
       <p className="t-meta mx-auto mt-3 max-w-[46ch]">

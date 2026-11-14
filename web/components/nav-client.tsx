@@ -61,7 +61,7 @@ export function MobileNav() {
                 aria-current={active ? "page" : undefined}
                 className={[
                   "relative flex h-14 flex-col items-center justify-center gap-1",
-                  "text-[10px] font-medium uppercase tracking-[0.06em]",
+                  "text-[12px] font-medium",
                   "transition-colors duration-cut ease-mech",
                   active ? "text-[var(--mode-accent)]" : "text-[var(--text-muted)]",
                 ].join(" ")}
@@ -114,7 +114,7 @@ export function NavLinks() {
             title={text}
             className={[
               "flex h-9 items-center gap-1.5 border px-2.5 lg:px-3.5",
-              "text-[11px] font-medium uppercase tracking-[0.08em]",
+              "text-[13.5px] font-medium",
               "transition-[color,background-color,border-color] duration-cut ease-mech",
               active
                 ? "nav-link-active"
@@ -145,7 +145,7 @@ export function NavLogButton() {
       title={`${label} · N`}
       className={[
         "flex h-9 items-center gap-1.5 border px-3",
-        "text-[11px] font-medium uppercase tracking-[0.1em]",
+        "text-[13px] font-semibold",
         "transition-[color,background-color,border-color,transform] duration-cut ease-mech active:translate-y-px",
         "border-primary bg-primary text-primary-foreground hover:border-foreground hover:bg-foreground",
       ].join(" ")}

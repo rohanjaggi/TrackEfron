@@ -89,7 +89,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 </span>
               )}
               <div className="min-w-0 flex-1 py-0.5">
-                <p className="text-[12px] leading-snug text-foreground">{t.title}</p>
+                <p className="text-[13px] leading-snug text-foreground">{t.title}</p>
                 {t.description && <p className="t-meta mt-0.5">{t.description}</p>}
                 {t.action && (
                   <button
@@ -98,7 +98,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                       t.action?.onClick();
                       dismiss(t.id);
                     }}
-                    className="mt-2 text-[11px] font-medium uppercase tracking-[0.1em] text-primary underline-offset-4 hover:underline"
+                    className="mt-2 text-[12.5px] font-semibold text-primary underline-offset-4 hover:underline"
                   >
                     {t.action.label}
                   </button>

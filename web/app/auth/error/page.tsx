@@ -32,7 +32,7 @@ export default function Page({
       }
     >
       <div className="flex flex-col gap-6">
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
           Email links expire after a while and only work once. If you&apos;ve already confirmed
           your address, sign in as usual. If you were resetting your password, request a new link
           below.

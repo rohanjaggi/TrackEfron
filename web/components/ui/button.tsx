@@ -5,14 +5,14 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * The one button. Mono caps, hairline edge, never rounded.
+ * The one button. Sentence case, hairline edge, square corners.
  * Use `default` for the single primary action in a view; `outline` for
  * everything beside it; `ghost` for toolbar and icon actions.
  */
 const buttonVariants = cva(
   [
     "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap border",
-    "font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em]",
+    "text-[13px] font-semibold leading-none",
     "transition-[color,background-color,border-color,transform] duration-cut ease-mech",
     "active:translate-y-px disabled:pointer-events-none disabled:opacity-45",
     "[&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
@@ -30,12 +30,12 @@ const buttonVariants = cva(
           "border-transparent bg-transparent text-muted-foreground hover:bg-surface-2 hover:text-foreground",
         destructive:
           "border-danger/60 bg-transparent text-danger hover:border-danger hover:bg-danger hover:text-background",
-        link: "border-transparent normal-case tracking-normal text-primary underline-offset-4 hover:underline",
+        link: "border-transparent font-medium text-primary underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4",
-        sm: "h-8 px-3 text-[10px]",
-        lg: "h-11 px-6 text-[12px]",
+        sm: "h-8 px-3 text-[12.5px]",
+        lg: "h-11 px-6 text-[14px]",
         icon: "h-9 w-9 p-0",
       },
     },

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /** Shared look for every text-entry control. */
 export const controlClass = [
-  "w-full border border-input bg-background px-3 text-[13px] text-foreground",
+  "w-full border border-input bg-background px-3 text-[14px] text-foreground",
   "placeholder:text-dim",
   "transition-[border-color,box-shadow] duration-cut ease-mech",
   "hover:border-foreground/50",

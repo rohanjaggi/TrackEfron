@@ -49,7 +49,7 @@ export function Disclosure({
         onClick={toggle}
         className="group flex w-full items-center justify-between gap-4 py-3.5 text-left"
       >
-        <span className="label-upper transition-colors duration-cut ease-mech group-hover:text-foreground">
+        <span className="t-label transition-colors duration-cut ease-mech group-hover:text-foreground">
           {title}
         </span>
         <span className="flex items-center gap-3">

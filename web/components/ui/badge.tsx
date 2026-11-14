@@ -3,9 +3,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
-/** Small tracked-caps tag. Outline by default; `solid` only for the one thing that must shout. */
+/** Small sentence-case tag. Outline by default; `solid` only for the one thing that must shout. */
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 whitespace-nowrap border px-1.5 py-[3px] font-mono text-[10px] font-medium uppercase leading-none tracking-[0.1em] [&_svg]:size-3 [&_svg]:shrink-0",
+  "inline-flex items-center gap-1 whitespace-nowrap border px-1.5 py-1 text-[11.5px] font-medium leading-none [&_svg]:size-3 [&_svg]:shrink-0",
   {
     variants: {
       variant: {

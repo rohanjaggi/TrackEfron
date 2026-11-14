@@ -47,9 +47,15 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
+  // The design catalogue under /dev is public in development only; those
+  // pages return 404 in production, where this exemption never applies.
+  const isDevCatalogue =
+    process.env.NODE_ENV !== "production" && request.nextUrl.pathname.startsWith("/dev/");
+
   if (
     request.nextUrl.pathname !== "/" &&
     !user &&
+    !isDevCatalogue &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/auth")
   ) {

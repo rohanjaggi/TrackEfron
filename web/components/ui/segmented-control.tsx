@@ -95,14 +95,14 @@ export function SegmentedControl<T extends string>({
               }
             }}
             className={cn(
-              "seg flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-40",
-              size === "sm" ? "h-7 px-2.5 text-[10px]" : "h-8 px-3 text-[11px]",
+              "seg flex shrink-0 items-center gap-1.5 whitespace-nowrap font-medium disabled:cursor-not-allowed disabled:opacity-40",
+              size === "sm" ? "h-7 px-2.5 text-[13px]" : "h-8 px-3 text-[13px]",
             )}
           >
             {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
             {!opt.iconOnly && <span>{opt.label}</span>}
             {typeof opt.count === "number" && (
-              <span className="text-[10px] opacity-70">{opt.count}</span>
+              <span className="text-[11.5px] opacity-70">{opt.count}</span>
             )}
           </button>
         );
@@ -173,14 +173,14 @@ export function TabBar<T extends string>({
                 move(i, -1);
               }
             }}
-            className="tab flex shrink-0 items-center gap-2 whitespace-nowrap pb-3 pt-1 text-[11px] font-medium uppercase tracking-[0.1em]"
+            className="tab flex shrink-0 items-center gap-2 whitespace-nowrap pb-3 pt-1 text-[13.5px] font-medium"
           >
             {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
             <span>{tab.label}</span>
             {typeof tab.count === "number" && (
               <span
                 className={cn(
-                  "text-[10px]",
+                  "text-[11.5px]",
                   tab.countTone === "alert" && tab.count > 0
                     ? "border border-primary/50 bg-primary/10 px-1 text-primary"
                     : "text-muted-foreground",

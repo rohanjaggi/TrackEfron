@@ -15,7 +15,7 @@ export default function Page() {
       }
     >
       <div className="flex flex-col gap-6">
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
           Your account is created. We&apos;ve sent a confirmation link to your email: open it to
           confirm your address, then sign in. It can take a minute to arrive; check your spam
           folder if it doesn&apos;t.

@@ -49,7 +49,7 @@ export function ForgotPasswordForm() {
             Wrong address?{" "}
             <Button
               variant="link"
-              className="text-[12px] underline hover:text-foreground"
+              className="text-[13px] underline hover:text-foreground"
               onClick={() => setSuccess(false)}
             >
               Try another email
@@ -58,7 +58,7 @@ export function ForgotPasswordForm() {
         }
       >
         <div className="flex flex-col gap-6">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
             If an account exists for <span className="break-all text-foreground">{email}</span>,
             we&apos;ve sent it a link to choose a new password. It can take a minute to arrive;
             check your spam folder if it doesn&apos;t.

@@ -72,7 +72,7 @@ export function SectionHeader({
         </Heading>
         {(meta || action) && (
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
-            {meta && <span className="label-upper">{meta}</span>}
+            {meta && <span className="t-label">{meta}</span>}
             {action}
           </div>
         )}
@@ -100,14 +100,14 @@ export function StatBlock({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <div className={cn("t-numeral mb-1.5", size === "lg" ? "text-[38px]" : "text-[28px]")}>
+      <div className={cn("t-numeral mb-1.5", size === "lg" ? "t-numeral-lg" : "t-numeral-md")}>
         {loading ? (
           <span className="skeleton inline-block h-[0.8em] w-[1.6em] align-baseline" aria-hidden="true" />
         ) : (
           <span className="counter-in">{value}</span>
         )}
       </div>
-      <div className="label-upper">{label}</div>
+      <div className="t-label">{label}</div>
       {hint && <div className="t-meta mt-1">{hint}</div>}
     </div>
   );
@@ -127,7 +127,7 @@ export function LeaderRow({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-baseline py-1.5 text-[12px]", className)}>
+    <div className={cn("flex items-baseline py-1.5 text-[13px]", className)}>
       <span className={cn("text-muted-foreground", truncate && "min-w-0 truncate")}>{label}</span>
       <i className="leader" aria-hidden="true" />
       <span className={cn("text-foreground", truncate ? "shrink-0" : "text-right")}>{value}</span>
@@ -159,7 +159,7 @@ export function EmptyState({
           <Icon className="size-6 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
-      <Title className="font-display text-[22px] font-normal italic leading-snug text-foreground">
+      <Title className="t-voice">
         {title}
       </Title>
       {description && <p className="t-meta mx-auto mt-2 max-w-[46ch]">{description}</p>}
@@ -193,13 +193,13 @@ export function Notice({
     <div
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border px-3.5 py-3 text-[12px] leading-relaxed",
+        "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border px-3.5 py-3 text-[13px] leading-relaxed",
         tones[tone],
         className,
       )}
     >
       <div className="min-w-0">
-        {title && <p className="mb-0.5 font-medium uppercase tracking-[0.08em]">{title}</p>}
+        {title && <p className="mb-0.5 font-semibold">{title}</p>}
         {children && <div className={title ? "text-foreground" : undefined}>{children}</div>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -252,15 +252,15 @@ export function Field({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div className={cn("flex items-baseline justify-between gap-3", hideLabel && "sr-only")}>
-        <label htmlFor={htmlFor} className="label-upper">
+        <label htmlFor={htmlFor} className="t-label">
           {label}
-          {optional && <span className="ml-1.5 normal-case tracking-normal text-dim">optional</span>}
+          {optional && <span className="ml-1.5 font-normal text-dim">optional</span>}
         </label>
         {labelAction}
       </div>
       {control}
       {error ? (
-        <p id={htmlFor ? `${htmlFor}-error` : undefined} role="alert" className="text-[12px] text-danger">
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} role="alert" className="text-[12.5px] text-danger">
           {error}
         </p>
       ) : hint ? (
@@ -299,7 +299,7 @@ export function Avatar({
       ) : (
         <span
           aria-hidden="true"
-          className="font-display font-semibold leading-none text-muted-foreground"
+          className="font-brand leading-none text-muted-foreground"
           style={{ fontSize: Math.round(size * 0.5) }}
         >
           {initial}

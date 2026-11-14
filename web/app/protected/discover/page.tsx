@@ -189,7 +189,7 @@ function ToggleGroup({
   const labelId = useId();
   return (
     <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-2">
-      <span id={labelId} className="label-upper mr-1">
+      <span id={labelId} className="t-label mr-1">
         {label}
       </span>
       {options.map((opt) => {

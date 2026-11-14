@@ -553,7 +553,7 @@ export default function LibraryPage() {
                         item.title
                       )}
                     </h3>
-                    {music && item.artist && <p className="mt-0.5 truncate text-[12px] text-primary">{item.artist}</p>}
+                    {music && item.artist && <p className="mt-0.5 truncate text-[13px] text-primary">{item.artist}</p>}
                     <p className="t-meta mt-1">{metaLine(item)}</p>
                     {isRated(item) && <Stars value={Number(item.rating)} showValue className="mt-1.5" />}
                     {item.review && (

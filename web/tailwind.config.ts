@@ -83,8 +83,12 @@ export default {
         },
       },
       fontFamily: {
-        display: ["var(--font-display)", "Georgia", "serif"],
-        mono: ["var(--font-mono)", "Courier New", "monospace"],
+        // The interface face. There is no monospace in the product.
+        sans: ["var(--font-ui)", "system-ui", "sans-serif"],
+        // Title face of the current mode (Young Serif in film, Sofia Sans Extra Condensed in music).
+        display: ["var(--display-face)"],
+        // The wordmark's face, fixed across modes.
+        brand: ["var(--font-film)", "Georgia", "serif"],
       },
       transitionDuration: {
         tick: "80ms",

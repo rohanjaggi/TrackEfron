@@ -30,13 +30,13 @@ export function AuthShell({
       <Link href="/" className="mb-8 flex items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/images/logo.png" alt="" className="h-9 w-9 object-contain" />
-        <span className="font-display text-[24px] font-semibold leading-none text-foreground">
+        <span className="wordmark text-[24px]">
           TrackEfron
         </span>
       </Link>
 
       <div className="frame frame-accent frame-raised w-full max-w-[420px] px-5 py-8 sm:px-8">
-        <h1 className="font-display text-[30px] font-light leading-[1.1] tracking-[-0.01em] text-foreground">
+        <h1 className="t-voice-lg">
           {title}
         </h1>
         {description && <p className="t-meta mt-2.5">{description}</p>}

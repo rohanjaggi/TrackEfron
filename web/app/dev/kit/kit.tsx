@@ -39,7 +39,7 @@ export function Kit() {
         <NavAccentBar />
         <div className="relative flex h-[60px] items-center justify-between border-b border-[var(--border-raw)] bg-[var(--bg)] px-6">
           <ReelCueMark />
-          <span className="font-display text-[22px] font-semibold">TrackEfron kit</span>
+          <span className="wordmark text-[22px]">TrackEfron kit</span>
           <NavModeToggle />
         </div>
       </header>
@@ -172,12 +172,12 @@ export function Kit() {
             </Field>
             <div className="flex items-center gap-3">
               <Checkbox id="kit-rewatch" defaultChecked />
-              <label htmlFor="kit-rewatch" className="text-[12px]">
+              <label htmlFor="kit-rewatch" className="text-[13px]">
                 This was a rewatch
               </label>
             </div>
             <div className="flex flex-col gap-2">
-              <span className="label-upper">Overall rating</span>
+              <span className="t-label">Overall rating</span>
               <div className="flex items-center gap-4">
                 <StarInput label="Overall rating" value={rating} onChange={setRating} />
                 <Stars value={rating} showValue />

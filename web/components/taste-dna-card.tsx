@@ -251,7 +251,7 @@ export function TasteDNACard() {
       {apiKeyNotice}
       {errorNotice}
 
-      <p className="mb-6 font-display text-[22px] italic leading-snug text-foreground">
+      <p className="t-voice mb-6">
         &ldquo;{dna.fingerprint}&rdquo;
       </p>
 

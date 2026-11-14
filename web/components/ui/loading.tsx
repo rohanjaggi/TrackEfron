@@ -16,7 +16,7 @@ export function LoadingLine({
   className?: string;
 }) {
   return (
-    <p role="status" aria-live="polite" className={cn("label-upper cursor-blink", className)}>
+    <p role="status" aria-live="polite" className={cn("t-label cursor-blink", className)}>
       {label}
     </p>
   );

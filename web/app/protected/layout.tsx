@@ -24,7 +24,7 @@ export default function ProtectedLayout({
       <div className="flex min-h-screen flex-col">
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-primary focus:bg-background focus:px-3 focus:py-2 focus:text-[11px] focus:uppercase focus:tracking-[0.1em]"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-primary focus:bg-background focus:px-3 focus:py-2 focus:text-[13px] focus:font-medium"
         >
           Skip to content
         </a>
@@ -46,7 +46,7 @@ export default function ProtectedLayout({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/images/logo.png" alt="" className="h-9 w-9 object-contain" />
-                <span className="hidden font-display text-[22px] font-semibold tracking-[0.02em] text-[var(--text)] xl:block">
+                <span className="wordmark hidden text-[22px] xl:block">
                   TrackEfron
                 </span>
               </Link>
@@ -79,13 +79,13 @@ export default function ProtectedLayout({
             <div className="flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/images/logo.png" alt="" className="h-6 w-auto object-contain" />
-              <span className="font-display text-[18px] font-semibold text-[var(--text)]">
+              <span className="wordmark text-[18px]">
                 TrackEfron
               </span>
             </div>
             <div className="t-meta flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
               <span className="hidden md:inline">
-                Press <kbd className="border border-[var(--border-strong)] px-1.5 py-0.5 text-[10px] text-[var(--text)]">N</kbd> to log
+                Press <kbd className="border border-[var(--border-strong)] px-1.5 py-0.5 text-[11.5px] text-[var(--text)]">N</kbd> to log
               </span>
               <FooterAttribution />
               <span>© 2026 TrackEfron</span>

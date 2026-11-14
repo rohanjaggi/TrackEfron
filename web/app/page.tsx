@@ -117,7 +117,7 @@ function CategoryRatings({ ratings, className }: { ratings: Rating[]; className?
 function EntryList({ label, entries, shape }: { label: string; entries: Entry[]; shape: "poster" | "square" }) {
   return (
     <div>
-      <p className="label-upper hairline pb-2">{label}</p>
+      <p className="t-label hairline pb-2">{label}</p>
       <ul>
         {entries.map((e) => (
           <li key={e.title} className="row-item flex items-center gap-3 px-1 py-2.5">
@@ -140,7 +140,7 @@ function SectionHead({ title, children }: { title: React.ReactNode; children?: R
   return (
     <div className="mb-10">
       <div className="rule pb-4">
-        <h2 className="t-title text-[clamp(26px,3.2vw,36px)] [&_em]:font-medium [&_em]:italic [&_em]:text-primary">
+        <h2 className="t-title text-[calc(clamp(26px,3.2vw,36px)*var(--title-scale))]">
           {title}
         </h2>
       </div>
@@ -151,9 +151,7 @@ function SectionHead({ title, children }: { title: React.ReactNode; children?: R
 
 function Wordmark() {
   return (
-    <span className="t-title">
-      Track<em className="font-medium italic text-primary">Efron</em>
-    </span>
+    <span className="wordmark text-[22px]">TrackEfron</span>
   );
 }
 
@@ -208,7 +206,7 @@ export default function Home() {
                 <Artwork icon={Film} shape="poster" className="w-24 self-start sm:w-32" />
                 <div className="min-w-0 flex-1">
                   <Badge>Film</Badge>
-                  <p className="mt-3 font-display text-[26px] font-semibold leading-[1.1] text-foreground sm:text-[30px]">
+                  <p className="mt-3 font-display text-[26px] leading-[1.1] text-foreground sm:text-[30px]">
                     The Salt Cartographer
                   </p>
                   <p className="t-meta mt-1.5">2021, watched 12 Oct at the cinema</p>
@@ -358,10 +356,10 @@ export default function Home() {
           <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
             <figure className="order-2 min-w-0 lg:order-1">
               <div className="frame p-5 sm:p-6">
-                <p className="label-upper mb-2">Vibe search</p>
+                <p className="t-label mb-2">Vibe search</p>
                 <div className="well flex items-center gap-3 px-3.5 py-3">
                   <Search className="size-3.5 shrink-0 text-dim" aria-hidden="true" />
-                  <p className="min-w-0 font-display text-[17px] italic leading-snug text-foreground">
+                  <p className="min-w-0 text-[15.5px] italic leading-snug text-foreground">
                     something that feels like driving alone at 2am
                   </p>
                 </div>
@@ -372,7 +370,7 @@ export default function Home() {
                       <p className="t-card">Sodium Lights</p>
                       <p className="t-meta mt-0.5">Film, 2014</p>
                       <p className="mt-2 text-muted-foreground">
-                        <span className="label-upper mr-2">Why it fits</span>
+                        <span className="t-label mr-2">Why it fits</span>
                         Empty roads, a patient score, and you rate cinematography above everything else.
                       </p>
                     </div>
@@ -383,7 +381,7 @@ export default function Home() {
                       <p className="t-card">Small Hours Atlas</p>
                       <p className="t-meta mt-0.5">Album, Wren Okafor</p>
                       <p className="mt-2 text-muted-foreground">
-                        <span className="label-upper mr-2">Why it fits</span>
+                        <span className="t-label mr-2">Why it fits</span>
                         Low energy, high replay value: the two things your favourite albums share.
                       </p>
                     </div>

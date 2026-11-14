@@ -76,7 +76,7 @@ export function MediaCard({
         ) : (
           <div className="artwork-empty flex h-full w-full flex-col items-center justify-center gap-3 px-3 text-center">
             <Fallback className="size-6 text-muted-foreground" aria-hidden="true" />
-            <span aria-hidden="true" className="label-upper text-dim">
+            <span aria-hidden="true" className="t-label text-dim">
               No artwork
             </span>
           </div>
@@ -85,7 +85,7 @@ export function MediaCard({
         {badge && <div className="pointer-events-none absolute left-2 top-2 z-[2]">{badge}</div>}
 
         {caption && (
-          <div className="media-card__caption pointer-events-none absolute inset-x-0 bottom-0 z-[2] border-t border-border-strong bg-background/95 p-3 text-[12px] leading-relaxed text-foreground">
+          <div className="media-card__caption pointer-events-none absolute inset-x-0 bottom-0 z-[2] border-t border-border-strong bg-background/95 p-3 text-[13px] leading-relaxed text-foreground">
             {caption}
           </div>
         )}

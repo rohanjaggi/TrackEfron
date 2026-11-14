@@ -1,10 +1,10 @@
 # TrackEfron design system
 
-Ink-black, sharp-edged, hairline-ruled. A personal diary of films, TV and music.
+Ink-black, sharp-edged, hairline-ruled, lettered like the 1970s. A personal diary of films, TV and music.
 Two worlds share one skeleton and differ in detail:
 
-- **Film mode** is a cinema programme: printer's double rules, registration ticks, stamped marks, smooth ink wipes. Accent: film gold.
-- **Music mode** is a hi-fi faceplate: bevelled panels, meter-scale rules, stepped switches, LED marks. Accent: teal.
+- **Film mode** is a cinema programme: a soft poster serif, printer's double rules, registration ticks, stamped marks, smooth ink wipes. Accent: film gold.
+- **Music mode** is a record sleeve and hi-fi faceplate: a condensed gothic, bevelled panels, meter-scale rules, stepped switches, LED marks. Accent: teal.
 
 The mode is `data-mode="film|music"` on `<html>`. Components never branch on mode for styling: they use tokens and classes, and the CSS swaps the character. Branch on mode only for content (copy, icons, aspect ratio).
 
@@ -55,19 +55,35 @@ Chart chrome: grid lines `var(--border-raw)`, axis text `var(--text-muted)`, too
 
 ## Type
 
-Cormorant Garamond (display) and Azeret Mono (interface). Body is 13px mono.
+Set like the 1970s: a soft poster serif for film, a condensed sleeve gothic for music, one plain grotesque for everything you read and press. No monospace. Sentence case everywhere.
+
+| Face | Where | Notes |
+|---|---|---|
+| Young Serif | Film titles, figures and the wordmark | One weight only. Never add `font-medium`/`font-semibold`/`font-bold` to a title role: it would be faked. No italic either; emphasis is the accent colour. |
+| Sofia Sans Extra Condensed | Music titles and figures | 600–800, with italics. Runs about 1.5× larger than the film face because condensed type needs the height; the role classes handle this. |
+| Schibsted Grotesk | Interface, both modes: body, labels, buttons, nav, tabs, badges, reviews | 400 body, 500 labels and nav, 600 buttons. Italic for quoted reviews. |
+
+The wordmark (`.wordmark`) is fixed in Young Serif in both modes. A logo does not change voice with the mode.
+
+Title roles read their face, weight and scale from per-mode variables, so the same class changes voice with the mode:
 
 | Use | Class |
 |---|---|
-| Page title, once per page | `.t-display` (inside `PageHeader`). `<strong>` for a name, `<em>` for the italic accent clause |
+| Page title, once per page | `.t-display` (inside `PageHeader`). `<strong>` for a name, `<em>` for the accent clause |
 | Section title | `.t-title` (inside `SectionHeader`) |
-| Card or row title | `.t-card` |
+| Card or row title | `.t-card` (poster serif in film; interface face in music, so long album and track names stay readable) |
+| A line in the product's voice: empty states, error pages, the taste line | `.t-voice`, `.t-voice-lg` |
+| Big figures | `.t-numeral` with `.t-numeral-lg` or `.t-numeral-md`, or `StatBlock` |
 | Reviews, long reading | `.t-prose` |
-| Big figures | `.t-numeral` + a size, or `StatBlock` |
-| Field labels, column heads, metadata keys | `.label-upper` |
+| Field labels, column heads, stat labels | `.t-label` |
 | Secondary line | `.t-meta` |
+| The logo lettering | `.wordmark` |
 
-Minimum text size is 11px (`.label-upper`); badges may use 10px caps. Do not invent sizes: no `text-[9px]`, no `text-xs`/`text-sm`/`text-base`/`text-lg` grab-bag. Body copy is the inherited 13px or `text-[12px]`.
+Rules:
+- Sentence case for every label, button, tab, badge and nav item. No `uppercase`, no letterspacing (`tracking-*`). The single exception is the confirmation stamp on toasts (`.stamp-mark`), which is in capitals like a ticket stamp.
+- Body is 14px. Small text is 12–13px; the floor is 11.5px (badges, counts). Do not invent sizes.
+- Do not size title roles with fixed pixel classes; use the role classes so they scale with the mode.
+- Secondary information is distinguished by colour (`text-muted-foreground`) and, for quotations, italic. Not by capitals.
 
 ## Primitives (`web/components/ui/`)
 

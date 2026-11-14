@@ -940,7 +940,7 @@ function MediaDetailContent() {
             {whereToWatch.length > 0 && (
               <div className="mt-8 max-w-md">
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <h2 className="label-upper">Where to watch</h2>
+                  <h2 className="t-label">Where to watch</h2>
                   {providers?.link && (
                     <a
                       href={providers.link}
@@ -1005,7 +1005,7 @@ function MediaDetailContent() {
 
             {categoryRatings.length > 0 && (
               <div>
-                <h3 className="label-upper mb-2">Category ratings</h3>
+                <h3 className="t-label mb-2">Category ratings</h3>
                 {categoryRatings.map((c) => (
                   <LeaderRow key={c.label} label={c.label} value={<Stars value={c.value} />} />
                 ))}

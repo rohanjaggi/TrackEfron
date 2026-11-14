@@ -828,7 +828,7 @@ function WatchlistPageContent() {
                                   className={`${rowClass} group/result -outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
                                 >
                                   {body}
-                                  <span className="label-upper flex shrink-0 items-center gap-1 transition-colors duration-cut ease-mech group-hover/result:text-primary group-focus-visible/result:text-primary">
+                                  <span className="t-label flex shrink-0 items-center gap-1 transition-colors duration-cut ease-mech group-hover/result:text-primary group-focus-visible/result:text-primary">
                                     <Plus className="size-3.5" aria-hidden="true" />
                                     {addingKey === key ? "Adding" : "Add"}
                                   </span>
@@ -1070,7 +1070,7 @@ function WatchlistPageContent() {
               <h3 className="t-card">New list</h3>
 
               <fieldset className="flex flex-col gap-2">
-                <legend className="label-upper mb-2">Pick an icon</legend>
+                <legend className="t-label mb-2">Pick an icon</legend>
                 <div className="flex flex-wrap gap-2">
                   {emojiOptions.map((emoji) => (
                     <button

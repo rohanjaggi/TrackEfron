@@ -4,10 +4,12 @@
 
 /* ════════════════════════════════════════════════════════════════
    TrackEfron design system
-   Ink-black, sharp-edged, hairline-ruled. Two worlds share one
-   skeleton: film mode is a cinema programme (rules, registration
-   ticks, stamps); music mode is a hi-fi faceplate (bevels, meter
-   ticks, stepped switches). See DESIGN.md at the repo root.
+   Ink-black, sharp-edged, hairline-ruled, set like the 1970s.
+   Two worlds share one skeleton: film mode is a cinema programme
+   (soft poster serif, double rules, registration ticks, stamps);
+   music mode is a record sleeve and hi-fi faceplate (condensed
+   gothic, bevels, meter ticks, stepped switches). One interface
+   face, in sentence case, carries both. See DESIGN.md.
    ════════════════════════════════════════════════════════════════ */
 
 /* The accent is a registered colour so the whole interface can
@@ -131,6 +133,48 @@
     --rule-style: solid;
   }
 
+  /* ── Type character per mode ── */
+  :root,
+  .mode-film {
+    --display-face: var(--font-film), Georgia, serif;
+    --display-weight: 400;
+    --display-strong: 400;
+    --display-leading: 1.08;
+    --display-track: -0.02em;
+    --display-scale: 1;
+    --em-style: normal;
+    --title-weight: 400;
+    --title-track: -0.01em;
+    --title-scale: 1;
+    --card-face: var(--font-film), Georgia, serif;
+    --card-weight: 400;
+    --card-size: 16.5px;
+    --numeral-weight: 400;
+    --numeral-scale: 1;
+    --voice-weight: 400;
+    --voice-scale: 1;
+  }
+  [data-mode="music"],
+  .mode-music {
+    --display-face: var(--font-music), "Arial Narrow", sans-serif;
+    --display-weight: 600;
+    --display-strong: 800;
+    --display-leading: 0.94;
+    --display-track: 0;
+    --display-scale: 1.5;
+    --em-style: italic;
+    --title-weight: 700;
+    --title-track: 0.005em;
+    --title-scale: 1.45;
+    --card-face: var(--font-ui), system-ui, sans-serif;
+    --card-weight: 600;
+    --card-size: 15.5px;
+    --numeral-weight: 700;
+    --numeral-scale: 1.5;
+    --voice-weight: 600;
+    --voice-scale: 1.4;
+  }
+
   * {
     @apply border-border;
   }
@@ -146,11 +190,11 @@
     background:
       radial-gradient(120% 70% at 50% -12%, #15150f 0%, var(--bg) 58%) fixed,
       var(--bg);
-    font-family: var(--font-mono), "Courier New", monospace;
-    font-size: 13px;
-    line-height: 1.6;
+    font-family: var(--font-ui), system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
     caret-color: var(--mode-accent);
-    font-variant-numeric: tabular-nums;
+    font-variant-numeric: lining-nums;
   }
 
   ::selection {
@@ -201,75 +245,109 @@ body::before {
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
 @layer components {
-  /* ═══ Type ═══════════════════════════════════════════════════ */
-  .font-display { font-family: var(--font-display), Georgia, serif; }
-  .font-mono-ui { font-family: var(--font-mono), "Courier New", monospace; }
+  /* ═══ Type ═══════════════════════════════════════════════════
+     Three faces. Film titles: Young Serif, a soft 1970s poster serif.
+     Music titles: Sofia Sans Extra Condensed, a sleeve gothic.
+     Everything you read and press: Schibsted Grotesk, in sentence case.
+     Title roles read their face, weight and scale from the mode
+     variables below, so a heading changes voice with the mode.
+     Young Serif has ONE weight: never put a bold class on a title role. */
+  .font-display { font-family: var(--display-face); }
 
-  /* Page title: light serif, with <strong> for a name and <em> for the accent clause. */
-  .t-display {
-    font-family: var(--font-display), Georgia, serif;
-    font-size: clamp(34px, 4.4vw, 52px);
-    font-weight: 300;
-    line-height: 1.05;
-    letter-spacing: -0.02em;
+  /* The logo's lettering. Fixed: it does not change with the mode. */
+  .wordmark {
+    font-family: var(--font-film), Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    line-height: 1;
     color: var(--text);
-    font-variant-numeric: lining-nums;
   }
-  .t-title em { font-style: italic; font-weight: 400; color: var(--mode-accent); }
-  .t-display strong { font-weight: 600; }
-  .t-display em { font-style: italic; color: var(--mode-accent); }
+
+  /* Page title: <strong> for a name, <em> for the accent clause. */
+  .t-display {
+    font-family: var(--display-face);
+    font-size: calc(clamp(30px, 3.9vw, 44px) * var(--display-scale));
+    font-weight: var(--display-weight);
+    line-height: var(--display-leading);
+    letter-spacing: var(--display-track);
+    color: var(--text);
+    text-wrap: balance;
+  }
+  .t-display strong { font-weight: var(--display-strong); }
+  .t-display em {
+    font-style: var(--em-style);
+    font-weight: var(--display-weight);
+    color: var(--mode-accent);
+  }
 
   /* Section title. */
   .t-title {
-    font-family: var(--font-display), Georgia, serif;
-    font-size: 23px;
-    font-weight: 600;
+    font-family: var(--display-face);
+    font-size: calc(23px * var(--title-scale));
+    font-weight: var(--title-weight);
     line-height: 1.15;
-    letter-spacing: -0.005em;
+    letter-spacing: var(--title-track);
+    color: var(--text);
+  }
+  .t-title em { font-style: var(--em-style); color: var(--mode-accent); }
+
+  /* Card and row titles. Film sets them in the poster serif; music keeps
+     album and track names in the interface face so long titles stay readable. */
+  .t-card {
+    font-family: var(--card-face);
+    font-size: var(--card-size);
+    font-weight: var(--card-weight);
+    line-height: 1.25;
     color: var(--text);
   }
 
-  /* Card and row titles. */
-  .t-card {
-    font-family: var(--font-display), Georgia, serif;
-    font-size: 17px;
-    font-weight: 600;
-    line-height: 1.2;
+  /* A line in the product's own voice: empty states, the taste line, error pages. */
+  .t-voice,
+  .t-voice-lg {
+    font-family: var(--display-face);
+    font-size: calc(22px * var(--voice-scale));
+    font-style: var(--em-style);
+    font-weight: var(--voice-weight);
+    line-height: 1.22;
+    letter-spacing: var(--title-track);
     color: var(--text);
+    text-wrap: balance;
   }
+  .t-voice-lg { font-size: calc(30px * var(--voice-scale)); }
 
   /* Reviews and other long-form reading. */
   .t-prose {
-    font-family: var(--font-display), Georgia, serif;
-    font-size: 17px;
-    line-height: 1.55;
+    font-family: var(--font-ui), system-ui, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.62;
     color: var(--text);
     max-width: 68ch;
+    text-wrap: pretty;
   }
 
-  /* Big figures. */
+  /* Big figures. Size with .t-numeral-lg / .t-numeral-md so they scale with the mode. */
   .t-numeral {
-    font-family: var(--font-display), Georgia, serif;
-    font-weight: 600;
+    font-family: var(--display-face);
+    font-weight: var(--numeral-weight);
     line-height: 1;
     color: var(--text);
     font-variant-numeric: lining-nums tabular-nums;
   }
+  .t-numeral-lg { font-size: calc(36px * var(--numeral-scale)); }
+  .t-numeral-md { font-size: calc(27px * var(--numeral-scale)); }
 
-  /* Small tracked caps: field labels, column heads, metadata keys. */
-  .label-upper {
-    font-size: 11px;
+  /* Field labels, column heads, stat labels. Sentence case. */
+  .t-label {
+    font-size: 12.5px;
     font-weight: 500;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-muted);
     line-height: 1.4;
+    color: var(--text-muted);
   }
 
   /* Secondary line under a title. */
   .t-meta {
-    font-size: 12px;
-    letter-spacing: 0.02em;
+    font-size: 12.5px;
+    line-height: 1.5;
     color: var(--text-muted);
   }
 
@@ -665,8 +743,9 @@ body::before {
   gap: 6px;
   padding: 3px 7px;
   border: 1px solid currentColor;
-  font-size: 10px;
-  font-weight: 600;
+  /* The only capitals in the product: a ticket stamp. */
+  font-size: 10.5px;
+  font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   line-height: 1.2;

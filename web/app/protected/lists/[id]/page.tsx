@@ -485,7 +485,7 @@ function ListDetailContent() {
         description={
           <>
             {list.description && <span className="mb-2 block">{list.description}</span>}
-            <span className="label-upper">
+            <span className="t-label">
               {countLabel(items.length, isMusic)} · Created {formatDate(list.created_at)}
             </span>
             {!isOwner && (

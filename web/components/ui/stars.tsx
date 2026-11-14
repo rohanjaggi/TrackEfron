@@ -59,7 +59,7 @@ export function Stars({
         <StarGlyph key={i} fill={fillFor(v, i)} size={size} />
       ))}
       {showValue && (
-        <span aria-hidden="true" className="ml-1.5 text-[11px] text-muted-foreground">
+        <span aria-hidden="true" className="ml-1.5 text-[12px] text-muted-foreground">
           {v.toFixed(1)}
         </span>
       )}

@@ -183,7 +183,7 @@ function ProfileLists({
                     <span className="t-meta mt-1 line-clamp-1 block">{list.description}</span>
                   )}
                 </span>
-                <span className="label-upper shrink-0">{countLabel}</span>
+                <span className="t-label shrink-0">{countLabel}</span>
               </Link>
             </li>
           );

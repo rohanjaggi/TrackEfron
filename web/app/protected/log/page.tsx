@@ -785,7 +785,7 @@ function LogWatchForm() {
         <form onSubmit={handleSubmit} className="flex min-w-0 flex-col gap-7">
           {/* Type: two choices per domain; when editing, only the row's own domain */}
           <div className="flex flex-col items-start gap-2">
-            <span className="label-upper">{typeLabel}</span>
+            <span className="t-label">{typeLabel}</span>
             <SegmentedControl<MediaType>
               label={typeLabel}
               options={isSelectedMusic ? MUSIC_TYPES : FILM_TYPES}
@@ -854,21 +854,21 @@ function LogWatchForm() {
                         <span className="min-w-0 flex-1">
                           <span className="t-card block truncate">{lbl}</span>
                           {isSelectedMusic && r.artist && (
-                            <span className="block truncate text-[11px] text-primary">{r.artist}</span>
+                            <span className="block truncate text-[12px] text-primary">{r.artist}</span>
                           )}
-                          {yr && <span className="block text-[11px] text-muted-foreground">{yr}</span>}
+                          {yr && <span className="block text-[12px] text-muted-foreground">{yr}</span>}
                         </span>
                       </li>
                     );
                   })}
                 </ul>
                 {!searchPending && searchFailed && (
-                  <p className="px-3.5 py-3 text-[12px] text-muted-foreground">
+                  <p className="px-3.5 py-3 text-[13px] text-muted-foreground">
                     Search isn&apos;t responding. You can still save with the title you typed.
                   </p>
                 )}
                 {!searchPending && !searchFailed && visibleResults.length === 0 && (
-                  <div className="px-3.5 py-3 text-[12px] text-muted-foreground">
+                  <div className="px-3.5 py-3 text-[13px] text-muted-foreground">
                     <p>No matches</p>
                     {otherType && (
                       <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -894,11 +894,11 @@ function LogWatchForm() {
                 <div className="min-w-0 flex-1">
                   <span className="t-card block truncate">{labelOf(selectedMovie)}</span>
                   {selectedMovie.artist && (
-                    <span className="block truncate text-[11px] text-primary">{selectedMovie.artist}</span>
+                    <span className="block truncate text-[12px] text-primary">{selectedMovie.artist}</span>
                   )}
                 </div>
                 {yearOf(selectedMovie) && (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">{yearOf(selectedMovie)}</span>
+                  <span className="shrink-0 text-[12px] text-muted-foreground">{yearOf(selectedMovie)}</span>
                 )}
               </div>
             )}
@@ -906,7 +906,7 @@ function LogWatchForm() {
 
           {/* Overall rating */}
           <div className="flex flex-col items-start gap-2">
-            <span className="label-upper">Your rating</span>
+            <span className="t-label">Your rating</span>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <StarInput label="Your rating" value={rating} onChange={setRating} />
               <span className="t-meta" aria-hidden="true">
@@ -947,7 +947,7 @@ function LogWatchForm() {
               <div className="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
                 {categories.map(({ key, label, value, setter }) => (
                   <div key={key} className="flex items-center justify-between gap-3">
-                    <span className="text-[12px] text-muted-foreground">{label}</span>
+                    <span className="text-[13px] text-muted-foreground">{label}</span>
                     <StarInput label={`${label} rating`} value={value} onChange={setter} step={1} size={18} />
                   </div>
                 ))}
@@ -1041,9 +1041,9 @@ function LogWatchForm() {
                 <div className="p-4">
                   <h2 className="t-card line-clamp-3">{labelOf(selectedMovie)}</h2>
                   {selectedMovie.artist && (
-                    <p className="mt-1 truncate text-[12px] text-primary">{selectedMovie.artist}</p>
+                    <p className="mt-1 truncate text-[13px] text-primary">{selectedMovie.artist}</p>
                   )}
-                  <p className="label-upper mt-2">
+                  <p className="t-label mt-2">
                     {[yearOf(selectedMovie), meta.label].filter(Boolean).join(" · ")}
                   </p>
                   {selectedMovie.overview && (
@@ -1053,7 +1053,7 @@ function LogWatchForm() {
 
                 {rating > 0 && (
                   <div className="border-t border-border p-4">
-                    <p className="label-upper mb-2">Your rating</p>
+                    <p className="t-label mb-2">Your rating</p>
                     <Stars value={rating} size={16} showValue />
                   </div>
                 )}
@@ -1063,8 +1063,8 @@ function LogWatchForm() {
                 <div className="well mb-4 flex h-14 w-14 items-center justify-center">
                   <ArtIcon className="size-6 text-dim" aria-hidden="true" />
                 </div>
-                <p className="label-upper mb-1">Preview</p>
-                <p className="text-[12px] text-muted-foreground">Choose a title to see its artwork here.</p>
+                <p className="t-label mb-1">Preview</p>
+                <p className="text-[13px] text-muted-foreground">Choose a title to see its artwork here.</p>
               </div>
             )}
           </div>

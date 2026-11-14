@@ -173,7 +173,7 @@ const CHART = [
   "var(--chart-5)",
 ];
 const GRID_STROKE = "var(--border-raw)";
-const AXIS_TICK = { fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)" };
+const AXIS_TICK = { fill: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-ui)" };
 const AXIS_PROPS = {
   tick: AXIS_TICK,
   tickLine: false,
@@ -185,7 +185,7 @@ const TOOLTIP_PROPS = {
     border: "1px solid var(--border-strong)",
     borderRadius: 0,
     color: "var(--text)",
-    fontFamily: "var(--font-mono)",
+    fontFamily: "var(--font-ui)",
     fontSize: 12,
   },
   labelStyle: { color: "var(--text)", fontWeight: 600 },
@@ -195,7 +195,7 @@ const BAR_CURSOR = { fill: "var(--surface-2)" };
 const AXIS_LABEL = {
   fill: "var(--text-muted)",
   fontSize: 11,
-  fontFamily: "var(--font-mono)",
+  fontFamily: "var(--font-ui)",
   textAnchor: "middle" as const,
 };
 
@@ -256,7 +256,7 @@ function ChartFigure({
   return (
     <figure className="frame min-w-0 p-4 sm:p-5">
       <figcaption className="mb-4">
-        <span className="label-upper">{title}</span>
+        <span className="t-label">{title}</span>
         <span className="sr-only">. {summary}</span>
       </figcaption>
       {children}
@@ -300,7 +300,7 @@ function SeriesKey({ series }: { series: { name: string; color: string }[] }) {
   return (
     <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1" aria-hidden="true">
       {series.map((s) => (
-        <span key={s.name} className="label-upper inline-flex items-center">
+        <span key={s.name} className="t-label inline-flex items-center">
           <Swatch color={s.color} />
           {s.name}
         </span>
@@ -310,7 +310,7 @@ function SeriesKey({ series }: { series: { name: string; color: string }[] }) {
 }
 
 function SubHeading({ children }: { children: React.ReactNode }) {
-  return <h3 className="label-upper hairline mb-2 pb-2">{children}</h3>;
+  return <h3 className="t-label hairline mb-2 pb-2">{children}</h3>;
 }
 
 function RankedList({ items, unit }: { items: Tally[]; unit: (n: number) => string }) {
@@ -502,7 +502,7 @@ function TitleRow({
         </div>
       )}
       <div className="min-w-0 flex-1">
-        {label && <p className="label-upper mb-0.5">{label}</p>}
+        {label && <p className="t-label mb-0.5">{label}</p>}
         <p className="t-card truncate">{title}</p>
         {meta && <p className="t-meta truncate">{meta}</p>}
       </div>
@@ -538,7 +538,7 @@ function CrowdPick({ pick, kind }: { pick: ControversialPick; kind: "gem" | "unp
           <p className="t-card truncate">{pick.title}</p>
           <LeaderRow label="You" value={`${pick.userRating}/5`} className="mt-1" />
           <LeaderRow label="TMDB average" value={`${pick.tmdbRating}/10`} />
-          <p className={`mt-1 text-[12px] font-medium ${kind === "gem" ? "text-primary" : "text-foreground"}`}>
+          <p className={`mt-1 text-[13px] font-medium ${kind === "gem" ? "text-primary" : "text-foreground"}`}>
             {gap} {plural(gap, "point", "points")} {kind === "gem" ? "above" : "below"} the average
           </p>
         </div>

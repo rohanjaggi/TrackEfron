@@ -35,7 +35,7 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
           className="flex h-9 items-center gap-2 border border-transparent px-1.5 transition-[background-color,border-color] duration-cut ease-mech hover:border-border hover:bg-surface-2 data-[state=open]:border-border-strong data-[state=open]:bg-surface-2"
         >
           <Avatar src={avatarUrl} name={displayName} size={26} />
-          <span className="hidden max-w-[120px] truncate text-[12px] font-medium xl:inline">
+          <span className="hidden max-w-[120px] truncate text-[13px] font-medium xl:inline">
             {displayName}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
