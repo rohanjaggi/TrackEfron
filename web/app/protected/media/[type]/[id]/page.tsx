@@ -135,6 +135,8 @@ function MediaDetailContent() {
   const [musicDetail, setMusicDetail] = useState<MusicDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A failed action or user-data load; unlike `error` it keeps the page visible.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // User-specific state (film)
   const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
@@ -225,6 +227,7 @@ function MediaDetailContent() {
               .maybeSingle(),
           ]);
 
+          if (logRes.error || queueRes.error) throw logRes.error ?? queueRes.error;
           if (logRes.data) setListenLog(logRes.data);
           if (queueRes.data) {
             setIsInQueue(true);
@@ -247,6 +250,7 @@ function MediaDetailContent() {
               .maybeSingle(),
           ]);
 
+          if (logRes.error || wlRes.error) throw logRes.error ?? wlRes.error;
           if (logRes.data) setWatchLog(logRes.data);
           if (wlRes.data) {
             setIsOnWatchlist(true);
@@ -255,21 +259,23 @@ function MediaDetailContent() {
         }
 
         // Fetch lists filtered by mode
-        const { data: allLists } = await supabase
+        const { data: allLists, error: listsError } = await supabase
           .from("lists")
           .select("id, name, emoji")
           .eq("list_type", listMode)
           .order("updated_at", { ascending: false });
 
+        if (listsError) throw listsError;
         if (allLists) {
           // Check which lists already contain this item
           const matchCol = isMusic ? "spotify_id" : "tmdb_id";
           const matchVal = isMusic ? id : Number(id);
-          const { data: listItemsData } = await supabase
+          const { data: listItemsData, error: listItemsError } = await supabase
             .from("list_items")
             .select("list_id")
             .eq(matchCol, matchVal);
 
+          if (listItemsError) throw listItemsError;
           const listsWithItem = new Set((listItemsData || []).map((li) => li.list_id));
 
           setUserLists(
@@ -282,7 +288,7 @@ function MediaDetailContent() {
           );
         }
       } catch {
-        // silently fail
+        setActionError("Couldn't load your log and list status for this title.");
       } finally {
         setUserDataLoading(false);
       }
@@ -294,6 +300,7 @@ function MediaDetailContent() {
   async function handleAddToWatchlist() {
     if (!detail) return;
     setWatchlistLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -310,14 +317,15 @@ function MediaDetailContent() {
         })
         .select("id")
         .single();
-      if (error?.code === "23505") {
+      if (error && error.code !== "23505") throw error;
+      if (error) {
         setIsOnWatchlist(true);
       } else if (data) {
         setIsOnWatchlist(true);
         setWatchlistItemId(data.id);
       }
     } catch {
-      // silently fail
+      setActionError("Couldn't add this to your watchlist. Try again.");
     } finally {
       setWatchlistLoading(false);
     }
@@ -326,13 +334,15 @@ function MediaDetailContent() {
   async function handleRemoveFromWatchlist() {
     if (!watchlistItemId) return;
     setWatchlistLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
-      await supabase.from("watchlist").delete().eq("id", watchlistItemId);
+      const { error } = await supabase.from("watchlist").delete().eq("id", watchlistItemId);
+      if (error) throw error;
       setIsOnWatchlist(false);
       setWatchlistItemId(null);
     } catch {
-      // silently fail
+      setActionError("Couldn't remove this from your watchlist. Try again.");
     } finally {
       setWatchlistLoading(false);
     }
@@ -342,6 +352,7 @@ function MediaDetailContent() {
   async function handleAddToQueue() {
     if (!musicDetail) return;
     setWatchlistLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -358,14 +369,15 @@ function MediaDetailContent() {
         })
         .select("id")
         .single();
-      if (error?.code === "23505") {
+      if (error && error.code !== "23505") throw error;
+      if (error) {
         setIsInQueue(true);
       } else if (data) {
         setIsInQueue(true);
         setQueueItemId(data.id);
       }
     } catch {
-      // silently fail
+      setActionError("Couldn't add this to your queue. Try again.");
     } finally {
       setWatchlistLoading(false);
     }
@@ -374,13 +386,15 @@ function MediaDetailContent() {
   async function handleRemoveFromQueue() {
     if (!queueItemId) return;
     setWatchlistLoading(true);
+    setActionError(null);
     try {
       const supabase = createClient();
-      await supabase.from("music_queue").delete().eq("id", queueItemId);
+      const { error } = await supabase.from("music_queue").delete().eq("id", queueItemId);
+      if (error) throw error;
       setIsInQueue(false);
       setQueueItemId(null);
     } catch {
-      // silently fail
+      setActionError("Couldn't remove this from your queue. Try again.");
     } finally {
       setWatchlistLoading(false);
     }
@@ -388,20 +402,27 @@ function MediaDetailContent() {
 
   // Delete log
   async function handleDeleteLog() {
+    setActionError(null);
     if (isMusic && listenLog) {
       try {
         const supabase = createClient();
-        await supabase.from("listen_logs").delete().eq("id", listenLog.id);
+        const { error } = await supabase.from("listen_logs").delete().eq("id", listenLog.id);
+        if (error) throw error;
         setListenLog(null);
         setConfirmDelete(false);
-      } catch { /* silently fail */ }
+      } catch {
+        setActionError("Couldn't delete your log. Try again.");
+      }
     } else if (watchLog) {
       try {
         const supabase = createClient();
-        await supabase.from("watch_logs").delete().eq("id", watchLog.id);
+        const { error } = await supabase.from("watch_logs").delete().eq("id", watchLog.id);
+        if (error) throw error;
         setWatchLog(null);
         setConfirmDelete(false);
-      } catch { /* silently fail */ }
+      } catch {
+        setActionError("Couldn't delete your log. Try again.");
+      }
     }
   }
 
@@ -410,21 +431,24 @@ function MediaDetailContent() {
 
   async function handleToggleList(listId: string, currentlyHasItem: boolean) {
     setTogglingListId(listId);
+    setActionError(null);
     try {
       const supabase = createClient();
       if (currentlyHasItem) {
         if (isMusic) {
-          await supabase
+          const { error } = await supabase
             .from("list_items")
             .delete()
             .eq("list_id", listId)
             .eq("spotify_id", id);
+          if (error) throw error;
         } else {
-          await supabase
+          const { error } = await supabase
             .from("list_items")
             .delete()
             .eq("list_id", listId)
             .eq("tmdb_id", Number(id));
+          if (error) throw error;
         }
       } else {
         if (isMusic) {
@@ -455,7 +479,7 @@ function MediaDetailContent() {
         )
       );
     } catch {
-      // silently fail
+      setActionError("Couldn't update that list. Try again.");
     } finally {
       setTogglingListId(null);
     }
@@ -507,6 +531,7 @@ function MediaDetailContent() {
       onRemoveFromQueue={handleRemoveFromQueue}
       onDeleteLog={handleDeleteLog}
       onToggleList={handleToggleList}
+      actionError={actionError}
     />;
   }
 
@@ -544,6 +569,12 @@ function MediaDetailContent() {
           Back to Discover
         </Link>
       </div>
+
+      {actionError && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2 mb-6">
+          {actionError}
+        </div>
+      )}
 
       {/* Backdrop */}
       {detail!.backdrop_url && (
@@ -914,6 +945,7 @@ function MusicDetailView({
   onRemoveFromQueue,
   onDeleteLog,
   onToggleList,
+  actionError,
 }: {
   musicDetail: MusicDetail;
   type: "album" | "track";
@@ -934,6 +966,7 @@ function MusicDetailView({
   onRemoveFromQueue: () => void;
   onDeleteLog: () => void;
   onToggleList: (listId: string, hasItem: boolean) => void;
+  actionError: string | null;
 }) {
   const year = (musicDetail.release_date || "").slice(0, 4);
   const isAlbum = type === "album";
@@ -959,6 +992,12 @@ function MusicDetailView({
           Back to Discover
         </Link>
       </div>
+
+      {actionError && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2 mb-6">
+          {actionError}
+        </div>
+      )}
 
       {/* Main content grid */}
       <div className="grid md:grid-cols-[auto,1fr] gap-8">

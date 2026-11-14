@@ -240,6 +240,7 @@ function LogWatchForm() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
+        setError(null);
         const isMusic = mediaType === "album" || mediaType === "track";
         let data: MediaSearchResult[];
         if (isMusic) {
@@ -263,6 +264,8 @@ function LogWatchForm() {
           data = Array.isArray(raw) ? raw : [];
         }
         setResults(data);
+      } catch {
+        setError("Search failed. Try again.");
       } finally {
         setIsSearching(false);
       }
@@ -349,7 +352,7 @@ function LogWatchForm() {
           }
         }
       } catch {
-        // silently fail
+        setError("Couldn't load that entry. Go back and try again.");
       } finally {
         setEditLoading(false);
       }

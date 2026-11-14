@@ -205,6 +205,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const { mode, ready: modeReady } = useMode();
   const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [recsLoading, setRecsLoading] = useState(true);
   const [recsFetched, setRecsFetched] = useState(false);
@@ -227,6 +228,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             .order("created_at", { ascending: false }),
         ]);
         if (filmRes.error) throw filmRes.error;
+        if (musicRes.error) throw musicRes.error;
         const musicMapped: WatchLog[] = (musicRes.data || []).map((m) => ({
           id: m.id,
           title: m.title,
@@ -240,7 +242,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         }));
         setWatchLogs([...(filmRes.data || []), ...musicMapped]);
       } catch {
-        /* silently fail */
+        setError("Couldn't load your activity. Try refreshing the page.");
       } finally {
         setLoading(false);
       }
@@ -272,7 +274,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           );
         }
       } catch {
-        /* silently fail */
+        // Picks are an optional extra on the dashboard; the section just stays empty.
       } finally {
         setRecsLoading(false);
       }
@@ -282,20 +284,23 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   }, [mode, modeReady, recsFetched]);
 
   async function addToWatchlist(item: Recommendation) {
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from("watchlist").insert({
+      const { error } = await supabase.from("watchlist").insert({
         user_id: user.id,
         tmdb_id: item.id,
         title: item.title,
         media_type: item.media_type,
         poster_url: item.poster_url,
       });
+      // 23505 is a duplicate: it is already on the watchlist, which is what the user wanted.
+      if (error && error.code !== "23505") throw error;
       setWatchlistedIds((prev) => new Set([...prev, item.id]));
     } catch {
-      /* silently fail */
+      setError("Couldn't add that to your watchlist. Try again.");
     }
   }
 
@@ -330,6 +335,12 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
   return (
     <div className="flex flex-col gap-16 animate-[fadeInUp_0.3s_ease]">
+
+      {error && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2">
+          {error}
+        </div>
+      )}
 
       {/* ── Hero ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 items-start">

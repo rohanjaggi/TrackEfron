@@ -27,7 +27,10 @@ export async function GET(request: NextRequest) {
           },
           { onConflict: "user_id" }
         );
-        if (!upsertErr) {
+        if (upsertErr) {
+          // The key stays in the user metadata, so the next confirmation retries the move.
+          console.error("moving the AI key out of user metadata failed:", upsertErr.message);
+        } else {
           await supabase.auth.updateUser({
             data: { ai_api_key: null },
           });

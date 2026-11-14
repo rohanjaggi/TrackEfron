@@ -111,11 +111,11 @@ export function ProfileClient({ profile }: ProfileProps) {
           supabase.from("watch_logs").select("rating, review, media_type, created_at"),
           supabase.from("watchlist").select("id", { count: "exact", head: true }),
         ]);
+        if (logsRes.error || watchlistRes.error) throw logsRes.error ?? watchlistRes.error;
         setWatchLogs(logsRes.data || []);
         setWatchlistCount(watchlistRes.count || 0);
-
       } catch {
-        // silently fail
+        setError("Couldn't load your stats.");
       } finally {
         setStatsLoading(false);
       }
@@ -125,9 +125,12 @@ export function ProfileClient({ profile }: ProfileProps) {
 
   useEffect(() => {
     fetch("/api/ai/settings")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("settings request failed");
+        return r.json();
+      })
       .then(setAiKeyInfo)
-      .catch(() => {})
+      .catch(() => setAiKeyError("Couldn't load your API key settings."))
       .finally(() => setAiKeyLoading(false));
   }, []);
 
@@ -160,6 +163,10 @@ export function ProfileClient({ profile }: ProfileProps) {
     try {
       const res = await fetch("/api/ai/settings", { method: "DELETE" });
       const data = await res.json();
+      if (!res.ok) {
+        setAiKeyError(data.error || "Failed to remove API key");
+        return;
+      }
       setAiKeyInfo(data);
     } catch {
       setAiKeyError("Failed to remove API key");
@@ -189,9 +196,13 @@ export function ProfileClient({ profile }: ProfileProps) {
 
   const handleSpotifyDisconnect = async () => {
     setSpotifyLoading(true);
+    setError(null);
     try {
-      await fetch("/api/spotify/disconnect", { method: "POST" });
+      const res = await fetch("/api/spotify/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error("disconnect failed");
       setSpotifyConnected(false);
+    } catch {
+      setError("Couldn't disconnect Spotify. Try again.");
     } finally {
       setSpotifyLoading(false);
     }

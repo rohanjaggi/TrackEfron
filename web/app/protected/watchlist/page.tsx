@@ -127,6 +127,7 @@ function WatchlistPageContent() {
   const [addingId, setAddingId] = useState<string | number | null>(null);
 
   // Lists state
+  const [error, setError] = useState<string | null>(null);
   const [lists, setLists] = useState<UserList[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -157,7 +158,7 @@ function WatchlistPageContent() {
       if (error) throw error;
       setLists((data as UserList[]) || []);
     } catch {
-      // silently fail
+      setError("Couldn't load your lists.");
     } finally {
       setListsLoading(false);
     }
@@ -178,7 +179,7 @@ function WatchlistPageContent() {
       if (error) throw error;
       setMusicQueue(data || []);
     } catch {
-      // silently fail
+      setError("Couldn't load your queue.");
     } finally {
       setMusicQueueLoading(false);
     }
@@ -195,7 +196,7 @@ function WatchlistPageContent() {
       if (error) throw error;
       setWatchlist(data || []);
     } catch {
-      // silently fail
+      setError("Couldn't load your watchlist.");
     } finally {
       setLoading(false);
     }
@@ -208,6 +209,7 @@ function WatchlistPageContent() {
 
   async function handleAdd(result: MediaSearchResult) {
     setAddingId(result.id);
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -240,29 +242,33 @@ function WatchlistPageContent() {
       setAddQuery("");
       setShowAddDropdown(false);
     } catch {
-      // silently fail
+      setError("Couldn't add that title. Try again.");
     } finally {
       setAddingId(null);
     }
   }
 
   async function handleRemoveMusicQueue(id: string) {
+    setError(null);
     try {
       const supabase = createClient();
-      await supabase.from("music_queue").delete().eq("id", id);
+      const { error } = await supabase.from("music_queue").delete().eq("id", id);
+      if (error) throw error;
       setMusicQueue(musicQueue.filter((item) => item.id !== id));
     } catch {
-      // silently fail
+      setError("Couldn't remove that item. Try again.");
     }
   }
 
   async function handleRemove(id: string) {
+    setError(null);
     try {
       const supabase = createClient();
-      await supabase.from("watchlist").delete().eq("id", id);
+      const { error } = await supabase.from("watchlist").delete().eq("id", id);
+      if (error) throw error;
       setWatchlist(watchlist.filter((item) => item.id !== id));
     } catch {
-      // silently fail
+      setError("Couldn't remove that item. Try again.");
     }
   }
 
@@ -275,6 +281,7 @@ function WatchlistPageContent() {
     if (!name) return;
 
     setCreatingList(true);
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -296,7 +303,7 @@ function WatchlistPageContent() {
       setShowCreateForm(false);
       await fetchLists();
     } catch {
-      // silently fail
+      setError("Couldn't create the list. Try again.");
     } finally {
       setCreatingList(false);
     }
@@ -304,12 +311,14 @@ function WatchlistPageContent() {
 
   async function handleDeleteList(listId: string) {
     setDeletingListId(listId);
+    setError(null);
     try {
       const supabase = createClient();
-      await supabase.from("lists").delete().eq("id", listId);
+      const { error } = await supabase.from("lists").delete().eq("id", listId);
+      if (error) throw error;
       setLists(lists.filter((l) => l.id !== listId));
     } catch {
-      // silently fail
+      setError("Couldn't delete the list. Try again.");
       await fetchLists();
     } finally {
       setDeletingListId(null);
@@ -354,6 +363,12 @@ function WatchlistPageContent() {
 
   return (
     <div className="flex flex-col gap-8">
+      {error && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2">
+          {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">

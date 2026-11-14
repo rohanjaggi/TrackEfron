@@ -77,6 +77,7 @@ function ListDetailContent() {
   // Delete list state
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Add items search state
   const [showAddDropdown, setShowAddDropdown] = useState(false);
@@ -128,6 +129,7 @@ function ListDetailContent() {
       ]);
 
       if (listRes.error) throw listRes.error;
+      if (itemsRes.error) throw itemsRes.error;
       setList(listRes.data);
       setEditName(listRes.data.name);
       setEditDescription(listRes.data.description || "");
@@ -149,6 +151,7 @@ function ListDetailContent() {
 
   async function handleAddItem(result: MediaSearchResult) {
     setAddingId(result.spotify_id || result.id);
+    setActionError(null);
     try {
       const supabase = createClient();
 
@@ -175,6 +178,7 @@ function ListDetailContent() {
         if (error && error.code !== "23505") throw error;
       }
 
+      // Best effort: the item is already added, so a failed timestamp bump is not worth reporting.
       await supabase
         .from("lists")
         .update({ updated_at: new Date().toISOString() })
@@ -184,7 +188,7 @@ function ListDetailContent() {
       setShowAddDropdown(false);
       await fetchListData();
     } catch {
-      // silently fail
+      setActionError("Couldn't add that item. Try again.");
     } finally {
       setAddingId(null);
     }
@@ -193,17 +197,21 @@ function ListDetailContent() {
   async function handleRemoveItem(itemId: string) {
     const prev = items;
     setItems(items.filter((i) => i.id !== itemId));
+    setActionError(null);
     try {
       const supabase = createClient();
-      await supabase.from("list_items").delete().eq("id", itemId);
+      const { error } = await supabase.from("list_items").delete().eq("id", itemId);
+      if (error) throw error;
     } catch {
       setItems(prev);
+      setActionError("Couldn't remove that item. Try again.");
     }
   }
 
   async function handleSaveEdit() {
     if (!editName.trim()) return;
     setSaving(true);
+    setActionError(null);
     try {
       const supabase = createClient();
       const { error } = await supabase
@@ -221,7 +229,7 @@ function ListDetailContent() {
       );
       setIsEditing(false);
     } catch {
-      // silently fail
+      setActionError("Couldn't save your changes. Try again.");
     } finally {
       setSaving(false);
     }
@@ -229,11 +237,14 @@ function ListDetailContent() {
 
   async function handleDeleteList() {
     setDeleting(true);
+    setActionError(null);
     try {
       const supabase = createClient();
-      await supabase.from("lists").delete().eq("id", listId);
+      const { error } = await supabase.from("lists").delete().eq("id", listId);
+      if (error) throw error;
       router.push("/protected/watchlist?tab=lists");
     } catch {
+      setActionError("Couldn't delete the list. Try again.");
       setDeleting(false);
       setConfirmDelete(false);
     }
@@ -263,6 +274,12 @@ function ListDetailContent() {
         <ArrowLeft className="w-4 h-4" />
         Back to My Lists
       </button>
+
+      {actionError && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2">
+          {actionError}
+        </div>
+      )}
 
       {/* List Header */}
       <div className="border-2 border-border p-6">

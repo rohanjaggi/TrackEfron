@@ -91,7 +91,7 @@ export async function POST(request: Request) {
           });
         }
       } catch {
-        // skip
+        // A failed lookup drops only that result.
       }
     } else {
       try {
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
           });
         }
       } catch {
-        // skip
+        // A failed lookup drops only that result.
       }
     }
   }

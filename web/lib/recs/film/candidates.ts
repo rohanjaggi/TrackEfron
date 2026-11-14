@@ -107,6 +107,7 @@ export async function gatherFilmCandidates(
     .slice(0, SEED_LOGS);
   if (seeds.length === 0) return [];
 
+  // Each TMDB call below can fail on its own; a failure only shrinks the candidate pool.
   const [recLists, details] = await Promise.all([
     Promise.all(seeds.map((s) => getRecommendations(s.media_type, s.tmdb_id).catch(() => []))),
     Promise.all(
@@ -133,6 +134,7 @@ export async function gatherFilmCandidates(
   const discoverType = movieSeeds * 2 >= seeds.length ? "movie" : "tv";
   const [discovered, lowVote] = genreIds.length
     ? await Promise.all([
+        // A failed discover pool is left out; the recommendation pool still fills the batch.
         discoverFiltered(discoverType, { genreIds }).catch(() => []),
         discoverFiltered(discoverType, { genreIds, maxVoteCount: 500, minVoteAverage: 7 }).catch(
           () => [],

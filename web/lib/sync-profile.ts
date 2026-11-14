@@ -6,7 +6,7 @@ export async function syncProfile(supabase: SupabaseClient) {
   } = await supabase.auth.getUser();
   if (!user) return;
 
-  await supabase.from("profiles").upsert(
+  const { error } = await supabase.from("profiles").upsert(
     {
       id: user.id,
       username: user.user_metadata?.username || "",
@@ -16,4 +16,5 @@ export async function syncProfile(supabase: SupabaseClient) {
     },
     { onConflict: "id" }
   );
+  if (error) throw error;
 }

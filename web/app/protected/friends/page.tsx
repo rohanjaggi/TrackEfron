@@ -85,18 +85,20 @@ export default function FriendsPage() {
       const supabase = createClient();
 
       // Get accepted friendships where I'm requester
-      const { data: asRequester } = await supabase
+      const { data: asRequester, error: requesterError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", userId)
         .eq("status", "accepted");
 
       // Get accepted friendships where I'm addressee
-      const { data: asAddressee } = await supabase
+      const { data: asAddressee, error: addresseeError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", userId)
         .eq("status", "accepted");
+
+      if (requesterError || addresseeError) throw requesterError ?? addresseeError;
 
       const allFriendships = [...(asRequester || []), ...(asAddressee || [])];
 
@@ -129,6 +131,7 @@ export default function FriendsPage() {
       setFriends(result);
     } catch (err) {
       console.error("fetchFriends failed:", err);
+      setActionError("Couldn't load your friends.");
     } finally {
       setFriendsLoading(false);
     }
@@ -140,12 +143,13 @@ export default function FriendsPage() {
       const supabase = createClient();
 
       // Incoming
-      const { data: incomingData } = await supabase
+      const { data: incomingData, error: incomingError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("addressee_id", userId)
         .eq("status", "pending");
 
+      if (incomingError) throw incomingError;
       const incomingIds = (incomingData || []).map((f) => f.requester_id);
 
       let incomingProfiles: Profile[] = [];
@@ -166,12 +170,13 @@ export default function FriendsPage() {
       );
 
       // Sent
-      const { data: sentData } = await supabase
+      const { data: sentData, error: sentError } = await supabase
         .from("friendships")
         .select("id, requester_id, addressee_id, status, created_at")
         .eq("requester_id", userId)
         .eq("status", "pending");
 
+      if (sentError) throw sentError;
       const sentIds = (sentData || []).map((f) => f.addressee_id);
 
       let sentProfiles: Profile[] = [];
@@ -192,6 +197,7 @@ export default function FriendsPage() {
       );
     } catch (err) {
       console.error("fetchRequests failed:", err);
+      setActionError("Couldn't load your friend requests.");
     } finally {
       setRequestsLoading(false);
     }
@@ -258,6 +264,7 @@ export default function FriendsPage() {
         setSearchResults(results);
       } catch (err) {
         console.error("Friend search failed:", err);
+        setActionError("Search failed. Try again.");
       } finally {
         setIsSearching(false);
       }
@@ -299,10 +306,11 @@ export default function FriendsPage() {
     setActioningId(friendshipId);
     try {
       const supabase = createClient();
-      await supabase
+      const { error } = await supabase
         .from("friendships")
         .update({ status: "accepted" })
         .eq("id", friendshipId);
+      if (error) throw error;
 
       fetchFriends(currentUserId);
       fetchRequests(currentUserId);
@@ -319,7 +327,8 @@ export default function FriendsPage() {
     setActioningId(friendshipId);
     try {
       const supabase = createClient();
-      await supabase.from("friendships").delete().eq("id", friendshipId);
+      const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+      if (error) throw error;
       fetchRequests(currentUserId);
     } catch (err) {
       console.error("handleDeclineOrCancel failed:", err);
@@ -334,7 +343,8 @@ export default function FriendsPage() {
     setUnfriendingId(friendshipId);
     try {
       const supabase = createClient();
-      await supabase.from("friendships").delete().eq("id", friendshipId);
+      const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+      if (error) throw error;
       setFriends(friends.filter((f) => f.id !== friendshipId));
       setConfirmUnfriendId(null);
     } catch (err) {

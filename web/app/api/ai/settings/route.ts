@@ -96,10 +96,13 @@ export async function DELETE() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  await supabase
+  const { error } = await supabase
     .from("user_ai_settings")
     .delete()
     .eq("user_id", user.id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({
     hasKey: false,

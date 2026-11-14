@@ -88,6 +88,7 @@ export function TasteDNACard() {
     setError(null);
     try {
       const res = await fetch("/api/ai/taste-dna", { method: "POST" });
+      // A non-JSON body just means there is no server message to show; the status still decides the error.
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         if (res.status === 402 || body?.code === "NO_API_KEY") {

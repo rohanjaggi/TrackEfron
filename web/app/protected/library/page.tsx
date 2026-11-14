@@ -66,6 +66,7 @@ export default function LibraryPage() {
   const [watchedItems, setWatchedItems] = useState<WatchLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // When mode changes externally, reset to the new default filter
   useEffect(() => {
@@ -88,6 +89,8 @@ export default function LibraryPage() {
           .order("created_at", { ascending: false }),
       ]);
 
+      if (filmRes.error || musicRes.error) throw filmRes.error ?? musicRes.error;
+
       const filmItems: WatchLog[] = (filmRes.data || []);
       const musicItems: WatchLog[] = (musicRes.data || []).map((m) => ({
         id: m.id,
@@ -108,7 +111,7 @@ export default function LibraryPage() {
       );
       setWatchedItems(combined);
     } catch {
-      // silently fail, will show empty state
+      setError("Couldn't load your library. Try refreshing the page.");
     } finally {
       setLoading(false);
     }
@@ -124,10 +127,13 @@ export default function LibraryPage() {
     const isMusic = item?.media_type === "album" || item?.media_type === "track";
     setWatchedItems((prev) => prev.filter((i) => i.id !== id));
     setDeletingId(null);
+    setError(null);
     try {
       const supabase = createClient();
-      await supabase.from(isMusic ? "listen_logs" : "watch_logs").delete().eq("id", id);
+      const { error } = await supabase.from(isMusic ? "listen_logs" : "watch_logs").delete().eq("id", id);
+      if (error) throw error;
     } catch {
+      setError("Couldn't delete that entry. Try again.");
       fetchLibrary();
     }
   }
@@ -191,6 +197,12 @@ export default function LibraryPage() {
 
   return (
     <div className="flex flex-col gap-8">
+      {error && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2">
+          {error}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">

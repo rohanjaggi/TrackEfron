@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
       path: "/api/spotify/callback",
     });
     return response;
-  } catch {
+  } catch (e) {
+    console.error("spotify callback failed:", e);
     return NextResponse.redirect(
       new URL("/protected/profile?spotify=error", request.url)
     );

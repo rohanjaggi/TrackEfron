@@ -423,6 +423,9 @@ export default function DiscoverPage() {
   const [vibeLoading, setVibeLoading] = useState(false);
   const [isVibeQuery, setIsVibeQuery] = useState(false);
 
+  // Failed user action or section load, shown in a banner under the header
+  const [error, setError] = useState<string | null>(null);
+
   // AI key status
   const [aiNotConfigured, setAiNotConfigured] = useState(false);
 
@@ -443,7 +446,7 @@ export default function DiscoverPage() {
           .eq("user_id", user.id);
         if (data) setQueuedIds(new Set(data.map((i: { spotify_id: string }) => i.spotify_id).filter(Boolean)));
       } catch {
-        // silently fail
+        // Only marks cards as already queued; without it they just show the add button.
       }
     }
 
@@ -488,13 +491,14 @@ export default function DiscoverPage() {
               const data = await res.json();
               return { title: `More from ${artist}`, items: Array.isArray(data) ? data : [] };
             } catch {
+              // One artist failing only drops that row.
               return { title: `More from ${artist}`, items: [] };
             }
           })
         );
         setPersonalMusicRows(rows.filter((r) => r.items.length > 0));
       } catch {
-        // silently fail
+        // These rows are an optional extra; the rest of the page still works without them.
       } finally {
         setPersonalMusicLoading(false);
       }
@@ -522,6 +526,7 @@ export default function DiscoverPage() {
         setSpotifyOAuthConnected(true);
         if (Array.isArray(tracksData)) setSpotifyTopTracks(tracksData);
       } catch {
+        // Treated as not connected, so the Connect Spotify prompt shows and the user can retry.
         setSpotifyOAuthConnected(false);
       } finally {
         setSpotifyOAuthLoading(false);
@@ -610,17 +615,20 @@ export default function DiscoverPage() {
     async function fetchBrowse() {
       try {
         const [trendingRes, nowPlayingRes, upcomingRes, topRatedRes] = await Promise.all([
-          fetch("/api?action=trending").then((r) => r.json()).catch(() => []),
-          fetch("/api?action=now_playing").then((r) => r.json()).catch(() => []),
-          fetch("/api?action=upcoming").then((r) => r.json()).catch(() => []),
-          fetch("/api?action=top_rated&type=movie").then((r) => r.json()).catch(() => []),
+          fetch("/api?action=trending").then((r) => r.json()).catch(() => null),
+          fetch("/api?action=now_playing").then((r) => r.json()).catch(() => null),
+          fetch("/api?action=upcoming").then((r) => r.json()).catch(() => null),
+          fetch("/api?action=top_rated&type=movie").then((r) => r.json()).catch(() => null),
         ]);
+        if (![trendingRes, nowPlayingRes, upcomingRes, topRatedRes].every(Array.isArray)) {
+          setError("Some of Browse couldn't load. Try again later.");
+        }
         if (Array.isArray(trendingRes)) setTrending(trendingRes);
         if (Array.isArray(nowPlayingRes)) setNowPlaying(nowPlayingRes);
         if (Array.isArray(upcomingRes)) setUpcoming(upcomingRes);
         if (Array.isArray(topRatedRes)) setTopRated(topRatedRes);
       } catch {
-        // silently fail
+        setError("Some of Browse couldn't load. Try again later.");
       } finally {
         setBrowseLoading(false);
       }
@@ -674,7 +682,10 @@ export default function DiscoverPage() {
                   .filter((c: { job: string }) => c.job === "Director")
                   .map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }));
                 return { tmdbId, genres, directors, mediaType: info.type, rating: info.rating, title: info.title };
-              } catch { return null; }
+              } catch {
+                // One title failing only drops it from the taste profile.
+                return null;
+              }
             })
           );
           results.forEach((r) => { if (r) details.push(r); });
@@ -731,7 +742,7 @@ export default function DiscoverPage() {
                   items: filtered.slice(0, 20),
                 };
               })
-              .catch(() => null)
+              .catch(() => null) // one row failing only drops that row
           );
         });
 
@@ -750,7 +761,7 @@ export default function DiscoverPage() {
                   items: filtered.slice(0, 20),
                 };
               })
-              .catch(() => null)
+              .catch(() => null) // one row failing only drops that row
           );
         });
 
@@ -769,14 +780,14 @@ export default function DiscoverPage() {
                   items: filtered.slice(0, 20),
                 };
               })
-              .catch(() => null)
+              .catch(() => null) // one row failing only drops that row
           );
         });
 
         const rows = (await Promise.all(rowPromises)).filter((r): r is ForYouRow => r !== null);
         setForYouRows(rows);
       } catch {
-        // silently fail
+        // Personalised rows are an optional extra on the Browse tab.
       } finally {
         setPersonalLoading(false);
       }
@@ -800,6 +811,7 @@ export default function DiscoverPage() {
     const t = setTimeout(async () => {
       try {
         setIsSearching(true);
+        setError(null);
         if (mode === "music") {
           const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
           const data = await res.json();
@@ -816,7 +828,7 @@ export default function DiscoverPage() {
           }
         }
       } catch {
-        // silently fail
+        setError("Search failed. Try again.");
       } finally {
         setIsSearching(false);
       }
@@ -829,20 +841,23 @@ export default function DiscoverPage() {
   // ─── Handlers ───
 
   async function handleAddRecToWatchlist(item: MediaItem) {
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from("watchlist").insert({
+      const { error } = await supabase.from("watchlist").insert({
         user_id: user.id,
         tmdb_id: item.id,
         title: item.title || item.name || "Untitled",
         media_type: item.media_type,
         poster_url: item.poster_url || null,
       });
+      // 23505 is a duplicate: it is already on the watchlist, which is what the user wanted.
+      if (error && error.code !== "23505") throw error;
       setFilmWatchlistedIds((prev) => new Set([...prev, item.id]));
     } catch {
-      // silently fail (e.g. duplicate)
+      setError("Couldn't add that to your watchlist. Try again.");
     }
   }
 
@@ -854,6 +869,7 @@ export default function DiscoverPage() {
     setVibeResults([]);
     setVibeInterpretation("");
     setVibeLoading(true);
+    setError(null);
     setShowDropdown(true);
     try {
       const res = await fetch("/api/ai/search", {
@@ -868,9 +884,11 @@ export default function DiscoverPage() {
       } else if (data?.results) {
         setVibeResults(data.results);
         setVibeInterpretation(data.interpretation || "");
+      } else {
+        setError("Vibe search failed. Try again.");
       }
     } catch {
-      // silently fail
+      if (requestId === vibeRequestRef.current) setError("Vibe search failed. Try again.");
     } finally {
       if (requestId === vibeRequestRef.current) setVibeLoading(false);
     }
@@ -884,11 +902,13 @@ export default function DiscoverPage() {
     }
     setSelectedGenre(genre);
     setGenreLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api?action=discover&type=movie&genres=${genre.id}`);
       const data = await res.json();
       if (Array.isArray(data)) setGenreResults(data);
     } catch {
+      setError("Couldn't load that genre. Try again.");
       setGenreResults([]);
     } finally {
       setGenreLoading(false);
@@ -906,11 +926,12 @@ export default function DiscoverPage() {
   }
 
   async function handleAddToQueue(item: MusicMediaItem) {
+    setError(null);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from("music_queue").insert({
+      const { error } = await supabase.from("music_queue").insert({
         user_id: user.id,
         spotify_id: item.id,
         media_type: item.type,
@@ -918,9 +939,11 @@ export default function DiscoverPage() {
         artist: item.artist,
         image_url: item.image_url,
       });
+      // 23505 is a duplicate: it is already queued, which is what the user wanted.
+      if (error && error.code !== "23505") throw error;
       setQueuedIds((prev) => new Set([...prev, item.id]));
     } catch {
-      // silently fail (e.g. duplicate)
+      setError("Couldn't add that to your queue. Try again.");
     }
   }
 
@@ -938,6 +961,12 @@ export default function DiscoverPage() {
             : "Find your next favourite movie or show"}
         </p>
       </div>
+
+      {error && (
+        <div className="border-2 border-destructive bg-destructive/10 text-destructive text-sm px-4 py-2">
+          {error}
+        </div>
+      )}
 
       {/* ─── Search ─── */}
       <div className="max-w-xl w-full" ref={searchRef}>

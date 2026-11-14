@@ -189,6 +189,7 @@ export default function AnalyticsPage() {
               posterUrl: d.poster_url || null,
             };
           } catch {
+            // One title failing only drops it from the TMDB-based sections.
             return null;
           }
         })

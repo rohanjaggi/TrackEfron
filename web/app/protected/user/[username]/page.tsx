@@ -162,11 +162,14 @@ function UserProfileContent() {
             .order("updated_at", { ascending: false }),
         ]);
 
+        if (logsRes.error || watchlistRes.error || listsRes.error) {
+          throw logsRes.error ?? watchlistRes.error ?? listsRes.error;
+        }
         setWatchLogs(logsRes.data || []);
         setWatchlist(watchlistRes.data || []);
         setLists((listsRes.data as UserList[]) || []);
 
-        // Fetch friend's taste fingerprint
+        // Fetch friend's taste fingerprint. Optional: .single() errors when they have none.
         const { data: dnaData } = await supabase
           .from("taste_dna")
           .select("fingerprint")
@@ -175,6 +178,7 @@ function UserProfileContent() {
         if (dnaData?.fingerprint) setFingerprint(dnaData.fingerprint);
       } catch (err) {
         console.error("Failed to fetch friend data:", err);
+        setActionError("Couldn't load their library. Try again later.");
       } finally {
         setFriendDataLoading(false);
       }
@@ -211,10 +215,11 @@ function UserProfileContent() {
     setActionError(null);
     try {
       const supabase = createClient();
-      await supabase
+      const { error } = await supabase
         .from("friendships")
         .update({ status: "accepted" })
         .eq("id", friendshipId);
+      if (error) throw error;
       setRelationship("friends");
     } catch (err) {
       console.error("Failed to accept friend request:", err);
@@ -230,7 +235,8 @@ function UserProfileContent() {
     setActionError(null);
     try {
       const supabase = createClient();
-      await supabase.from("friendships").delete().eq("id", friendshipId);
+      const { error } = await supabase.from("friendships").delete().eq("id", friendshipId);
+      if (error) throw error;
       setRelationship("none");
       setFriendshipId(null);
     } catch (err) {

@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-  } catch {
+  } catch (e) {
+    console.error("spotify/me request failed:", e);
     return NextResponse.json({ error: "Spotify request failed" }, { status: 500 });
   }
 }

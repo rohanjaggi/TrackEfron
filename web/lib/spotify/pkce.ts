@@ -54,6 +54,7 @@ export async function exchangeCodeForTokens(
   });
 
   if (!res.ok) {
+    // The body only supplies the error text; fall back to the status line without it.
     const err = await res.json().catch(() => ({}));
     throw new Error(`Spotify token exchange failed: ${err.error ?? res.statusText}`);
   }
@@ -85,6 +86,7 @@ export async function refreshAccessToken(
   });
 
   if (!res.ok) {
+    // The body only supplies the error text; fall back to the status line without it.
     const err = await res.json().catch(() => ({}));
     throw new Error(`Spotify refresh failed: ${err.error ?? res.statusText}|${res.status}`);
   }
@@ -107,7 +109,7 @@ export async function saveTokens(
   spotifyUserId?: string
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
-  await supabase.from("spotify_tokens").upsert(
+  const { error } = await supabase.from("spotify_tokens").upsert(
     {
       user_id: userId,
       spotify_user_id: spotifyUserId ?? null,
@@ -118,6 +120,7 @@ export async function saveTokens(
     },
     { onConflict: "user_id" }
   );
+  if (error) throw new Error(`Saving Spotify tokens failed: ${error.message}`);
 }
 
 export async function getValidToken(
@@ -144,8 +147,10 @@ export async function getValidToken(
       // invalid_grant means the token was revoked — clean up
       const message = err instanceof Error ? err.message : "";
       if (message.includes("invalid_grant") || message.includes("400")) {
+        // Best-effort cleanup: the token is already unusable, so a failed delete is retried on the next call.
         await supabase.from("spotify_tokens").delete().eq("user_id", userId);
       }
+      console.error("Spotify token refresh failed:", message);
       return null;
     }
   }

@@ -14,7 +14,12 @@ async function ProfileLoader() {
   }
 
   // Keep profiles table in sync with auth metadata
-  await syncProfile(supabase);
+  try {
+    await syncProfile(supabase);
+  } catch (e) {
+    // The page renders from auth metadata, so a failed sync must not block it.
+    console.error("profile sync failed:", e);
+  }
 
   const { data: spotifyRow } = await supabase
     .from("spotify_tokens")
