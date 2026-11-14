@@ -52,7 +52,11 @@ export async function POST() {
     return NextResponse.json({ error: result.error, code: result.code }, { status });
   }
 
-  const limited = limitTasteDNA(result.data as TasteDNA);
+  // Validate against the logs first, then de-duplicate and trim to 3, so a valid fourth can replace a dropped one.
+  const raw = result.data as TasteDNA;
+  const loggedTitles = [...watchLogs, ...listenLogs].map((l) => l.title);
+  const validObservations = validateObservations(Array.isArray(raw.observations) ? raw.observations : [], loggedTitles);
+  const limited = limitTasteDNA({ ...raw, observations: validObservations });
   if (!limited) {
     return NextResponse.json(
       { error: "The model returned an incomplete Taste DNA. Try again.", code: "PROVIDER_ERROR" },
@@ -60,8 +64,7 @@ export async function POST() {
     );
   }
 
-  const loggedTitles = [...watchLogs, ...listenLogs].map((l) => l.title);
-  const observations = validateObservations(limited.observations, loggedTitles);
+  const observations = limited.observations;
   if (observations.length === 0) {
     return NextResponse.json(
       { error: "The model returned no observations that match your logs. Try again.", code: "PROVIDER_ERROR" },

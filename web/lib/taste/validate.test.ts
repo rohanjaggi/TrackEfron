@@ -65,3 +65,19 @@ describe("limitTasteDNA", () => {
     expect(limitTasteDNA({ ...base, observations: undefined as unknown as [] })?.observations).toEqual([]);
   });
 });
+
+describe("validating before limiting", () => {
+  it("keeps a valid fourth observation when an earlier one is not in the logs", () => {
+    const logged = ["Blonde", "Heat", "Alien", "Drive"];
+    const raw: TasteDNA = {
+      fingerprint: "x",
+      pulse: ["a", "b", "c"],
+      observations: [obs("Blonde"), obs("Inception"), obs("Heat"), obs("Alien"), obs("Drive")],
+      film_identity: { core: "c", aspect_lens: "l" },
+      music_identity: { core: "c", aspect_lens: "l" },
+      blind_spots: [],
+    };
+    const out = limitTasteDNA({ ...raw, observations: validateObservations(raw.observations, logged) });
+    expect(out?.observations.map((o) => o.cited_title)).toEqual(["Blonde", "Heat", "Alien"]);
+  });
+});

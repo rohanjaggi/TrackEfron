@@ -11,6 +11,7 @@ export function validateObservations(obs: TasteObservation[], loggedTitles: stri
 }
 
 /**
+ * Run after validateObservations, so a valid fourth observation can take the place of a dropped one.
  * Enforces the limits the tool schema can only describe: pulse keeps single words only, trimmed to 3,
  * and observations are de-duplicated by cited title, then trimmed to 3. Returns null when fewer than 3 pulse words came back.
  */
