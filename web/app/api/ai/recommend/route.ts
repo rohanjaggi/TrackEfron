@@ -188,7 +188,7 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
       ]);
     }
   } catch (e) {
-    console.error("Spotify tops fetch failed, continuing without it:", e);
+    console.error("Spotify token lookup failed, continuing without Spotify:", e);
   }
 
   const result = await buildMusicRecs({

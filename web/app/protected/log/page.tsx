@@ -655,6 +655,7 @@ function LogWatchForm() {
       artist: c.artist,
       album_name: c.album_name,
       poster_url: c.image_url,
+      release_date: c.release_date,
     });
     setSpotifyId(c.id);
     setArtist(c.artist);

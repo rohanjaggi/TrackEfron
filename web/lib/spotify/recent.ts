@@ -8,6 +8,7 @@ export type RecentCandidate = {
   artist: string; // artist names joined with ", "
   album_name: string;
   image_url: string | null;
+  release_date: string; // album release date, "" when Spotify gives none
   plays: number; // track: times played; album: distinct tracks played
   last_played_at: string; // ISO, the newest play in the group
 };
@@ -65,6 +66,7 @@ export function groupRecentPlays(plays: RawPlay[], loggedIds: Set<string>, max =
       artist: names(g.track.artists),
       album_name: g.track.album?.name ?? "",
       image_url: g.track.album?.images?.[0]?.url ?? null,
+      release_date: g.track.album?.release_date ?? "",
       plays: g.plays,
       last_played_at: g.last,
     });
@@ -80,6 +82,7 @@ export function groupRecentPlays(plays: RawPlay[], loggedIds: Set<string>, max =
       artist: names(album.artists),
       album_name: album.name,
       image_url: album.images?.[0]?.url ?? null,
+      release_date: album.release_date ?? "",
       plays: gs.length,
       last_played_at: gs.reduce((a, g) => (time(g.last) > time(a) ? g.last : a), gs[0].last),
     });

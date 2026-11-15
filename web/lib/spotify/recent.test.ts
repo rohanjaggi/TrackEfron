@@ -30,17 +30,17 @@ describe("groupRecentPlays", () => {
     expect(out[0]).toMatchObject({ type: "album", id: "a1", name: "A-a1", plays: 3, last_played_at: "2026-11-15T10:00:00Z" });
   });
   test("album candidate uses album artists and first image", () => {
-    const album = { id: "a1", name: "A-a1", artists: [{ name: "X" }, { name: "Y" }], images: [{ url: "/big" }, { url: "/small" }] };
+    const album = { id: "a1", name: "A-a1", artists: [{ name: "X" }, { name: "Y" }], images: [{ url: "/big" }, { url: "/small" }], release_date: "2007-10-10" };
     const out = groupRecentPlays(
       ["t1", "t2", "t3"].map((t, i) => play(t, "a1", `2026-11-15T0${9 - i}:00:00Z`, { album })),
       new Set(),
     );
-    expect(out[0]).toMatchObject({ type: "album", artist: "X, Y", album_name: "A-a1", image_url: "/big" });
+    expect(out[0]).toMatchObject({ type: "album", artist: "X, Y", album_name: "A-a1", image_url: "/big", release_date: "2007-10-10" });
   });
   test("track candidate carries artist, album name and image", () => {
-    const album = { id: "a1", name: "A-a1", images: [{ url: "/img" }] };
+    const album = { id: "a1", name: "A-a1", images: [{ url: "/img" }], release_date: "2016-08-20" };
     const out = groupRecentPlays([play("t1", "a1", "2026-11-15T10:00:00Z", { album, artists: [{ name: "P" }, { name: "Q" }] })], new Set());
-    expect(out[0]).toMatchObject({ type: "track", name: "T-t1", artist: "P, Q", album_name: "A-a1", image_url: "/img" });
+    expect(out[0]).toMatchObject({ type: "track", name: "T-t1", artist: "P, Q", album_name: "A-a1", image_url: "/img", release_date: "2016-08-20" });
   });
   test("2 distinct tracks of one album stay as tracks", () => {
     const out = groupRecentPlays(
