@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import type { MusicRecommendation, SpotifyTops } from "@/lib/ai/types";
+import type { RawPlay } from "@/lib/spotify/recent";
 import { buildMusicRecs, type ListenLogRow } from "./build";
 
 const log = (n: number, rating: number | null = 4, over: Partial<ListenLogRow> = {}): ListenLogRow => ({
@@ -17,9 +18,9 @@ const tops: SpotifyTops = {
     long_term: [artist("l1", "LongArtist", ["shoegaze"]), artist("l2", "GoneArtist")],
   },
   tracks: {
-    short_term: [{ name: "ShortTrack", artist: "ShortArtist" }],
-    medium_term: [{ name: "MediumTrack", artist: "MediumArtist" }],
-    long_term: [{ name: "LongTrack", artist: "LongArtist" }],
+    short_term: [{ id: "st1", name: "ShortTrack", artist: "ShortArtist" }],
+    medium_term: [{ id: "mt1", name: "MediumTrack", artist: "MediumArtist" }],
+    long_term: [{ id: "lt1", name: "LongTrack", artist: "LongArtist" }],
   },
 };
 
@@ -29,6 +30,11 @@ const rec = (n: number): MusicRecommendation => ({
 const hit = (n: number) => ({
   id: `sp${n}`, name: `Title${n}`, artist: `Rec${n}`, type: "album" as const,
   image_url: `/i${n}`, album_name: `Title${n}`,
+});
+
+const play = (trackId: string, albumId: string, playedAt = "2026-11-14T10:00:00Z"): RawPlay => ({
+  track: { id: trackId, name: `T-${trackId}`, artists: [{ name: "Artist" }], album: { id: albumId, name: `A-${albumId}` } },
+  played_at: playedAt,
 });
 
 function deps(over: Record<string, unknown> = {}) {
@@ -42,7 +48,7 @@ function deps(over: Record<string, unknown> = {}) {
   return {
     ai, search,
     d: {
-      logs: logs(6), queue: [], tops: null, tasteDNA: null, search, ai, ...over,
+      logs: logs(6), queue: [], tops: null, recent: null, tasteDNA: null, search, ai, ...over,
     } as unknown as Parameters<typeof buildMusicRecs>[0],
   };
 }
@@ -110,6 +116,49 @@ describe("buildMusicRecs", () => {
     });
     const r = await buildMusicRecs(d);
     expect(r.items.map((i) => i.spotify_id)).toEqual(["sp3"]);
+  });
+  test("top tracks and recent plays are excluded from picks", async () => {
+    const topsWithSp1: SpotifyTops = { ...tops, tracks: { ...tops.tracks, short_term: [{ id: "sp1", name: "X", artist: "Y" }] } };
+    const { d } = deps({
+      tops: topsWithSp1,
+      recent: [play("sp2", "alb")],
+      ai: async () => ({ recommendations: [rec(1), rec(2), rec(3)] }),
+    });
+    const r = await buildMusicRecs(d);
+    expect(r.items.map((i) => i.spotify_id)).toEqual(["sp3"]);
+  });
+  test("an album with 3+ recent tracks is excluded by album id", async () => {
+    const { d } = deps({
+      recent: [play("r1", "sp1"), play("r2", "sp1"), play("r3", "sp1")],
+      ai: async () => ({ recommendations: [rec(1), rec(2)] }),
+    });
+    const r = await buildMusicRecs(d);
+    expect(r.items.map((i) => i.spotify_id)).toEqual(["sp2"]);
+  });
+  test("the prompt lists recent plays and marks them as already in rotation", async () => {
+    const { ai, d } = deps({ recent: [play("r1", "a1")] });
+    await buildMusicRecs(d);
+    const user = ai.mock.calls[0][1];
+    expect(user).toContain("RECENTLY PLAYED (Spotify):");
+    expect(user).toContain("T-r1 by Artist");
+    expect(user).toContain("already in rotation");
+  });
+  test("recent: null changes nothing", async () => {
+    const { ai, d } = deps();
+    const r = await buildMusicRecs(d);
+    expect(ai.mock.calls[0][1]).not.toContain("RECENTLY PLAYED");
+    expect(ai.mock.calls[0][1]).not.toContain("already in rotation");
+    expect(r.items.map((i) => i.spotify_id)).toEqual(["sp1"]);
+  });
+  test("recent plays with a null track are skipped", async () => {
+    const { ai, d } = deps({ recent: [{ track: null, played_at: "2026-11-14T10:00:00Z" }, play("r1", "a1")] });
+    await buildMusicRecs(d);
+    expect(ai.mock.calls[0][1]).toContain("T-r1 by Artist");
+  });
+  test("recent plays alone (no tops, under 5 rated logs) still returns not_enough_logs", async () => {
+    const { ai, d } = deps({ logs: logs(2), recent: [play("r1", "a1")] });
+    expect(await buildMusicRecs(d)).toEqual({ status: "not_enough_logs", items: [], right_now: null });
+    expect(ai).not.toHaveBeenCalled();
   });
   test("returns empty when matching drops everything", async () => {
     const { d } = deps({ ai: async () => ({ recommendations: [rec(99)] }), search: async () => [] });

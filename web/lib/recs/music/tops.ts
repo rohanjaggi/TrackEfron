@@ -7,6 +7,7 @@ interface RawArtist {
   images?: { url: string }[];
 }
 interface RawTrack {
+  id: string;
   name: string;
   artists?: { name: string }[];
 }
@@ -43,6 +44,7 @@ export async function fetchSpotifyTops(accessToken: string): Promise<SpotifyTops
       image_url: a.images?.[0]?.url ?? null,
     }));
     tops.tracks[range] = trackLists[i]!.map((t) => ({
+      id: t.id,
       name: t.name,
       artist: (t.artists ?? []).map((ar) => ar.name).join(", "),
     }));

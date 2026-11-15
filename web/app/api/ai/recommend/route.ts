@@ -19,6 +19,7 @@ import type { WatchLogRow } from "@/lib/recs/film/select-logs";
 import { fetchLogYears } from "@/lib/recs/film/years";
 import { buildMusicRecs, type ListenLogRow } from "@/lib/recs/music/build";
 import { fetchSpotifyTops } from "@/lib/recs/music/tops";
+import { fetchRecentPlays, type RawPlay } from "@/lib/spotify/recent";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { searchSpotify } from "@/lib/spotify/spotify";
 import { getMovieDetails, getTvDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
@@ -170,18 +171,31 @@ async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): 
   }
 
   let tops: SpotifyTops | null = null;
+  let recent: RawPlay[] | null = null;
   try {
     const token = await getValidToken(supabase, userId);
-    if (token) tops = await fetchSpotifyTops(token);
+    if (token) {
+      // Spotify listening is optional context; each part fails independently.
+      [tops, recent] = await Promise.all([
+        fetchSpotifyTops(token).catch((e) => {
+          console.error("Spotify tops fetch failed, continuing without it:", e);
+          return null;
+        }),
+        fetchRecentPlays(token).catch((e) => {
+          console.error("Spotify recent plays fetch failed, continuing without it:", e);
+          return null;
+        }),
+      ]);
+    }
   } catch (e) {
     console.error("Spotify tops fetch failed, continuing without it:", e);
-    // Spotify listening is optional context; carry on without it.
   }
 
   const result = await buildMusicRecs({
     logs,
     queue: queueRes.data ?? [],
     tops,
+    recent,
     tasteDNA: dnaRes.data ?? null,
     search: searchSpotify,
     ai: makeAI<{ recommendations: MusicRecommendation[] }>({ supabase, userId, tool: musicRecommendTool }),

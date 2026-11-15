@@ -157,6 +157,7 @@ export function buildMusicRecommendUserPrompt(data: {
   }[];
   musicQueue: { title: string; artist?: string | null }[];
   tops?: SpotifyTops | null;
+  recent?: { name: string; artist: string }[];
 }): string {
   const parts: string[] = [];
   const dna = data.tasteDNA;
@@ -175,6 +176,13 @@ export function buildMusicRecommendUserPrompt(data: {
       const tracks = data.tops.tracks[key].map((t) => `${t.name} by ${t.artist}`);
       parts.push(`  Top tracks: ${tracks.join("; ") || "none"}`);
     }
+  }
+
+  if (data.recent?.length) {
+    parts.push(`\nRECENTLY PLAYED (Spotify): ${data.recent.map((t) => `${t.name} by ${t.artist}`).join("; ")}`);
+  }
+  if (data.tops || data.recent?.length) {
+    parts.push("The Spotify top tracks and recently played tracks above are already in rotation: use them as taste signal, do not recommend them.");
   }
 
   parts.push(`\nLISTEN HISTORY (${data.listenLogs.length} entries, best rated first):`);

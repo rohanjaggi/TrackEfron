@@ -1,11 +1,13 @@
 import type { MusicRecommendation, MusicRecsResponse, SpotifyTops } from "@/lib/ai/types";
 import { buildMusicRecommendUserPrompt, MUSIC_RECOMMEND_SYSTEM } from "@/lib/ai/prompts";
+import { groupRecentPlays, type RawPlay } from "@/lib/spotify/recent";
 import type { searchSpotify } from "@/lib/spotify/spotify";
 import { matchMusicPicks } from "./match";
 import { computeRightNow } from "./right-now";
 
 const MIN_RATED_LOGS = 5;
 const KEEP = 20;
+const RECENT_PROMPT_MAX = 30;
 
 export interface ListenLogRow {
   spotify_id: string | null;
@@ -26,6 +28,7 @@ export async function buildMusicRecs(deps: {
   logs: ListenLogRow[];
   queue: { spotify_id: string | null; title: string; artist: string | null }[];
   tops: SpotifyTops | null;
+  recent: RawPlay[] | null;
   tasteDNA: {
     fingerprint?: string;
     music_profile?: { core?: string; aspect_lens?: string } | null;
@@ -33,7 +36,7 @@ export async function buildMusicRecs(deps: {
   search: typeof searchSpotify;
   ai: (system: string, user: string) => Promise<{ recommendations: MusicRecommendation[] }>;
 }): Promise<MusicRecsResponse> {
-  const { logs, queue, tops, tasteDNA } = deps;
+  const { logs, queue, tops, recent, tasteDNA } = deps;
   const rightNow = tops ? computeRightNow(tops) : null;
 
   if (!tops && logs.filter((l) => l.rating != null).length < MIN_RATED_LOGS) {
@@ -45,7 +48,25 @@ export async function buildMusicRecs(deps: {
     if (row.spotify_id) exclude.add(row.spotify_id);
   }
 
-  const user = buildMusicRecommendUserPrompt({ tasteDNA, listenLogs: logs, musicQueue: queue, tops });
+  if (tops) {
+    for (const list of Object.values(tops.tracks)) for (const t of list) exclude.add(t.id);
+  }
+  const recentTracks: { name: string; artist: string }[] = [];
+  if (recent) {
+    for (const p of recent) if (p.track?.id) exclude.add(p.track.id);
+    // Albums folded from 3+ recent tracks are excluded by album id too.
+    for (const c of groupRecentPlays(recent, new Set(), Infinity)) if (c.type === "album") exclude.add(c.id);
+    const seen = new Set<string>();
+    const newestFirst = [...recent].sort((a, b) => Date.parse(b.played_at) - Date.parse(a.played_at));
+    for (const p of newestFirst) {
+      if (!p.track?.id || seen.has(p.track.id)) continue;
+      seen.add(p.track.id);
+      recentTracks.push({ name: p.track.name, artist: (p.track.artists ?? []).map((a) => a.name).join(", ") });
+      if (recentTracks.length >= RECENT_PROMPT_MAX) break;
+    }
+  }
+
+  const user = buildMusicRecommendUserPrompt({ tasteDNA, listenLogs: logs, musicQueue: queue, tops, recent: recentTracks });
   const { recommendations } = await deps.ai(MUSIC_RECOMMEND_SYSTEM, user);
 
   const items = await matchMusicPicks(recommendations, exclude, deps.search, KEEP);

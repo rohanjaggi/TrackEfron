@@ -85,7 +85,7 @@ export type SpotifyRange = "short_term" | "medium_term" | "long_term";
 
 export interface SpotifyTops {
   artists: Record<SpotifyRange, { id: string; name: string; genres: string[]; image_url: string | null }[]>;
-  tracks: Record<SpotifyRange, { name: string; artist: string }[]>;
+  tracks: Record<SpotifyRange, { id: string; name: string; artist: string }[]>;
 }
 
 export interface RightNow {
