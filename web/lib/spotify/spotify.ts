@@ -3,10 +3,10 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
 const BASE_URL = "https://api.spotify.com/v1";
 
-// ── Token cache (module-level, persists within a warm server instance) ──
+// Module-level, so it persists within a warm server instance.
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
-export async function getSpotifyToken(): Promise<string> {
+async function getSpotifyToken(): Promise<string> {
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     throw new Error("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET environment variables");
   }
@@ -37,7 +37,6 @@ export async function getSpotifyToken(): Promise<string> {
   return tokenCache.token;
 }
 
-// ── Normalised result shape ──────────────────────────────────────
 export type SpotifySearchResult = {
   id: string;
   name: string;
@@ -48,11 +47,29 @@ export type SpotifySearchResult = {
   type: "album" | "track";
 };
 
-function normaliseAlbum(a: any): SpotifySearchResult {
+type RawArtist = { name: string };
+type RawImage = { url: string };
+type RawAlbum = {
+  id: string;
+  name: string;
+  artists?: RawArtist[];
+  images?: RawImage[];
+  release_date?: string;
+};
+export type RawTrack = {
+  id: string;
+  name: string;
+  artists?: RawArtist[];
+  album?: RawAlbum;
+};
+
+export const artistNames = (artists?: RawArtist[] | null) => (artists || []).map((a) => a.name).join(", ");
+
+export function normaliseAlbum(a: RawAlbum): SpotifySearchResult {
   return {
     id: a.id,
     name: a.name,
-    artist: (a.artists || []).map((ar: any) => ar.name).join(", "),
+    artist: artistNames(a.artists),
     album_name: a.name,
     image_url: a.images?.[0]?.url ?? null,
     release_date: a.release_date || "",
@@ -60,11 +77,11 @@ function normaliseAlbum(a: any): SpotifySearchResult {
   };
 }
 
-export function normaliseTrack(t: any): SpotifySearchResult {
+export function normaliseTrack(t: RawTrack): SpotifySearchResult {
   return {
     id: t.id,
     name: t.name,
-    artist: (t.artists || []).map((ar: any) => ar.name).join(", "),
+    artist: artistNames(t.artists),
     album_name: t.album?.name || "",
     image_url: t.album?.images?.[0]?.url ?? null,
     release_date: t.album?.release_date || "",
@@ -72,7 +89,6 @@ export function normaliseTrack(t: any): SpotifySearchResult {
   };
 }
 
-// ── Search ───────────────────────────────────────────────────────
 export async function searchSpotify(
   query: string,
   type: "album" | "track" | "album,track" = "album,track",
@@ -111,7 +127,6 @@ export async function searchSpotify(
   return results.slice(0, limit);
 }
 
-// ── Item detail ──────────────────────────────────────────────────
 export async function getSpotifyItem(
   id: string,
   type: "album" | "track"
@@ -124,28 +139,4 @@ export async function getSpotifyItem(
 
   const data = await res.json();
   return type === "album" ? normaliseAlbum(data) : normaliseTrack(data);
-}
-
-// ── New releases ─────────────────────────────────────────────────
-export async function getNewReleases(limit = 20): Promise<SpotifySearchResult[]> {
-  const token = await getSpotifyToken();
-  const res = await fetch(`${BASE_URL}/browse/new-releases?limit=${limit}&country=US`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Spotify new-releases error: ${res.statusText}`);
-
-  const data = await res.json();
-  return (data.albums?.items || []).filter(Boolean).map(normaliseAlbum);
-}
-
-// ── Artist top tracks ────────────────────────────────────────────
-export async function getArtistTopTracks(artistId: string): Promise<SpotifySearchResult[]> {
-  const token = await getSpotifyToken();
-  const res = await fetch(`${BASE_URL}/artists/${artistId}/top-tracks?market=US`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Spotify artist top-tracks error: ${res.statusText}`);
-
-  const data = await res.json();
-  return (data.tracks || []).filter(Boolean).map(normaliseTrack);
 }

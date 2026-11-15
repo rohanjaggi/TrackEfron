@@ -1,686 +1,659 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  Film,
-  Tv,
-  Plus,
-  ChevronRight,
-  Bookmark,
-  BookmarkCheck,
-  Music2,
-  Disc3,
-  Library,
-} from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
-import { useMode } from "@/lib/mode-context";
-import { StarDisplay } from "@/components/ui/star-display";
+import { ArrowRight, Bookmark, Disc3, Film, Library, Music2, Plus, Tv } from "lucide-react";
 
-type WatchLog = {
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { MediaGridSkeleton, RowListSkeleton, Skeleton } from "@/components/ui/loading";
+import { MediaCard, MediaGrid } from "@/components/ui/media-card";
+import { EmptyState, Notice, PageHeader, SectionHeader, StatBlock } from "@/components/ui/page";
+import { Stars } from "@/components/ui/stars";
+import { useToast } from "@/components/ui/toast";
+import { useSavedKeys } from "@/hooks/use-saved-keys";
+import type {
+  FilmRecommendation,
+  MusicRecommendation,
+  MusicRecsResponse,
+  RecsResponse,
+} from "@/lib/ai/types";
+import { loadRecs } from "@/lib/ai/recs-client";
+import { useMode, type AppMode } from "@/lib/mode-context";
+import { createClient } from "@/lib/supabase/client";
+import { TYPE_META, averageRating, countReviews, isMusicType } from "@/lib/media";
+import { saveToQueue, saveToWatchlist, titleKey } from "@/lib/saved-items";
+import { resizePoster } from "@/lib/tmdb/poster";
+import { cn } from "@/lib/utils";
+
+type MediaType = "movie" | "tv" | "album" | "track";
+
+type LogEntry = {
   id: string;
   title: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  rating: number;
+  media_type: MediaType;
+  rating: number | null;
   review: string | null;
+  /** Watched date for film and TV, listened date for music. */
   watched_date: string | null;
   poster_url: string | null;
   tmdb_id: number | null;
+  spotify_id: string | null;
   created_at: string;
 };
 
-type Recommendation = {
-  id: number;
-  media_type: "movie" | "tv";
-  title: string;
-  poster_url: string | null;
-  vote_average: number | null;
-  release_date: string | null;
+type RecsResult<T> = {
+  status: "ok" | "failed" | "nokey" | "few";
+  items: T[];
 };
+
+type LogsState = {
+  mode: AppMode;
+  key: number;
+  rows: LogEntry[];
+  failed: boolean;
+};
+
 
 interface DashboardClientProps {
   userName: string;
 }
 
-function upscalePoster(url: string | null, size = "w185"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
+/** "2026-11-01" is a calendar day, not a moment: format it without shifting time zone. */
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(value.length === 10 ? { timeZone: "UTC" } : {}),
+  });
 }
 
-// ─── Featured Latest Entry card ───────────────────────────────
-function FeaturedCard({
-  item,
-  loading,
-  accentColor,
-  accentDim,
-  mode,
-}: {
-  item: WatchLog | null;
-  loading: boolean;
-  accentColor: string;
-  accentDim: string;
-  mode: "film" | "music";
-}) {
-  const isMusic = item ? (item.media_type === "album" || item.media_type === "track") : mode === "music";
-  const posterUrl = item?.poster_url
-    ? item.poster_url.replace(/\/w\d+\//, "/w500/")
-    : null;
+function mediaHref(item: LogEntry): string | null {
+  const id = isMusicType(item.media_type) ? item.spotify_id : item.tmdb_id;
+  return id ? `/protected/media/${item.media_type}/${id}` : null;
+}
 
-  if (loading) {
-    return (
-      <div
-        className="animate-pulse"
-        style={{
-          background: "var(--surface)",
-          border: "2px solid var(--border-raw)",
-          minHeight: 300,
-        }}
-      />
-    );
-  }
+/** Unrated (null or 0) has no rating: no stars, and it is left out of the average. */
+function ratingOf(item: LogEntry): number | null {
+  const value = Number(item.rating);
+  return item.rating != null && value > 0 ? value : null;
+}
 
-  // No entries yet — show an invitation
-  if (!item) {
-    return (
-      <div
-        className="flex flex-col items-center justify-center text-center p-8"
-        style={{
-          background: "var(--surface)",
-          border: "2px solid var(--border-raw)",
-          minHeight: 280,
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        {/* Decorative grid lines */}
-        <div
-          className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: "linear-gradient(var(--border-hover) 1px, transparent 1px), linear-gradient(90deg, var(--border-hover) 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
-          }}
-        />
-        <div
-          className="relative z-10 w-16 h-16 flex items-center justify-center mb-4"
-          style={{ border: `2px solid ${accentColor}`, background: accentDim }}
-        >
-          {isMusic
-            ? <Music2 className="w-7 h-7" style={{ color: accentColor }} />
-            : <Film className="w-7 h-7" style={{ color: accentColor }} />}
-        </div>
-        <p
-          className="font-display italic text-xl mb-2 relative z-10"
-          style={{ color: "var(--text)" }}
-        >
-          Your story starts here.
-        </p>
-        <p className="label-upper relative z-10">
-          {isMusic ? "Log your first listen" : "Log your first watch"}
-        </p>
-      </div>
-    );
-  }
+// ─── The latest entry: the page's one feature object ──────────────
+function FeaturedEntry({ item }: { item: LogEntry }) {
+  const music = isMusicType(item.media_type);
+  const href = mediaHref(item);
+  const image = resizePoster(item.poster_url, "w500");
+  const Fallback = TYPE_META[item.media_type].icon;
+  const rating = ratingOf(item);
 
-  // Has an entry — show it as a featured poster card
   return (
-    <div
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        border: "2px solid var(--border-raw)",
-      }}
-    >
-      {/* Accent top line */}
-      <div className="absolute top-0 left-0 right-0 h-px z-10" style={{ background: accentColor }} />
-
-      {/* Label */}
-      <div className="absolute top-3 left-3 z-20">
-        <span
-          className="label-upper px-2 py-1"
-          style={{
-            background: "rgba(10,10,8,0.85)",
-            border: `1px solid ${accentColor}`,
-            color: accentColor,
-          }}
-        >
-          Last {mode === "music" ? "listened" : "watched"}
-        </span>
-      </div>
-
-      {/* Art */}
-      {isMusic ? (
-        /* Square album art */
+    // Hugs its artwork instead of stretching to the greeting's height: a square cover
+    // would otherwise sit in a frame much taller than it.
+    <div className="light-leak self-start">
+      <article className="frame frame-accent frame-raised ticks flex">
         <div
-          className="w-full"
-          style={{ aspectRatio: "1 / 1", background: "var(--surface-2)", maxHeight: 300, overflow: "hidden" }}
+          className={cn(
+            "w-[120px] shrink-0 self-start overflow-hidden border-r border-border bg-surface-2 lg:w-[180px]",
+            music ? "aspect-square" : "aspect-[2/3]",
+          )}
         >
-          {posterUrl ? (
-            <img src={posterUrl} alt={item.title} className="w-full h-full object-cover" />
+          {image ? (
+             
+            <img src={image} alt="" className="artwork h-full w-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Disc3 className="w-16 h-16" style={{ color: "var(--text-dim)" }} />
+            <div className="flex h-full w-full items-center justify-center">
+              <Fallback className="size-8 text-dim" aria-hidden="true" />
             </div>
           )}
-          {/* Gradient overlay */}
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(to top, rgba(10,10,8,0.95) 0%, rgba(10,10,8,0.3) 50%, transparent 100%)" }}
-          />
         </div>
-      ) : (
-        /* Portrait poster — fill width, cap height */
-        <div
-          className="w-full"
-          style={{ aspectRatio: "2 / 3", background: "var(--surface-2)", maxHeight: 400, overflow: "hidden" }}
-        >
-          {posterUrl ? (
-            <img src={posterUrl} alt={item.title} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Film className="w-16 h-16" style={{ color: "var(--text-dim)" }} />
-            </div>
-          )}
-          {/* Gradient overlay */}
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(to top, rgba(10,10,8,0.95) 0%, rgba(10,10,8,0.1) 55%, transparent 100%)" }}
-          />
-        </div>
-      )}
 
-      {/* Info overlay */}
-      <div
-        className="absolute bottom-0 left-0 right-0 p-4 z-20"
-      >
-        <StarDisplay rating={item.rating} size="md" />
-        <h3
-          className="font-display mt-1 mb-1 leading-tight"
-          style={{ fontSize: "20px", fontWeight: 700, color: "var(--text)" }}
-        >
-          {item.title}
-        </h3>
-        <p className="label-upper" style={{ color: "var(--text-muted)" }}>
-          {item.media_type === "movie" ? "Movie"
-            : item.media_type === "tv" ? "TV Show"
-            : item.media_type === "album" ? "Album" : "Track"}
-          {item.watched_date && ` · ${new Date(item.watched_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
-        </p>
-        {item.review && (
-          <p
-            className="mt-2 text-[11px] line-clamp-2 italic"
-            style={{ color: "var(--text-muted)" }}
-          >
-            "{item.review}"
+        <div className="min-w-0 flex-1 p-4">
+          <Badge>{music ? "Last listened" : "Last watched"}</Badge>
+          <h2 className="t-card mt-3 line-clamp-2">
+            {href ? (
+              <Link
+                href={href}
+                className="transition-colors duration-cut ease-mech hover:text-primary"
+              >
+                {item.title}
+              </Link>
+            ) : (
+              item.title
+            )}
+          </h2>
+          {rating != null && <Stars value={rating} size={15} className="mt-2" />}
+          <p className="t-meta mt-2">
+            {TYPE_META[item.media_type].shortLabel}
+            {item.watched_date && ` · ${formatDate(item.watched_date)}`}
           </p>
-        )}
-      </div>
+          {item.review && (
+            <p className="t-prose mt-3 line-clamp-4 italic text-muted-foreground">
+              &ldquo;{item.review}&rdquo;
+            </p>
+          )}
+        </div>
+      </article>
     </div>
   );
 }
 
+// ─── One row of recent activity ───────────────────────────────────
+function RecentRow({ item }: { item: LogEntry }) {
+  const music = isMusicType(item.media_type);
+  const href = mediaHref(item);
+  const image = resizePoster(item.poster_url, "w185");
+  const Fallback = TYPE_META[item.media_type].icon;
+  const rating = ratingOf(item);
+  const rowClass = "row-item flex items-center gap-4 py-4";
+
+  const body = (
+    <>
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2",
+          music ? "h-12 w-12" : "h-[66px] w-11",
+        )}
+      >
+        {image ? (
+           
+          <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <Fallback className="size-5 text-dim" aria-hidden="true" />
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <h3 className="t-card truncate">{item.title}</h3>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <Badge variant="outline">{TYPE_META[item.media_type].shortLabel}</Badge>
+          {item.watched_date && <span className="t-meta">{formatDate(item.watched_date)}</span>}
+        </div>
+      </div>
+
+      {rating != null && <Stars value={rating} showValue className="shrink-0" />}
+    </>
+  );
+
+  return href ? (
+    <Link href={href} className={rowClass}>
+      {body}
+    </Link>
+  ) : (
+    <div className={rowClass}>{body}</div>
+  );
+}
 
 export function DashboardClient({ userName }: DashboardClientProps) {
-  const { mode } = useMode();
-  const [watchLogs, setWatchLogs] = useState<WatchLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [recs, setRecs] = useState<Recommendation[]>([]);
-  const [recsLoading, setRecsLoading] = useState(true);
-  const [watchlistedIds, setWatchlistedIds] = useState<Set<number>>(new Set());
+  const { mode, ready } = useMode();
+  const toast = useToast();
 
+  const [logsState, setLogsState] = useState<LogsState | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // null until that mode's picks have answered.
+  const [filmRecs, setFilmRecs] = useState<RecsResult<FilmRecommendation> | null>(null);
+  const [musicRecs, setMusicRecs] = useState<RecsResult<MusicRecommendation> | null>(null);
+  const recsRequested = useRef<Record<AppMode, boolean>>({ film: false, music: false });
+  const { queuedIds, watchlistKeys, markQueued, markWatchlisted } = useSavedKeys(mode);
+  const [addingKey, setAddingKey] = useState<string | null>(null);
+
+  // Only the current mode's logs; a response for another mode never lands.
   useEffect(() => {
-    async function fetchData() {
-      const supabase = createClient();
-      try {
-        const [filmRes, musicRes] = await Promise.all([
-          supabase
-            .from("watch_logs")
-            .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
-            .order("watched_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("listen_logs")
-            .select("id, title, media_type, rating, review, listened_date, image_url, created_at")
-            .order("listened_date", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false }),
-        ]);
-        if (filmRes.error) throw filmRes.error;
-        const musicMapped: WatchLog[] = (musicRes.data || []).map((m) => ({
-          id: m.id,
-          title: m.title,
-          media_type: m.media_type as "album" | "track",
-          rating: m.rating,
-          review: m.review,
-          watched_date: m.listened_date,
-          poster_url: m.image_url,
-          tmdb_id: null,
-          created_at: m.created_at,
-        }));
-        setWatchLogs([...(filmRes.data || []), ...musicMapped]);
-      } catch {
-        /* silently fail */
-      } finally {
-        setLoading(false);
-      }
-    }
+    let cancelled = false;
+    const requestMode = mode;
 
-    async function fetchRecs() {
+    async function fetchLogs() {
+      const done = (rows: LogEntry[], failed: boolean) => {
+        if (!cancelled) setLogsState({ mode: requestMode, key: reloadKey, rows, failed });
+      };
       try {
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const res = await fetch(`/api?action=recommend&user_id=${user.id}`);
-        const data = await res.json();
-        if (Array.isArray(data)) setRecs(data.slice(0, 5));
+        if (!user) {
+          done([], false);
+          return;
+        }
+
+        if (requestMode === "music") {
+          const res = await supabase
+            .from("listen_logs")
+            .select("id, title, media_type, rating, review, listened_date, image_url, spotify_id, created_at")
+            .eq("user_id", user.id)
+            .in("media_type", ["album", "track"])
+            .order("listened_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false });
+          done(
+            (res.data || []).map((m) => ({
+              id: m.id,
+              title: m.title,
+              media_type: m.media_type as "album" | "track",
+              rating: m.rating,
+              review: m.review,
+              watched_date: m.listened_date,
+              poster_url: m.image_url,
+              tmdb_id: null,
+              spotify_id: m.spotify_id,
+              created_at: m.created_at,
+            })),
+            Boolean(res.error),
+          );
+        } else {
+          const res = await supabase
+            .from("watch_logs")
+            .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
+            .eq("user_id", user.id)
+            .in("media_type", ["movie", "tv"])
+            .order("watched_date", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false });
+          done(
+            (res.data || []).map((f) => ({
+              id: f.id,
+              title: f.title,
+              media_type: f.media_type as "movie" | "tv",
+              rating: f.rating,
+              review: f.review,
+              watched_date: f.watched_date,
+              poster_url: f.poster_url,
+              tmdb_id: f.tmdb_id,
+              spotify_id: null,
+              created_at: f.created_at,
+            })),
+            Boolean(res.error),
+          );
+        }
       } catch {
-        /* silently fail — ML backend may not be running */
-      } finally {
-        setRecsLoading(false);
+        done([], true);
       }
     }
 
-    fetchData();
-    fetchRecs();
-  }, []);
+    fetchLogs();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, reloadKey]);
 
-  async function addToWatchlist(item: Recommendation) {
+  // Picks follow the mode. Wait until the stored mode is known (the server always renders
+  // film), and ask once per mode: switching back does not call again.
+  useEffect(() => {
+    if (!ready || recsRequested.current[mode]) return;
+    recsRequested.current[mode] = true;
+    const requestMode = mode;
+
+    async function fetchRecs<T, R extends RecsResponse<T>>(
+      url: string,
+      done: (result: RecsResult<T>) => void,
+    ) {
+      const load = await loadRecs<R>(url);
+      if (load.kind === "no_key") done({ status: "nokey", items: [] });
+      else if (load.kind === "error") done({ status: "failed", items: [] });
+      else if (load.body.status === "not_enough_logs") done({ status: "few", items: [] });
+      else if (load.body.status === "ok" && load.body.items.length > 0) {
+        done({ status: "ok", items: load.body.items });
+      } else done({ status: "failed", items: [] });
+    }
+
+    // Each result lands in its own mode's slot, so a late answer never shows in the wrong mode.
+    if (requestMode === "music") {
+      fetchRecs<MusicRecommendation, MusicRecsResponse>("/api/ai/recommend?mode=music", (r) =>
+        setMusicRecs({ ...r, items: r.items.filter((i) => i.spotify_id).slice(0, 5) }),
+      );
+    } else {
+      fetchRecs<FilmRecommendation, RecsResponse<FilmRecommendation>>("/api/ai/recommend?mode=film", (r) =>
+        setFilmRecs({ ...r, items: r.items.slice(0, 6) }),
+      );
+    }
+  }, [ready, mode]);
+
+  function retryLogs() {
+    setReloadKey((k) => k + 1);
+  }
+
+  async function addToWatchlist(item: FilmRecommendation) {
+    const key = titleKey(item.media_type, item.tmdb_id);
+    const failed = () =>
+      toast({
+        tone: "error",
+        mark: "Not added",
+        title: `Couldn't add ${item.title} to your watchlist`,
+        description: "Check your connection and try again.",
+      });
+
+    setAddingKey(key);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      await supabase.from("watchlist").insert({
-        user_id: user.id,
-        tmdb_id: item.id,
+      const status = await saveToWatchlist({
+        tmdb_id: item.tmdb_id,
         title: item.title,
         media_type: item.media_type,
         poster_url: item.poster_url,
       });
-      setWatchlistedIds((prev) => new Set([...prev, item.id]));
-    } catch {
-      /* silently fail */
+      if (status === "signed_out") {
+        toast({
+          tone: "error",
+          title: "Your session has ended",
+          description: "Sign in again to add to your watchlist.",
+        });
+      } else if (status === "failed" || status === "unreachable") {
+        failed();
+      } else {
+        markWatchlisted(key);
+        toast(
+          status === "duplicate"
+            ? { tone: "info", title: `${item.title} is already on your watchlist` }
+            : { mark: "Added", title: `${item.title} added to your watchlist` },
+        );
+      }
+    } finally {
+      setAddingKey(null);
     }
   }
 
+  async function addToQueue(item: MusicRecommendation) {
+    const spotifyId = item.spotify_id;
+    if (!spotifyId) return;
+    const failed = () =>
+      toast({
+        tone: "error",
+        mark: "Not added",
+        title: `Couldn't add ${item.title} to your queue`,
+        description: "Check your connection and try again.",
+      });
+
+    setAddingKey(spotifyId);
+    try {
+      const status = await saveToQueue({
+        spotify_id: spotifyId,
+        media_type: item.type,
+        title: item.title,
+        artist: item.artist,
+        image_url: item.image_url ?? null,
+      });
+      if (status === "signed_out") {
+        toast({
+          tone: "error",
+          title: "Your session has ended",
+          description: "Sign in again to add to your queue.",
+        });
+      } else if (status === "failed" || status === "unreachable") {
+        failed();
+      } else {
+        markQueued(spotifyId);
+        toast(
+          status === "duplicate"
+            ? { tone: "info", title: `${item.title} is already in your queue` }
+            : { mark: "Added", title: `${item.title} added to your queue` },
+        );
+      }
+    } finally {
+      setAddingKey(null);
+    }
+  }
+
+  const music = mode === "music";
+  const loading = !logsState || logsState.mode !== mode || logsState.key !== reloadKey;
+  const activeLogs = !loading && logsState ? logsState.rows : [];
+  const loadFailed = !loading && Boolean(logsState?.failed);
+  const firstRun = !loading && !loadFailed && activeLogs.length === 0;
+  const latest = activeLogs[0] ?? null;
+  const recentItems = activeLogs.slice(0, 6);
+
+  const recsSlot = music ? musicRecs : filmRecs;
+  const recsLoading = !ready || recsSlot === null;
+  const recsStatus = recsSlot?.status;
+  const recCount = recsSlot?.items.length ?? 0;
+
   const now = new Date();
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-  const filmLogs = watchLogs.filter(i => i.media_type === "movie" || i.media_type === "tv");
-  const musicLogs = watchLogs.filter(i => i.media_type === "album" || i.media_type === "track");
-
-  const activeLogs = mode === "music" ? musicLogs : filmLogs;
-  const stats = {
-    total: watchLogs.length,
-    filmCount: filmLogs.length,
-    musicCount: musicLogs.length,
-    reviews: activeLogs.filter(i => i.review && i.review.trim().length > 0).length,
-    avgRating: activeLogs.length > 0
-      ? (activeLogs.reduce((acc, i) => acc + Number(i.rating), 0) / activeLogs.length).toFixed(1)
-      : "—",
-    thisMonth: activeLogs.filter(i => {
-      const d = i.watched_date || i.created_at;
-      return d >= thisMonthStart;
-    }).length,
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isThisMonth = (i: LogEntry) => {
+    if (i.watched_date) return i.watched_date.slice(0, 7) === monthKey;
+    const created = new Date(i.created_at);
+    return created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
   };
 
-  // Filter recent items by mode
-  const recentItems = (
-    mode === "music" ? musicLogs : filmLogs
-  ).slice(0, 6);
+  const stats = {
+    count: activeLogs.length,
+    reviews: countReviews(activeLogs),
+    avgRating: averageRating(
+      activeLogs.map((i) => i.rating),
+      { empty: "–" },
+    ),
+    thisMonth: activeLogs.filter(isThisMonth).length,
+  };
 
-  const accentColor = mode === "music" ? "var(--music)" : "var(--film)";
-  const accentDim = mode === "music" ? "var(--music-dim)" : "var(--film-dim)";
+  const showFeature = loading || (!loadFailed && latest !== null);
+  const showRecs = !firstRun || recCount > 0;
 
   return (
-    <div className="flex flex-col gap-16 animate-[fadeInUp_0.3s_ease]">
+    <div className="flex flex-col gap-16">
+      {/* ── Greeting, figures and the latest entry ─────────────── */}
+      <section
+        className={cn(
+          "grid grid-cols-1 items-stretch gap-10",
+          showFeature && "lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]",
+        )}
+      >
+        <div className="flex min-w-0 flex-col justify-between gap-8">
+          <PageHeader
+            className="mb-0"
+            title={
+              <>
+                Welcome, <strong>{userName}</strong>
+                <br />
+                <em>{music ? "what are you listening to?" : "what are you watching?"}</em>
+              </>
+            }
+          />
 
-      {/* ── Hero ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 items-start">
-
-        {/* Left: greeting + stats + CTAs */}
-        <div>
-          <p
-            className="font-display text-[14px] italic mb-3"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Good to have you back
-          </p>
-
-          <h1
-            className="font-display mb-8"
-            style={{
-              fontSize: "clamp(38px, 5vw, 56px)",
-              fontWeight: 300,
-              lineHeight: 1.05,
-              letterSpacing: "-0.02em",
-              color: "var(--text)",
-            }}
-          >
-            Welcome,{" "}
-            <strong style={{ fontWeight: 700 }}>{userName}</strong>
-            <br />
-            <em style={{ fontStyle: "italic", color: accentColor, transition: "color 0.4s" }}>
-              {mode === "music" ? "what are you listening to?" : "what are you watching?"}
-            </em>
-          </h1>
-
-          {/* Stat row */}
-          <div className="flex gap-8 mb-8">
-            {[
-              { value: mode === "music" ? stats.musicCount : stats.filmCount, label: mode === "music" ? "Logged" : "Watched" },
-              { value: stats.reviews, label: "Reviews" },
-              { value: stats.avgRating, label: "Avg Rating" },
-              { value: stats.thisMonth, label: "This Month" },
-            ].map(({ value, label }) => (
-              <div key={label}>
-                <div
-                  className="font-display leading-none mb-1"
-                  style={{ fontSize: "38px", fontWeight: 600, color: "var(--text)" }}
-                >
-                  {loading ? "—" : value}
-                </div>
-                <div className="label-upper">{label}</div>
+          {loadFailed ? (
+            <Notice tone="error" title={music ? "Couldn't load your listens" : "Couldn't load your watches"}>
+              <p>Check your connection and try again.</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={retryLogs}>
+                Try again
+              </Button>
+            </Notice>
+          ) : firstRun ? (
+            <EmptyState
+              className="border-y border-border py-14"
+              icon={music ? Music2 : Film}
+              title="Your story starts here."
+              description={
+                music
+                  ? "Log an album or a track and it will appear here, with your rating and what you made of it."
+                  : "Log a film or a show and it will appear here, with your rating and what you made of it."
+              }
+              action={
+                <Button asChild>
+                  <Link href="/protected/log">
+                    <Plus aria-hidden="true" />
+                    {music ? "Log your first listen" : "Log your first watch"}
+                  </Link>
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6 sm:flex sm:gap-12">
+                <StatBlock label={music ? "Listened" : "Watched"} value={stats.count} loading={loading} />
+                <StatBlock label="Reviews" value={stats.reviews} loading={loading} />
+                <StatBlock label="Avg rating" value={stats.avgRating} loading={loading} />
+                <StatBlock label="This month" value={stats.thisMonth} loading={loading} />
               </div>
-            ))}
-          </div>
 
-          {/* CTAs */}
-          <div className="flex gap-3 flex-wrap">
-            <Link
-              href="/protected/log"
-              className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-medium tracking-[0.08em] uppercase transition-all duration-200 hover:opacity-85"
-              style={{
-                background: accentColor,
-                color: "var(--bg)",
-                border: `2px solid ${accentColor}`,
-              }}
-            >
-              <Plus className="w-4 h-4" />
-              {mode === "music" ? "Log a Listen" : "Log a Watch"}
-            </Link>
-
-            <Link
-              href="/protected/library"
-              className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-medium tracking-[0.08em] uppercase transition-all duration-200"
-              style={{
-                background: "none",
-                color: "var(--text-muted)",
-                border: "2px solid var(--border-raw)",
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.color = "var(--text)";
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-                (e.currentTarget as HTMLElement).style.borderColor = "var(--border-raw)";
-              }}
-            >
-              <Library className="w-4 h-4" />
-              View Library
-            </Link>
-          </div>
-        </div>
-
-        {/* Right: featured latest entry */}
-        <FeaturedCard
-          item={loading ? null : (mode === "music" ? musicLogs[0] : filmLogs[0]) ?? null}
-          loading={loading}
-          accentColor={accentColor}
-          accentDim={accentDim}
-          mode={mode}
-        />
-      </div>
-
-      {/* ── Recent activity ────────────────────────────────────── */}
-      <div>
-        <div
-          className="flex items-baseline justify-between pb-3 mb-0"
-          style={{ borderBottom: "2px solid var(--border-raw)" }}
-        >
-          <h2
-            className="font-display"
-            style={{ fontSize: "22px", fontWeight: 600, color: "var(--text)" }}
-          >
-            {mode === "music" ? "Recent Listens" : "Recent Watches"}
-          </h2>
-          <Link
-            href="/protected/library"
-            className="text-[11px] tracking-[0.06em] transition-colors duration-150"
-            style={{ color: accentColor }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = "0.75"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
-          >
-            View All →
-          </Link>
+              <div className="flex flex-wrap gap-2.5">
+                <Button asChild>
+                  <Link href="/protected/log">
+                    <Plus aria-hidden="true" />
+                    {music ? "Log a listen" : "Log a watch"}
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/protected/library">
+                    <Library aria-hidden="true" />
+                    View library
+                  </Link>
+                </Button>
+              </div>
+            </>
+          )}
         </div>
 
         {loading ? (
-          <div className="flex flex-col gap-0">
-            {[1, 2, 3, 4].map(i => (
-              <div
-                key={i}
-                className="flex items-center gap-4 py-4"
-                style={{ borderBottom: "2px solid var(--border-raw)" }}
-              >
-                <div
-                  className="flex-shrink-0 animate-pulse"
-                  style={{ width: 40, height: mode === "music" ? 40 : 56, background: "var(--surface-2)" }}
-                />
-                <div className="flex-1 flex flex-col gap-2">
-                  <div className="h-3 animate-pulse rounded" style={{ background: "var(--surface-2)", width: "55%" }} />
-                  <div className="h-2.5 animate-pulse rounded" style={{ background: "var(--surface-2)", width: "30%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : recentItems.length === 0 ? (
-          <div className="py-16 text-center">
-            <div
-              className="w-16 h-16 flex items-center justify-center mx-auto mb-4"
-              style={{ background: "var(--surface)", border: "2px solid var(--border-raw)" }}
-            >
-              {mode === "music"
-                ? <Music2 className="w-7 h-7" style={{ color: "var(--text-muted)" }} />
-                : <Film className="w-7 h-7" style={{ color: "var(--text-muted)" }} />}
+          <Skeleton
+            className={cn(
+              "w-full self-start",
+              // The height of the artwork the card will hug: square cover or 2:3 poster.
+              music ? "h-[122px] lg:h-[182px]" : "h-[182px] lg:h-[272px]",
+            )}
+          />
+        ) : (
+          !loadFailed && latest && <FeaturedEntry item={latest} />
+        )}
+      </section>
+
+      {/* ── Recent activity ────────────────────────────────────── */}
+      {!firstRun && !loadFailed && (
+        <section>
+          <SectionHeader
+            flush
+            title={music ? "Recent listens" : "Recent watches"}
+            action={
+              <Button asChild variant="link">
+                <Link href="/protected/library">
+                  View all
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            }
+          />
+          {loading ? (
+            <RowListSkeleton count={4} />
+          ) : (
+            <div className="advance">
+              {recentItems.map((item) => (
+                <RecentRow key={item.id} item={item} />
+              ))}
             </div>
-            <p
-              className="font-display italic text-lg mb-5"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {mode === "music" ? "No listens logged yet" : "No watches yet"}
-            </p>
-            <Link
-              href="/protected/log"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-[11px] font-medium tracking-[0.08em] uppercase transition-all hover:opacity-85"
-              style={{ background: accentColor, color: "var(--bg)" }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {mode === "music" ? "Log Your First Listen" : "Log Your First Watch"}
-            </Link>
-          </div>
-        ) : (
-          <div>
-            {recentItems.map((item) => {
-              const isMusic = item.media_type === "album" || item.media_type === "track";
-              const thumbH = isMusic ? 48 : 68;
-              const thumbW = isMusic ? 48 : 44;
+          )}
+        </section>
+      )}
 
-              return (
-                <Link
-                  key={item.id}
-                  href={item.tmdb_id ? `/protected/media/${item.media_type}/${item.tmdb_id}` : "#"}
-                  className="flex items-start gap-4 py-4 cursor-pointer transition-all duration-150 activity-item group"
-                  style={{ paddingLeft: "0", paddingRight: "0" }}
-                >
-                  {/* Thumbnail */}
-                  <div
-                    className="flex-shrink-0 flex items-center justify-center overflow-hidden"
-                    style={{
-                      width: thumbW,
-                      height: thumbH,
-                      background: "var(--surface)",
-                      border: "1px solid var(--border-raw)",
-                    }}
-                  >
-                    {item.poster_url ? (
-                      <img
-                        src={upscalePoster(item.poster_url)!}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : item.media_type === "movie" ? (
-                      <Film className="w-5 h-5" style={{ color: "var(--text-muted)" }} />
-                    ) : item.media_type === "tv" ? (
-                      <Tv className="w-5 h-5" style={{ color: "var(--text-muted)" }} />
-                    ) : (
-                      <Disc3 className="w-5 h-5" style={{ color: "var(--text-muted)" }} />
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <h3
-                      className="font-display text-base font-semibold truncate mb-0.5 transition-colors duration-150"
-                      style={{ color: "var(--text)" }}
-                    >
-                      {item.title}
-                    </h3>
-                    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      {item.media_type === "movie" ? "Movie"
-                        : item.media_type === "tv" ? "TV Show"
-                        : item.media_type === "album" ? "Album" : "Track"}
-                      {item.watched_date && (
-                        <span> · {new Date(item.watched_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                      )}
-                    </p>
-                  </div>
-
-                  {/* Rating */}
-                  <div className="flex-shrink-0 text-right">
-                    <StarDisplay rating={item.rating} size="md" />
-                    <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)", letterSpacing: "0.06em" }}>
-                      {item.rating}/5
-                    </p>
-                  </div>
+      {/* ── Recommendations: films and TV in film mode, music in music mode ── */}
+      {showRecs && (
+        <section>
+          <SectionHeader
+            title="Recommended for you"
+            action={
+              <Button asChild variant="link">
+                <Link href="/protected/discover">
+                  More
+                  <ArrowRight aria-hidden="true" />
                 </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              </Button>
+            }
+          />
 
-      {/* ── Recommendations ────────────────────────────────────── */}
-      <div>
-        <div
-          className="flex items-baseline justify-between pb-3 mb-0"
-          style={{ borderBottom: "2px solid var(--border-raw)" }}
-        >
-          <div className="flex items-center gap-3">
-            <h2
-              className="font-display"
-              style={{ fontSize: "22px", fontWeight: 600, color: "var(--text)" }}
-            >
-              Recommended
-            </h2>
-            <span
-              className="label-upper px-1.5 py-0.5"
-              style={{ border: `1px solid ${accentColor}`, color: accentColor }}
-            >
-              ML
-            </span>
-          </div>
-          <Link
-            href="/protected/discover"
-            className="text-[11px] tracking-[0.06em] transition-opacity"
-            style={{ color: accentColor }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = "0.75"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = "1"}
-          >
-            More →
-          </Link>
-        </div>
-
-        {recsLoading ? (
-          <div className="flex flex-col gap-0">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div
-                key={i}
-                className="flex items-center gap-4 py-4"
-                style={{ borderBottom: "2px solid var(--border-raw)" }}
-              >
-                <div className="w-11 h-16 flex-shrink-0 animate-pulse" style={{ background: "var(--surface-2)" }} />
-                <div className="flex-1 flex flex-col gap-2">
-                  <div className="h-3 animate-pulse rounded" style={{ background: "var(--surface-2)", width: "60%" }} />
-                  <div className="h-2.5 animate-pulse rounded" style={{ background: "var(--surface-2)", width: "35%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : recs.length === 0 ? (
-          <div className="py-12 text-center">
-            <p className="font-display italic text-lg" style={{ color: "var(--text-muted)" }}>
-              Log more {mode === "music" ? "listens" : "watches"} to unlock personalised picks
-            </p>
-          </div>
-        ) : (
-          <div>
-            {recs.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-start gap-4 py-4 activity-item group"
-              >
-                <Link
-                  href={`/protected/media/${item.media_type}/${item.id}`}
-                  className="flex-shrink-0 flex items-center justify-center overflow-hidden"
-                  style={{
-                    width: 44,
-                    height: 62,
-                    background: "var(--surface)",
-                    border: "1px solid var(--border-raw)",
-                  }}
-                >
-                  {item.poster_url ? (
-                    <img
-                      src={upscalePoster(item.poster_url)!}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : item.media_type === "movie" ? (
-                    <Film className="w-5 h-5" style={{ color: "var(--text-muted)" }} />
-                  ) : (
-                    <Tv className="w-5 h-5" style={{ color: "var(--text-muted)" }} />
-                  )}
-                </Link>
-
-                <Link href={`/protected/media/${item.media_type}/${item.id}`} className="flex-1 min-w-0">
-                  <h3
-                    className="font-display text-base font-semibold truncate mb-0.5 transition-colors duration-150 group-hover:opacity-75"
-                    style={{ color: "var(--text)" }}
-                  >
-                    {item.title}
-                  </h3>
-                  <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    {item.media_type === "movie" ? "Movie" : "TV Show"}
-                    {item.vote_average && ` · ${item.vote_average.toFixed(1)} TMDB`}
-                  </p>
-                </Link>
-
-                <button
-                  onClick={() => addToWatchlist(item)}
-                  disabled={watchlistedIds.has(item.id)}
-                  className="flex-shrink-0 p-1.5 transition-colors duration-150"
-                  style={{ color: watchlistedIds.has(item.id) ? accentColor : "var(--text-muted)" }}
-                  title={watchlistedIds.has(item.id) ? "On watchlist" : "Add to watchlist"}
-                >
-                  {watchlistedIds.has(item.id)
-                    ? <BookmarkCheck className="w-4 h-4" />
-                    : <Bookmark className="w-4 h-4" />}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
+          {recsLoading ? (
+            <MediaGridSkeleton count={5} aspect={music ? "square" : "poster"} />
+          ) : recsStatus === "failed" ? (
+            <Notice tone="error" title="Couldn't load recommendations">
+              Reload the page to try again. Everything else on this page is up to date.
+            </Notice>
+          ) : recsStatus === "nokey" ? (
+            <EmptyState
+              className="py-10"
+              title="Picks need an AI key."
+              description="They are written using an AI key, and none is available yet."
+              action={
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/protected/profile">Add a key in your profile</Link>
+                </Button>
+              }
+            />
+          ) : recsStatus === "few" || recCount === 0 ? (
+            <EmptyState
+              className="py-10"
+              title={`Log more ${music ? "listens" : "watches"} to unlock personalised picks.`}
+            />
+          ) : music ? (
+            <MediaGrid>
+              {musicRecs!.items.map((item) => {
+                const id = item.spotify_id ?? "";
+                const queued = queuedIds.has(id);
+                return (
+                  <MediaCard
+                    key={`${item.type}-${id}`}
+                    title={item.title}
+                    subtitle={`${item.type === "album" ? "Album" : "Track"} · ${item.artist}`}
+                    image={item.image_url}
+                    aspect="square"
+                    href={`/protected/media/${item.type}/${id}`}
+                    fallbackIcon={item.type === "album" ? Disc3 : Music2}
+                    badge={
+                      queued ? (
+                        <Badge variant="solid">In queue</Badge>
+                      ) : item.confidence === "discovery" ? (
+                        <Badge variant="outline">Stretch</Badge>
+                      ) : undefined
+                    }
+                    actions={
+                      queued ? undefined : (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          aria-label={`Add ${item.title} to queue`}
+                          disabled={addingKey === id}
+                          onClick={() => addToQueue(item)}
+                        >
+                          <Plus aria-hidden="true" />
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+            </MediaGrid>
+          ) : (
+            <MediaGrid>
+              {filmRecs!.items.map((item) => {
+                const key = titleKey(item.media_type, item.tmdb_id);
+                const saved = watchlistKeys.has(key);
+                const type = item.media_type === "movie" ? "Film" : "TV";
+                return (
+                  <MediaCard
+                    key={key}
+                    title={item.title}
+                    subtitle={item.year ? `${type} · ${item.year}` : type}
+                    image={resizePoster(item.poster_url, "w342")}
+                    href={`/protected/media/${item.media_type}/${item.tmdb_id}`}
+                    fallbackIcon={item.media_type === "movie" ? Film : Tv}
+                    badge={
+                      saved ? (
+                        <Badge variant="solid">On watchlist</Badge>
+                      ) : item.confidence === "discovery" ? (
+                        <Badge variant="outline">Stretch</Badge>
+                      ) : undefined
+                    }
+                    actions={
+                      saved ? undefined : (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          aria-label={`Add ${item.title} to watchlist`}
+                          disabled={addingKey === key}
+                          onClick={() => addToWatchlist(item)}
+                        >
+                          <Bookmark aria-hidden="true" />
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+            </MediaGrid>
+          )}
+        </section>
+      )}
     </div>
   );
 }

@@ -2,29 +2,29 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { detectProvider, envProvider, type Provider } from "./detect-provider";
+import type { Tool } from "./tools";
 
-type Provider = "anthropic" | "openai" | "gemini";
-type Tier = "powerful" | "fast" | "fastest";
+type Tier = "powerful" | "fastest";
 
 const MODEL_MAP: Record<Provider, Record<Tier, string>> = {
   anthropic: {
-    powerful: "claude-sonnet-4-20250514",
-    fast: "claude-haiku-4-5-20251001",
-    fastest: "claude-haiku-4-5-20251001",
+    powerful: "claude-sonnet-5-5",
+    fastest: "claude-haiku-5-5",
   },
   openai: {
-    powerful: "gpt-5.4",
-    fast: "gpt-5.4-mini",
-    fastest: "gpt-5.4-nano",
+    powerful: "gpt-6-luna",
+    fastest: "gpt-6-luna",
   },
   gemini: {
-    powerful: "gemini-2.5-flash",
-    fast: "gemini-2.5-flash",
-    fastest: "gemini-3.1-flash-lite-preview",
+    powerful: "gemini-2.5-flash-lite",
+    fastest: "gemini-2.5-flash-lite",
   },
 };
 
-type AnthropicTool = Anthropic.Messages.Tool;
+// Claude 5.5 models and gpt-6-luna reason by default, and reasoning counts
+// against the output limit, so the callers' 2,000-4,000 would truncate.
+const MIN_OUTPUT_TOKENS = 16000;
 
 interface CallAIOptions {
   supabase: SupabaseClient;
@@ -32,8 +32,7 @@ interface CallAIOptions {
   tier: Tier;
   maxTokens: number;
   system: string;
-  tool: AnthropicTool;
-  toolName: string;
+  tool: Tool;
   userMessage: string;
 }
 
@@ -46,26 +45,14 @@ interface ProviderConfig {
   apiKey: string;
 }
 
-function detectProvider(key: string): Provider {
-  if (key.startsWith("sk-ant-")) return "anthropic";
-  if (key.startsWith("AIza")) return "gemini";
-  return "openai";
+function providerError(error: string): CallAIError {
+  return { error, code: "PROVIDER_ERROR" };
 }
 
 async function resolveProvider(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ProviderConfig | null> {
-  if (process.env.OPENAI_API_KEY) {
-    return { provider: "openai", apiKey: process.env.OPENAI_API_KEY };
-  }
-  if (process.env.ANTHROPIC_API_KEY) {
-    return { provider: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY };
-  }
-  if (process.env.GEMINI_API_KEY) {
-    return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY };
-  }
-
   const { data } = await supabase
     .from("user_ai_settings")
     .select("ai_api_key")
@@ -74,23 +61,21 @@ async function resolveProvider(
 
   if (data?.ai_api_key) {
     const key = data.ai_api_key as string;
-    return { provider: detectProvider(key), apiKey: key };
+    const provider = detectProvider(key);
+    // A stored key we cannot route is an error to fix in settings, not a
+    // reason to bill the server key.
+    return provider ? { provider, apiKey: key } : null;
   }
 
-  return null;
+  return envProvider();
 }
 
-function anthropicToolToOpenAI(
-  tool: AnthropicTool,
-): OpenAI.Chat.Completions.ChatCompletionTool {
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description || "",
-      parameters: tool.input_schema as Record<string, unknown>,
-    },
-  };
+function parseJSON(text: string, provider: string, model: string): CallAIResult {
+  try {
+    return { data: JSON.parse(text), model };
+  } catch {
+    return providerError(`${provider} returned output that is not valid JSON`);
+  }
 }
 
 async function callAnthropic(
@@ -101,19 +86,30 @@ async function callAnthropic(
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
     model,
-    max_tokens: options.maxTokens,
+    max_tokens: Math.max(options.maxTokens, MIN_OUTPUT_TOKENS),
     system: options.system,
-    tools: [options.tool],
-    tool_choice: { type: "tool", name: options.toolName },
     messages: [{ role: "user", content: options.userMessage }],
+    output_config: {
+      effort: options.tier === "powerful" ? "medium" : "low",
+      format: { type: "json_schema", schema: options.tool.input_schema },
+    },
   });
 
-  const toolBlock = response.content.find((b) => b.type === "tool_use");
-  if (!toolBlock || toolBlock.type !== "tool_use") {
-    return { error: "AI failed to generate structured output", code: "PROVIDER_ERROR" };
+  if (response.stop_reason === "refusal") {
+    return providerError("Anthropic declined the request (stop_reason: refusal)");
+  }
+  if (
+    response.stop_reason === "max_tokens" ||
+    response.stop_reason === "model_context_window_exceeded"
+  ) {
+    return providerError(`Anthropic output was cut off (stop_reason: ${response.stop_reason})`);
   }
 
-  return { data: toolBlock.input, model };
+  // The response can begin with thinking blocks; the JSON is in the text.
+  const text = response.content
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("");
+  return parseJSON(text, "Anthropic", model);
 }
 
 async function callOpenAI(
@@ -122,28 +118,38 @@ async function callOpenAI(
   options: CallAIOptions,
 ): Promise<CallAIResult> {
   const client = new OpenAI({ apiKey });
+  // gpt-6-luna takes function calls in Chat Completions only with reasoning
+  // off, so the structured output comes from a JSON-schema response format.
   const response = await client.chat.completions.create({
     model,
-    max_completion_tokens: options.maxTokens,
+    max_completion_tokens: Math.max(options.maxTokens, MIN_OUTPUT_TOKENS),
     messages: [
       { role: "system", content: options.system },
       { role: "user", content: options.userMessage },
     ],
-    tools: [anthropicToolToOpenAI(options.tool)],
-    tool_choice: { type: "function", function: { name: options.toolName } },
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: options.tool.name,
+        description: options.tool.description,
+        schema: options.tool.input_schema,
+        strict: true,
+      },
+    },
   });
 
-  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
-  if (!toolCall || toolCall.type !== "function") {
-    return { error: "AI failed to generate structured output", code: "PROVIDER_ERROR" };
+  const choice = response.choices[0];
+  if (choice?.message?.refusal) {
+    return providerError("OpenAI declined the request (refusal)");
+  }
+  if (choice?.finish_reason === "length") {
+    return providerError("OpenAI output was cut off (finish_reason: length)");
+  }
+  if (!choice?.message?.content) {
+    return providerError("OpenAI returned no output");
   }
 
-  try {
-    const data = JSON.parse(toolCall.function.arguments);
-    return { data, model };
-  } catch {
-    return { error: "AI returned malformed output", code: "PROVIDER_ERROR" };
-  }
+  return parseJSON(choice.message.content, "OpenAI", model);
 }
 
 async function callGemini(
@@ -152,8 +158,6 @@ async function callGemini(
   options: CallAIOptions,
 ): Promise<CallAIResult> {
   const client = new GoogleGenAI({ apiKey });
-
-  const schema = options.tool.input_schema as Record<string, unknown>;
 
   const response = await client.models.generateContent({
     model,
@@ -165,13 +169,15 @@ async function callGemini(
         functionDeclarations: [{
           name: options.tool.name,
           description: options.tool.description || "",
-          parameters: schema,
+          // JSON Schema field: `parameters` takes an OpenAPI schema, which
+          // has no `additionalProperties`.
+          parametersJsonSchema: options.tool.input_schema,
         }],
       }],
       toolConfig: {
         functionCallingConfig: {
           mode: FunctionCallingConfigMode.ANY,
-          allowedFunctionNames: [options.toolName],
+          allowedFunctionNames: [options.tool.name],
         },
       },
     },
@@ -179,7 +185,7 @@ async function callGemini(
 
   const fc = response.functionCalls?.[0];
   if (!fc || !fc.args) {
-    return { error: "AI failed to generate structured output", code: "PROVIDER_ERROR" };
+    return providerError("AI failed to generate structured output");
   }
 
   return { data: fc.args, model };
@@ -206,9 +212,8 @@ export async function callAI(options: CallAIOptions): Promise<CallAIResult> {
     return await callOpenAI(config.apiKey, model, options);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown AI error";
-    return { error: msg, code: "PROVIDER_ERROR" };
+    return providerError(msg);
   }
 }
 
 export { resolveProvider, MODEL_MAP };
-export type { CallAIResult, CallAISuccess, CallAIError, Tier, Provider };

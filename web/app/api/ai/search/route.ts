@@ -1,17 +1,58 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/api/auth";
+import { aiErrorStatus } from "@/lib/api/ai-status";
 import { NextResponse } from "next/server";
 import { callAI } from "@/lib/ai/provider";
 import { vibeSearchTool } from "@/lib/ai/tools";
 import { VIBE_SEARCH_SYSTEM, buildVibeSearchUserPrompt } from "@/lib/ai/prompts";
 import { searchSpotify } from "@/lib/spotify/spotify";
+import { getPoster, tmdbGet, type TmdbResult } from "@/lib/tmdb/tmdb";
+import { mapBounded } from "@/lib/recs/map-bounded";
 import type { VibeSearchResult, VibeSearchResponse } from "@/lib/ai/types";
 
-export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const maxDuration = 60;
+
+const MAX_RESULTS = 12;
+const LOOKUP_CONCURRENCY = 5;
+
+/** The AI's pick matched to a real Spotify or TMDB entry, or null when the lookup fails or finds nothing. */
+async function resolveItem(mode: "music" | "film", item: VibeSearchResult): Promise<VibeSearchResult | null> {
+  try {
+    if (mode === "music") {
+      const searchQ = item.artist ? `${item.artist} ${item.title}` : item.title;
+      const spotifyResults = await searchSpotify(searchQ, item.type === "track" ? "track" : "album", 3);
+      const match = spotifyResults[0];
+      if (!match) return null;
+      return {
+        ...item,
+        spotify_id: match.id,
+        image_url: match.image_url,
+        title: match.name,
+        artist: match.artist,
+      };
+    }
+    const mediaType = item.type === "tv" ? "tv" : "movie";
+    const data = await tmdbGet<{ results?: TmdbResult[] }>(
+      `/search/${mediaType}`,
+      item.year ? { query: item.title, year: item.year } : { query: item.title },
+      { signal: AbortSignal.timeout(5000) },
+    );
+    const match = data.results?.[0];
+    if (!match) return null;
+    return {
+      ...item,
+      tmdb_id: match.id,
+      title: match.title || match.name || item.title,
+      poster_url: match.poster_path ? getPoster(match.poster_path, "w342") : null,
+    };
+  } catch {
+    return null;
   }
+}
+
+export async function POST(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   const body = await request.json();
   const { query, mode } = body as { query: string; mode: "music" | "film" };
@@ -20,30 +61,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing query or mode" }, { status: 400 });
   }
 
-  const { data: dnaData } = await supabase
-    .from("taste_dna")
-    .select("fingerprint")
-    .eq("user_id", user.id)
-    .single();
+  const recentQuery =
+    mode === "music"
+      ? supabase
+          .from("listen_logs")
+          .select("title, artist")
+          .eq("user_id", user.id)
+          .order("listened_date", { ascending: false })
+          .limit(10)
+          .then(({ data }) => (data || []).map((l) => `${l.title} by ${l.artist}`))
+      : supabase
+          .from("watch_logs")
+          .select("title")
+          .eq("user_id", user.id)
+          .order("watched_date", { ascending: false })
+          .limit(10)
+          .then(({ data }) => (data || []).map((w) => w.title));
 
-  let recentItems: string[] = [];
-  if (mode === "music") {
-    const { data } = await supabase
-      .from("listen_logs")
-      .select("title, artist")
-      .eq("user_id", user.id)
-      .order("listened_date", { ascending: false })
-      .limit(10);
-    recentItems = (data || []).map((l: any) => `${l.title} by ${l.artist}`);
-  } else {
-    const { data } = await supabase
-      .from("watch_logs")
-      .select("title")
-      .eq("user_id", user.id)
-      .order("watched_date", { ascending: false })
-      .limit(10);
-    recentItems = (data || []).map((w: any) => w.title);
-  }
+  const [{ data: dnaData }, recentItems] = await Promise.all([
+    supabase.from("taste_dna").select("fingerprint").eq("user_id", user.id).single(),
+    recentQuery,
+  ]);
 
   const userPrompt = buildVibeSearchUserPrompt({
     query,
@@ -59,69 +97,28 @@ export async function POST(request: Request) {
     maxTokens: 2000,
     system: VIBE_SEARCH_SYSTEM,
     tool: vibeSearchTool,
-    toolName: "vibe_search",
     userMessage: userPrompt,
   });
 
   if ("error" in result) {
-    const status = result.code === "NO_API_KEY" ? 402 : 500;
-    return NextResponse.json({ error: result.error, code: result.code }, { status });
+    return NextResponse.json({ error: result.error, code: result.code }, { status: aiErrorStatus(result.code) });
   }
 
   const aiResponse = result.data as VibeSearchResponse;
 
+  const allowedTypes: readonly string[] = mode === "music" ? ["album", "track"] : ["movie", "tv"];
+  const modeResults = (Array.isArray(aiResponse.results) ? aiResponse.results : []).filter(
+    (item) => allowedTypes.includes(item.type),
+  );
+
+  // Items whose lookup fails or finds nothing are skipped, and the next ones fill their place up to
+  // MAX_RESULTS. Each wave looks up only as many items as there are places left to fill.
   const validated: VibeSearchResult[] = [];
-
-  for (const item of aiResponse.results) {
-    if (validated.length >= 12) break;
-
-    if (mode === "music") {
-      try {
-        const searchQ = item.artist ? `${item.artist} ${item.title}` : item.title;
-        const spotifyResults = await searchSpotify(searchQ, item.type as "album" | "track", 3);
-        const match = spotifyResults[0];
-        if (match) {
-          validated.push({
-            ...item,
-            spotify_id: match.id,
-            image_url: match.image_url,
-            title: match.name,
-            artist: match.artist,
-          });
-        }
-      } catch {
-        // skip
-      }
-    } else {
-      try {
-        const mediaType = item.type === "tv" ? "tv" : "movie";
-        const tmdbRes = await fetch(
-          `https://api.themoviedb.org/3/search/${mediaType}?query=${encodeURIComponent(item.title)}${item.year ? `&year=${item.year}` : ""}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.TMDB_BEARER_TOKEN}`,
-            },
-            signal: AbortSignal.timeout(5000),
-          }
-        );
-        if (tmdbRes.ok) {
-          const data = await tmdbRes.json();
-          const match = data.results?.[0];
-          if (match) {
-            validated.push({
-              ...item,
-              tmdb_id: match.id,
-              title: match.title || match.name,
-              poster_url: match.poster_path
-                ? `https://image.tmdb.org/t/p/w342${match.poster_path}`
-                : null,
-            });
-          }
-        }
-      } catch {
-        // skip
-      }
-    }
+  for (let offset = 0; validated.length < MAX_RESULTS && offset < modeResults.length; ) {
+    const wave = modeResults.slice(offset, offset + (MAX_RESULTS - validated.length));
+    offset += wave.length;
+    const found = await mapBounded(wave, LOOKUP_CONCURRENCY, (item) => resolveItem(mode, item));
+    for (const f of found) if (f) validated.push(f);
   }
 
   return NextResponse.json({

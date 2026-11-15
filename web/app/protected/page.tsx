@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DashboardClient } from "@/components/dashboard-client";
+import { PageLoading } from "@/components/ui/loading";
 import { Suspense } from "react";
-import { Loader2 } from "lucide-react";
 
 async function DashboardLoader() {
   const supabase = await createClient();
@@ -20,13 +20,7 @@ async function DashboardLoader() {
 
 export default function ProtectedPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
-      }
-    >
+    <Suspense fallback={<PageLoading label="Loading your diary" />}>
       <DashboardLoader />
     </Suspense>
   );

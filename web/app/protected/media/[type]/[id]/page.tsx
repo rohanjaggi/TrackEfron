@@ -1,118 +1,111 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
-  Star,
-  Clock,
-  Calendar,
-  Tv,
-  Film,
-  Loader2,
-  Users,
+  BookmarkMinus,
   BookmarkPlus,
-  Play,
-  Pencil,
   Check,
-  Trash2,
-  ListPlus,
   Disc3,
+  Film,
+  ListPlus,
   Music2,
+  Pencil,
+  Plus,
+  RotateCw,
+  Tv,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import {
+  buildFilmInfo,
+  buildLogView,
+  buildMusicInfo,
+  buildWhereToWatch,
+  formatDate,
+  type MediaDetail,
+  type MusicDetail,
+  type WatchProviders,
+} from "@/components/media/media-info";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Skeleton } from "@/components/ui/loading";
+import { EmptyState, LeaderRow, Notice, SectionHeader } from "@/components/ui/page";
+import { Stars } from "@/components/ui/stars";
+import { useMediaUserData } from "@/hooks/use-media-user-data";
+import { isMusicType } from "@/lib/media";
+import { useSyncMode } from "@/lib/mode-context";
+import { cn } from "@/lib/utils";
 
-type Genre = { id: number; name: string };
+function SpotifyMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+    </svg>
+  );
+}
 
-type MediaDetail = {
-  id: number;
-  overview: string;
-  poster_url: string | null;
-  backdrop_url: string | null;
-  genres: Genre[];
-  vote_average: number;
-  vote_count: number;
-  tagline?: string;
-  status: string;
-  credits?: {
-    cast: {
-      id: number;
-      name: string;
-      character: string;
-      profile_path: string | null;
-    }[];
-  };
-  title?: string;
-  release_date?: string;
-  runtime?: number;
-  name?: string;
-  first_air_date?: string;
-  last_air_date?: string;
-  number_of_seasons?: number;
-  number_of_episodes?: number;
-  episode_run_time?: number[];
-  created_by?: { id: number; name: string }[];
-  networks?: { id: number; name: string; logo_path: string | null }[];
-};
+/** Goes back when there is history to go back to; otherwise it is a plain link to Discover. */
+function BackLink() {
+  const router = useRouter();
+  return (
+    <Button asChild variant="ghost" size="sm" className="-ml-3 mb-6">
+      <Link
+        href="/protected/discover"
+        onClick={(e) => {
+          if (window.history.length > 1) {
+            e.preventDefault();
+            router.back();
+          }
+        }}
+      >
+        <ArrowLeft aria-hidden="true" /> Back
+      </Link>
+    </Button>
+  );
+}
 
-type MusicDetail = {
-  id: string;
-  name: string;
-  artist: string;
-  album_name: string;
-  image_url: string | null;
-  release_date: string;
-  type: "album" | "track";
-};
-
-type UserWatchLog = {
-  id: string;
-  rating: number;
-  review: string | null;
-  watched_date: string | null;
-  plot_rating: number | null;
-  cinematography_rating: number | null;
-  acting_rating: number | null;
-  soundtrack_rating: number | null;
-  pacing_rating: number | null;
-  casting_rating: number | null;
-};
-
-type UserListenLog = {
-  id: string;
-  rating: number;
-  review: string | null;
-  listened_date: string | null;
-  lyrics_rating: number | null;
-  production_rating: number | null;
-  vocals_rating: number | null;
-  melody_rating: number | null;
-  replay_rating: number | null;
-  energy_rating: number | null;
-};
-
-type UserListInfo = {
-  id: string;
-  name: string;
-  emoji: string | null;
-  hasItem: boolean;
-};
-
-type WatchProvider = {
-  logo_path: string;
-  provider_id: number;
-  provider_name: string;
-};
-
-type WatchProviders = {
-  flatrate?: WatchProvider[];
-  rent?: WatchProvider[];
-  buy?: WatchProvider[];
-  link?: string;
-};
+/** Placeholder in the shape of the page: artwork beside a title block. */
+function DetailSkeleton({ square }: { square: boolean }) {
+  return (
+    <div role="status" aria-label="Loading details">
+      <Skeleton className="mb-6 h-8 w-40" />
+      <div className="grid gap-8 md:grid-cols-[auto,minmax(0,1fr)] md:gap-12">
+        <Skeleton className={square ? "aspect-square w-56 md:w-72" : "aspect-[2/3] w-44 md:w-64"} />
+        <div className="min-w-0">
+          <Skeleton className="h-12 w-3/4" />
+          <Skeleton className="mt-4 h-4 w-1/2" />
+          <Skeleton className="mt-5 h-3 w-1/3" />
+          <div className="mt-5 flex gap-2">
+            <Skeleton className="h-5 w-14" />
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-16" />
+          </div>
+          <div className="mt-8 flex flex-wrap gap-2.5">
+            <Skeleton className="h-9 w-36" />
+            <Skeleton className="h-9 w-44" />
+          </div>
+          <div className="mt-8 flex max-w-md flex-col gap-3">
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        </div>
+      </div>
+      <Skeleton className="mt-16 h-6 w-32" />
+      <Skeleton className="mt-6 h-3 w-full max-w-2xl" />
+      <Skeleton className="mt-3 h-3 w-full max-w-2xl" />
+      <Skeleton className="mt-3 h-3 w-2/3 max-w-xl" />
+    </div>
+  );
+}
 
 export default function MediaDetailPage() {
   return (
@@ -124,51 +117,33 @@ export default function MediaDetailPage() {
 
 function MediaDetailContent() {
   const params = useParams();
-  const router = useRouter();
   const type = params.type as string;
   const id = params.id as string;
 
-  const isMusic = type === "album" || type === "track";
+  const isMusic = isMusicType(type);
   const isFilm = type === "movie" || type === "tv";
+  const invalidType = !isFilm && !isMusic;
+
+  // The page follows the item: its domain decides the app mode.
+  useSyncMode(isFilm ? "film" : isMusic ? "music" : null);
 
   const [detail, setDetail] = useState<MediaDetail | null>(null);
   const [musicDetail, setMusicDetail] = useState<MusicDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // User-specific state (film)
-  const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
-  const [isOnWatchlist, setIsOnWatchlist] = useState(false);
-  const [watchlistItemId, setWatchlistItemId] = useState<string | null>(null);
-  const [userDataLoading, setUserDataLoading] = useState(true);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [watchlistLoading, setWatchlistLoading] = useState(false);
-
-  // User-specific state (music)
-  const [listenLog, setListenLog] = useState<UserListenLog | null>(null);
-  const [isInQueue, setIsInQueue] = useState(false);
-  const [queueItemId, setQueueItemId] = useState<string | null>(null);
-
-  // Lists state
-  const [userLists, setUserLists] = useState<UserListInfo[]>([]);
-  const [showListDropdown, setShowListDropdown] = useState(false);
-  const [togglingListId, setTogglingListId] = useState<string | null>(null);
-  const listDropdownRef = useRef<HTMLDivElement>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Watch providers (film only)
   const [providers, setProviders] = useState<WatchProviders | null>(null);
 
   // Fetch detail
   useEffect(() => {
-    if (!isFilm && !isMusic) {
-      setError("Invalid media type");
-      setLoading(false);
-      return;
-    }
+    if (!isFilm && !isMusic) return;
 
     async function fetchDetail() {
       try {
         setLoading(true);
+        setLoadFailed(false);
         if (isMusic) {
           const res = await fetch(`/api/spotify?action=detail&id=${id}&type=${type}`);
           if (!res.ok) throw new Error("Failed to fetch details");
@@ -189,995 +164,358 @@ function MediaDetailContent() {
             setProviders(regionData);
           }
         }
-      } catch (err: any) {
-        setError(err.message);
+      } catch {
+        setLoadFailed(true);
       } finally {
         setLoading(false);
       }
     }
     fetchDetail();
-  }, [type, id, isFilm, isMusic]);
+  }, [type, id, isFilm, isMusic, reloadKey]);
 
-  // Fetch user data
-  useEffect(() => {
-    async function fetchUserData() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setUserDataLoading(false); return; }
+  const displayTitle = isMusic
+    ? musicDetail?.name || "Unknown"
+    : detail?.title || detail?.name || "Unknown";
 
-        const listMode = isMusic ? "music" : "film";
+  const {
+    watchLog,
+    listenLog,
+    userDataLoading,
+    userDataFailed,
+    isSaved,
+    savedPlace,
+    saveBusy,
+    userLists,
+    togglingListId,
+    handleSave,
+    handleUnsave,
+    handleDeleteLog,
+    handleToggleList,
+  } = useMediaUserData({ type, id, isMusic, displayTitle, detail, musicDetail });
 
-        if (isMusic) {
-          const [logRes, queueRes] = await Promise.all([
-            supabase
-              .from("listen_logs")
-              .select("id, rating, review, listened_date, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating")
-              .eq("spotify_id", id)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            supabase
-              .from("music_queue")
-              .select("id")
-              .eq("spotify_id", id)
-              .maybeSingle(),
-          ]);
-
-          if (logRes.data) setListenLog(logRes.data);
-          if (queueRes.data) {
-            setIsInQueue(true);
-            setQueueItemId(queueRes.data.id);
-          }
-        } else {
-          const tmdbId = Number(id);
-          const [logRes, wlRes] = await Promise.all([
-            supabase
-              .from("watch_logs")
-              .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
-              .eq("tmdb_id", tmdbId)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            supabase
-              .from("watchlist")
-              .select("id")
-              .eq("tmdb_id", tmdbId)
-              .maybeSingle(),
-          ]);
-
-          if (logRes.data) setWatchLog(logRes.data);
-          if (wlRes.data) {
-            setIsOnWatchlist(true);
-            setWatchlistItemId(wlRes.data.id);
-          }
+  if (invalidType) {
+    return (
+      <EmptyState
+        icon={Film}
+        title="There's nothing at this address."
+        description="This link doesn't point to a film, a show, an album or a track."
+        action={
+          <Button asChild>
+            <Link href="/protected/discover">
+              <ArrowLeft aria-hidden="true" /> Back to Discover
+            </Link>
+          </Button>
         }
-
-        // Fetch lists filtered by mode
-        const { data: allLists } = await supabase
-          .from("lists")
-          .select("id, name, emoji")
-          .eq("list_type", listMode)
-          .order("updated_at", { ascending: false });
-
-        if (allLists) {
-          // Check which lists already contain this item
-          const matchCol = isMusic ? "spotify_id" : "tmdb_id";
-          const matchVal = isMusic ? id : Number(id);
-          const { data: listItemsData } = await supabase
-            .from("list_items")
-            .select("list_id")
-            .eq(matchCol, matchVal);
-
-          const listsWithItem = new Set((listItemsData || []).map((li: any) => li.list_id));
-
-          setUserLists(
-            allLists.map((l) => ({
-              id: l.id,
-              name: l.name,
-              emoji: l.emoji,
-              hasItem: listsWithItem.has(l.id),
-            }))
-          );
-        }
-      } catch {
-        // silently fail
-      } finally {
-        setUserDataLoading(false);
-      }
-    }
-    fetchUserData();
-  }, [id, isMusic]);
-
-  // Film: add/remove watchlist
-  async function handleAddToWatchlist() {
-    if (!detail) return;
-    setWatchlistLoading(true);
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const displayTitle = detail.title || detail.name || "Unknown";
-      const { data, error } = await supabase
-        .from("watchlist")
-        .insert({
-          user_id: user.id,
-          tmdb_id: Number(id),
-          title: displayTitle,
-          media_type: type,
-          poster_url: detail.poster_url,
-        })
-        .select("id")
-        .single();
-      if (error?.code === "23505") {
-        setIsOnWatchlist(true);
-      } else if (data) {
-        setIsOnWatchlist(true);
-        setWatchlistItemId(data.id);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }
-
-  async function handleRemoveFromWatchlist() {
-    if (!watchlistItemId) return;
-    setWatchlistLoading(true);
-    try {
-      const supabase = createClient();
-      await supabase.from("watchlist").delete().eq("id", watchlistItemId);
-      setIsOnWatchlist(false);
-      setWatchlistItemId(null);
-    } catch {
-      // silently fail
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }
-
-  // Music: add/remove queue
-  async function handleAddToQueue() {
-    if (!musicDetail) return;
-    setWatchlistLoading(true);
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data, error } = await supabase
-        .from("music_queue")
-        .insert({
-          user_id: user.id,
-          spotify_id: id,
-          media_type: type,
-          title: musicDetail.name,
-          artist: musicDetail.artist,
-          image_url: musicDetail.image_url,
-        })
-        .select("id")
-        .single();
-      if (error?.code === "23505") {
-        setIsInQueue(true);
-      } else if (data) {
-        setIsInQueue(true);
-        setQueueItemId(data.id);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }
-
-  async function handleRemoveFromQueue() {
-    if (!queueItemId) return;
-    setWatchlistLoading(true);
-    try {
-      const supabase = createClient();
-      await supabase.from("music_queue").delete().eq("id", queueItemId);
-      setIsInQueue(false);
-      setQueueItemId(null);
-    } catch {
-      // silently fail
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }
-
-  // Delete log
-  async function handleDeleteLog() {
-    if (isMusic && listenLog) {
-      try {
-        const supabase = createClient();
-        await supabase.from("listen_logs").delete().eq("id", listenLog.id);
-        setListenLog(null);
-        setConfirmDelete(false);
-      } catch { /* silently fail */ }
-    } else if (watchLog) {
-      try {
-        const supabase = createClient();
-        await supabase.from("watch_logs").delete().eq("id", watchLog.id);
-        setWatchLog(null);
-        setConfirmDelete(false);
-      } catch { /* silently fail */ }
-    }
-  }
-
-  // Close list dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target as Node)) {
-        setShowListDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  async function handleToggleList(listId: string, currentlyHasItem: boolean) {
-    setTogglingListId(listId);
-    try {
-      const supabase = createClient();
-      if (currentlyHasItem) {
-        if (isMusic) {
-          await supabase
-            .from("list_items")
-            .delete()
-            .eq("list_id", listId)
-            .eq("spotify_id", id);
-        } else {
-          await supabase
-            .from("list_items")
-            .delete()
-            .eq("list_id", listId)
-            .eq("tmdb_id", Number(id));
-        }
-      } else {
-        if (isMusic) {
-          const { error } = await supabase.from("list_items").insert({
-            list_id: listId,
-            spotify_id: id,
-            title: musicDetail?.name || "Unknown",
-            artist: musicDetail?.artist || null,
-            media_type: type,
-            image_url: musicDetail?.image_url || null,
-          });
-          if (error && error.code !== "23505") throw error;
-        } else {
-          const displayTitle = detail?.title || detail?.name || "Unknown";
-          const { error } = await supabase.from("list_items").insert({
-            list_id: listId,
-            tmdb_id: Number(id),
-            title: displayTitle,
-            media_type: type,
-            poster_url: detail?.poster_url || null,
-          });
-          if (error && error.code !== "23505") throw error;
-        }
-      }
-      setUserLists((prev) =>
-        prev.map((l) =>
-          l.id === listId ? { ...l, hasItem: !currentlyHasItem } : l
-        )
-      );
-    } catch {
-      // silently fail
-    } finally {
-      setTogglingListId(null);
-    }
+      />
+    );
   }
 
   if (loading) {
+    return <DetailSkeleton square={isMusic} />;
+  }
+
+  if (loadFailed || (isMusic ? !musicDetail : !detail)) {
     return (
-      <div className="flex items-center justify-center min-h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
+      <EmptyState
+        icon={isMusic ? Disc3 : Film}
+        title={loadFailed ? "We couldn't load this one." : "We couldn't find this one."}
+        description={
+          loadFailed
+            ? "The details didn't come through. Check your connection and try again, or head back to Discover."
+            : "It may have been removed. Head back to Discover to find something else."
+        }
+        action={
+          <>
+            <Button onClick={() => setReloadKey((k) => k + 1)}>
+              <RotateCw aria-hidden="true" /> Try again
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/protected/discover">
+                <ArrowLeft aria-hidden="true" /> Back to Discover
+              </Link>
+            </Button>
+          </>
+        }
+      />
     );
   }
 
-  if (error || (!detail && !musicDetail)) {
-    return (
-      <div className="flex flex-col gap-4 max-w-3xl mx-auto">
-        <Link
-          href="/protected/discover"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Discover
-        </Link>
-        <div className="border-2 border-destructive bg-destructive/10 p-6 text-destructive">
-          {error || "Media not found"}
-        </div>
-      </div>
-    );
-  }
-
-  if (isMusic && musicDetail) {
-    return <MusicDetailView
-      musicDetail={musicDetail}
-      type={type as "album" | "track"}
-      id={id}
-      listenLog={listenLog}
-      isInQueue={isInQueue}
-      userDataLoading={userDataLoading}
-      watchlistLoading={watchlistLoading}
-      confirmDelete={confirmDelete}
-      setConfirmDelete={setConfirmDelete}
-      userLists={userLists}
-      showListDropdown={showListDropdown}
-      setShowListDropdown={setShowListDropdown}
-      togglingListId={togglingListId}
-      listDropdownRef={listDropdownRef}
-      router={router}
-      onAddToQueue={handleAddToQueue}
-      onRemoveFromQueue={handleRemoveFromQueue}
-      onDeleteLog={handleDeleteLog}
-      onToggleList={handleToggleList}
-    />;
-  }
-
-  // ─── Film Detail View ───
-  const displayTitle = detail!.title || detail!.name || "Unknown";
-  const year = (detail!.release_date || detail!.first_air_date || "").slice(0, 4);
+  // ─── What this page shows, worked out once for either kind of work ───
   const isMovie = type === "movie";
-  const runtime = isMovie
-    ? detail!.runtime
-      ? `${detail!.runtime} min`
-      : null
-    : detail!.episode_run_time?.length
-      ? `${detail!.episode_run_time[0]} min/ep`
-      : null;
-  const topCast = detail!.credits?.cast?.slice(0, 6) ?? [];
+  const isAlbum = type === "album";
+  const FallbackIcon = isMusic ? (isAlbum ? Disc3 : Music2) : isMovie ? Film : Tv;
+  const image = isMusic ? musicDetail!.image_url : detail!.poster_url;
+  const lead = isMusic ? musicDetail!.artist : detail!.tagline;
+  const overview = isMusic ? "" : detail!.overview;
+  const genres = isMusic ? [] : detail!.genres ?? [];
+  const topCast = isMusic ? [] : detail!.credits?.cast?.slice(0, 6) ?? [];
+  const typeLabel = isMusic ? (isAlbum ? "Album" : "Track") : isMovie ? "Film" : "TV";
 
-  const categoryRatings = [
-    { label: "Plot", value: watchLog?.plot_rating },
-    { label: "Cinematography", value: watchLog?.cinematography_rating },
-    { label: "Acting", value: watchLog?.acting_rating },
-    { label: "Soundtrack", value: watchLog?.soundtrack_rating },
-    { label: "Pacing", value: watchLog?.pacing_rating },
-    { label: "Casting", value: watchLog?.casting_rating },
-  ].filter((c) => c.value && c.value > 0);
+  const { meta, facts } = isMusic ? buildMusicInfo(musicDetail!, isAlbum) : buildFilmInfo(detail!, isMovie);
+  const whereToWatch = !isMusic && providers ? buildWhereToWatch(providers) : [];
+
+  const logRow = isMusic ? listenLog : watchLog;
+  const log = logRow && buildLogView(logRow, isMusic);
+  const categoryRatings = (log?.categories ?? []).filter((c) => c.value && c.value > 0);
 
   return (
-    <div className="flex flex-col gap-0 max-w-5xl mx-auto w-full">
-      {/* Back button */}
-      <div className="mb-6">
-        <Link
-          href="/protected/discover"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Discover
-        </Link>
-      </div>
+    <div className="flex flex-col gap-16">
+      <div>
+        <BackLink />
 
-      {/* Backdrop */}
-      {detail!.backdrop_url && (
-        <div className="relative w-full h-48 md:h-72 overflow-hidden border-2 border-border mb-8">
-          <img
-            src={detail!.backdrop_url}
-            alt={displayTitle}
-            className="w-full h-full object-cover opacity-60"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
-        </div>
-      )}
-
-      {/* Main content grid */}
-      <div className="grid md:grid-cols-[auto,1fr] gap-8">
-        {/* Poster column */}
-        <div className="flex flex-col gap-4 w-44 md:w-56">
-          <div className="border-2 border-border overflow-hidden shrink-0">
-            {detail!.poster_url ? (
-              <img
-                src={detail!.poster_url}
-                alt={displayTitle}
-                className="w-full object-cover"
-              />
-            ) : (
-              <div className="aspect-[2/3] bg-muted flex items-center justify-center">
-                {isMovie
-                  ? <Film className="w-12 h-12 text-muted-foreground" />
-                  : <Tv className="w-12 h-12 text-muted-foreground" />}
-              </div>
-            )}
+        {/* Backdrop: a quiet strip of its own. No text ever sits on it. */}
+        {!isMusic && detail!.backdrop_url && (
+          <div className="mb-10 h-32 overflow-hidden border border-border sm:h-44 md:h-56">
+            { }
+            <img
+              src={detail!.backdrop_url}
+              alt=""
+              className="artwork h-full w-full object-cover opacity-60"
+            />
           </div>
+        )}
 
-          {/* Action Buttons (not watched) */}
-          {!userDataLoading && !watchLog && (
-            <div className="flex flex-col gap-2">
-              <Button
-                className="w-full border-2"
-                onClick={() => router.push("/protected/log")}
-              >
-                <Play className="w-4 h-4 mr-2" /> Log Watch
-              </Button>
-              {isOnWatchlist ? (
-                <Button
-                  variant="outline"
-                  className="w-full border-2 text-muted-foreground"
-                  onClick={handleRemoveFromWatchlist}
-                  disabled={watchlistLoading}
-                >
-                  <Check className="w-4 h-4 mr-2" /> On Watchlist
-                </Button>
+        <div className="grid gap-8 md:grid-cols-[auto,minmax(0,1fr)] md:gap-12">
+          {/* Artwork: the page's one feature object */}
+          <div className={cn("light-leak", isMusic ? "w-56 md:w-72" : "w-44 md:w-64")}>
+            <div className="frame frame-accent frame-raised ticks">
+              {image ? (
+                 
+                <img
+                  src={image}
+                  alt=""
+                  className={cn(
+                    "artwork-live block w-full object-cover",
+                    isMusic ? "aspect-square" : "aspect-[2/3]",
+                  )}
+                />
               ) : (
-                <Button
-                  variant="outline"
-                  className="w-full border-2"
-                  onClick={handleAddToWatchlist}
-                  disabled={watchlistLoading}
+                <div
+                  className={cn(
+                    "flex items-center justify-center bg-surface-2",
+                    isMusic ? "aspect-square" : "aspect-[2/3]",
+                  )}
                 >
-                  <BookmarkPlus className="w-4 h-4 mr-2" /> Add to Watchlist
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Add to List */}
-          {!userDataLoading && userLists.length > 0 && (
-            <div className="relative" ref={listDropdownRef}>
-              <Button
-                variant="outline"
-                className="w-full border-2"
-                onClick={() => setShowListDropdown(!showListDropdown)}
-              >
-                <ListPlus className="w-4 h-4 mr-2" /> Add to List
-              </Button>
-              {showListDropdown && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 border-2 border-border bg-card shadow-lg max-h-60 overflow-auto">
-                  {userLists.map((list) => (
-                    <button
-                      key={list.id}
-                      type="button"
-                      onClick={() => handleToggleList(list.id, list.hasItem)}
-                      disabled={togglingListId === list.id}
-                      className="w-full text-left px-4 py-3 hover:bg-muted flex items-center gap-3 transition-colors text-sm"
-                    >
-                      <span className="text-lg">{list.emoji || "🎬"}</span>
-                      <span className="flex-1 truncate">{list.name}</span>
-                      {togglingListId === list.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
-                      ) : list.hasItem ? (
-                        <Check className="w-4 h-4 text-primary shrink-0" />
-                      ) : null}
-                    </button>
-                  ))}
+                  <FallbackIcon className="size-12 text-dim" aria-hidden="true" />
                 </div>
               )}
             </div>
-          )}
-
-          {/* Where to Watch */}
-          {providers && (providers.flatrate || providers.rent || providers.buy) && (() => {
-            const seen = new Set<number>();
-            const allProviders: (WatchProvider & { category: string })[] = [];
-            for (const [cat, list] of [
-              ["Stream", providers.flatrate],
-              ["Rent", providers.rent],
-              ["Buy", providers.buy],
-            ] as [string, WatchProvider[] | undefined][]) {
-              if (!list) continue;
-              for (const p of list) {
-                if (!seen.has(p.provider_id)) {
-                  seen.add(p.provider_id);
-                  allProviders.push({ ...p, category: cat });
-                }
-              }
-            }
-            if (allProviders.length === 0) return null;
-            return (
-              <div className="border-2 border-border p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider">Where to Watch</h3>
-                  <a
-                    href={`https://www.justwatch.com/us/${isMovie ? "movie" : "tv-show"}/${displayTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <span className="font-semibold text-[#EEC12F]">JustWatch</span>
-                  </a>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {allProviders.map((p) => (
-                    <img
-                      key={p.provider_id}
-                      src={`https://image.tmdb.org/t/p/w154${p.logo_path}`}
-                      alt={p.provider_name}
-                      title={`${p.provider_name} (${p.category})`}
-                      className="w-8 h-8 rounded border border-border object-cover"
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Info column */}
-        <div className="flex flex-col gap-6">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="outline" className="text-xs border-2">
-                {isMovie ? "Movie" : "TV Show"}
-              </Badge>
-              {detail!.status && (
-                <Badge variant="secondary" className="text-xs">
-                  {detail!.status}
-                </Badge>
-              )}
-            </div>
-            <h1 className="font-display text-3xl md:text-4xl font-bold mb-1">{displayTitle}</h1>
-            {detail!.tagline && (
-              <p className="text-muted-foreground italic text-lg">&ldquo;{detail!.tagline}&rdquo;</p>
-            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            {year && (
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                {year}
-              </span>
+          {/* Title block */}
+          <div className="min-w-0">
+            <h1 className="t-display break-words">{displayTitle}</h1>
+            {lead && (
+              <p className={cn("t-prose mt-3 text-muted-foreground", !isMusic && "italic")}>
+                {lead}
+              </p>
             )}
-            {runtime && (
-              <span className="flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                {runtime}
-              </span>
-            )}
-            {detail!.vote_average > 0 && (
-              <span className="flex items-center gap-1.5">
-                <Star className="w-4 h-4 text-accent fill-accent" />
-                <span className="font-semibold text-foreground">
-                  {detail!.vote_average.toFixed(1)}
-                </span>
-                <span>({detail!.vote_count.toLocaleString()} votes)</span>
-              </span>
-            )}
-            {!isMovie && detail!.number_of_seasons != null && (
-              <span className="flex items-center gap-1.5">
-                <Tv className="w-4 h-4" />
-                {detail!.number_of_seasons} season{detail!.number_of_seasons !== 1 ? "s" : ""}
-                {detail!.number_of_episodes != null &&
-                  ` · ${detail!.number_of_episodes} episodes`}
-              </span>
-            )}
-          </div>
+            {meta.length > 0 && <p className="t-meta mt-4">{meta.join(" · ")}</p>}
 
-          {detail!.genres?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {detail!.genres.map((g) => (
-                <Badge key={g.id} variant="outline" className="border-2">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge variant="outline">{typeLabel}</Badge>
+              {!isMusic && detail!.status && <Badge variant="secondary">{detail!.status}</Badge>}
+              {genres.map((g) => (
+                <Badge key={g.id} variant="outline">
                   {g.name}
                 </Badge>
               ))}
-            </div>
-          )}
-
-          {detail!.overview && (
-            <div className="border-2 border-border p-4 bg-muted/10">
-              <h2 className="font-semibold mb-2">Overview</h2>
-              <p className="text-muted-foreground leading-relaxed">{detail!.overview}</p>
-            </div>
-          )}
-
-          {!isMovie && (
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              {detail!.created_by?.length ? (
-                <div>
-                  <span className="font-semibold block mb-1">Created by</span>
-                  <span className="text-muted-foreground">
-                    {detail!.created_by.map((c) => c.name).join(", ")}
-                  </span>
-                </div>
-              ) : null}
-              {detail!.networks?.length ? (
-                <div>
-                  <span className="font-semibold block mb-1">Network</span>
-                  <span className="text-muted-foreground">
-                    {detail!.networks.map((n) => n.name).join(", ")}
-                  </span>
-                </div>
-              ) : null}
-              {detail!.last_air_date && (
-                <div>
-                  <span className="font-semibold block mb-1">Last aired</span>
-                  <span className="text-muted-foreground">
-                    {detail!.last_air_date.slice(0, 4)}
-                  </span>
-                </div>
+              {!userDataLoading && !log && isSaved && (
+                <Badge>
+                  <Check className="size-3" aria-hidden="true" />
+                  {isMusic ? "In your queue" : "On your watchlist"}
+                </Badge>
               )}
             </div>
-          )}
+
+            {userDataFailed && (
+              <Notice tone="error" title="Couldn't load your activity for this title" className="mt-6 max-w-md">
+                Whether you&apos;ve logged it or saved it isn&apos;t shown. Reload the page to try again.
+              </Notice>
+            )}
+
+            {/* Actions: one solid, the rest outline */}
+            <div className="mt-8 flex flex-wrap items-center gap-2.5">
+              {userDataLoading ? (
+                <>
+                  <Skeleton className="h-9 w-36" />
+                  <Skeleton className="h-9 w-44" />
+                </>
+              ) : (
+                <>
+                  {log ? (
+                    <Button asChild>
+                      <Link href={`/protected/log?edit=${log.id}&kind=${isMusic ? "music" : "film"}`}>
+                        <Pencil aria-hidden="true" /> Edit your log
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button asChild>
+                      <Link
+                        href={`/protected/log?type=${type}&id=${encodeURIComponent(id)}&title=${encodeURIComponent(displayTitle)}`}
+                      >
+                        <Plus aria-hidden="true" /> {isMusic ? "Log a listen" : "Log a watch"}
+                      </Link>
+                    </Button>
+                  )}
+
+                  {!log && !userDataFailed &&
+                    (isSaved ? (
+                      <ConfirmButton
+                        size="default"
+                        icon={BookmarkMinus}
+                        label={`Remove from ${savedPlace}`}
+                        confirmLabel="Confirm remove"
+                        onConfirm={handleUnsave}
+                      />
+                    ) : (
+                      <Button variant="outline" onClick={handleSave} disabled={saveBusy}>
+                        <BookmarkPlus aria-hidden="true" /> Add to {savedPlace}
+                      </Button>
+                    ))}
+
+                  {!userDataFailed && userLists.length > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline">
+                          <ListPlus aria-hidden="true" /> Add to list
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
+                        {userLists.map((list) => (
+                          <DropdownMenuCheckboxItem
+                            key={list.id}
+                            checked={list.hasItem}
+                            disabled={togglingListId === list.id}
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={() => handleToggleList(list)}
+                          >
+                            {list.emoji && (
+                              <span className="mr-2 shrink-0" aria-hidden="true">
+                                {list.emoji}
+                              </span>
+                            )}
+                            <span className="truncate">{list.name}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  {isMusic && (
+                    <Button asChild variant="outline">
+                      <a
+                        href={`https://open.spotify.com/${type}/${id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <SpotifyMark className="text-[#1DB954]" /> Open in Spotify
+                      </a>
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {facts.length > 0 && (
+              <div className="mt-8 max-w-md">
+                {facts.map((f) => (
+                  <LeaderRow key={f.label} label={f.label} value={f.value} />
+                ))}
+              </div>
+            )}
+
+            {whereToWatch.length > 0 && (
+              <div className="mt-8 max-w-md">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h2 className="t-label">Where to watch</h2>
+                  {providers?.link && (
+                    <a
+                      href={providers.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="t-meta underline underline-offset-4 transition-colors duration-cut ease-mech hover:text-primary"
+                    >
+                      See all options
+                    </a>
+                  )}
+                </div>
+                <ul className="flex flex-wrap gap-2">
+                  {whereToWatch.map((p) => (
+                    <li key={p.provider_id}>
+                      { }
+                      <img
+                        src={`https://image.tmdb.org/t/p/w154${p.logo_path}`}
+                        alt={`${p.provider_name} (${p.category})`}
+                        title={`${p.provider_name} (${p.category})`}
+                        className="h-9 w-9 border border-border object-cover"
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Cast */}
-      {topCast.length > 0 && (
-        <div className="mt-8">
-          <h2 className="font-semibold mb-3 flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Top Cast
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-            {topCast.map((member) => (
-              <div
-                key={member.id}
-                className="border-2 border-border p-3 text-sm"
-              >
-                <div className="font-medium truncate">{member.name}</div>
-                <div className="text-muted-foreground text-xs truncate">
-                  {member.character}
-                </div>
+      {overview && (
+        <section>
+          <SectionHeader title="Overview" />
+          <p className="t-prose">{overview}</p>
+        </section>
+      )}
+
+      {!userDataLoading && log && (
+        <section>
+          <SectionHeader
+            title="Your log"
+            action={
+              <ConfirmButton
+                label="Delete log"
+                confirmLabel="Confirm delete"
+                onConfirm={handleDeleteLog}
+              />
+            }
+          />
+          <div className="grid gap-10 md:grid-cols-[minmax(0,1fr),280px] md:gap-12">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <Stars value={log.rating} size={20} showValue />
+                {log.date && (
+                  <span className="t-meta">
+                    {isMusic ? "Listened" : "Watched"} {formatDate(log.date)}
+                  </span>
+                )}
               </div>
+              {log.review && <p className="t-prose mt-5">{log.review}</p>}
+            </div>
+
+            {categoryRatings.length > 0 && (
+              <div>
+                <h3 className="t-label mb-2">Category ratings</h3>
+                {categoryRatings.map((c) => (
+                  <LeaderRow key={c.label} label={c.label} value={<Stars value={c.value} />} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {topCast.length > 0 && (
+        <section>
+          <SectionHeader title="Top cast" />
+          <div className="grid gap-x-12 md:grid-cols-2">
+            {topCast.map((member) => (
+              <LeaderRow
+                key={member.id}
+                label={member.character || "Cast"}
+                value={member.name}
+              />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Your Review */}
-      {!userDataLoading && watchLog && (
-        <div className="border-2 border-primary/30 bg-primary/5 p-6 md:p-8 mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-sm uppercase tracking-wider text-primary">Your Review</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-2"
-                onClick={() => router.push(`/protected/log?edit=${watchLog.id}`)}
-              >
-                <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
-              </Button>
-              {confirmDelete ? (
-                <>
-                  <Button size="sm" variant="destructive" onClick={handleDeleteLog}>Confirm</Button>
-                  <Button size="sm" variant="outline" className="border-2" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-                </>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-[1fr,auto] gap-6 md:gap-10">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <Star className="w-5 h-5 text-accent fill-accent" />
-                  <span className="font-bold text-xl">{watchLog.rating}</span>
-                  <span className="text-muted-foreground text-sm">/5</span>
-                </div>
-                {watchLog.watched_date && (
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Calendar className="w-3.5 h-3.5" />
-                    Watched {new Date(watchLog.watched_date).toLocaleDateString()}
-                  </div>
-                )}
-              </div>
-              {watchLog.review && (
-                <p className="text-muted-foreground leading-relaxed">{watchLog.review}</p>
-              )}
-            </div>
-
-            {categoryRatings.length > 0 && (
-              <div className="space-y-2 md:border-l md:border-border md:pl-8 min-w-[200px]">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Category Ratings</h4>
-                {categoryRatings.map((c) => (
-                  <div key={c.label} className="flex items-center justify-between gap-4 text-sm">
-                    <span className="text-muted-foreground">{c.label}</span>
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Star
-                          key={s}
-                          className={`w-3.5 h-3.5 ${
-                            s <= c.value!
-                              ? "text-accent fill-accent"
-                              : "text-muted-foreground/20"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Music Detail View ──────────────────────────────────────────────────────────
-
-function MusicDetailView({
-  musicDetail,
-  type,
-  id,
-  listenLog,
-  isInQueue,
-  userDataLoading,
-  watchlistLoading,
-  confirmDelete,
-  setConfirmDelete,
-  userLists,
-  showListDropdown,
-  setShowListDropdown,
-  togglingListId,
-  listDropdownRef,
-  router,
-  onAddToQueue,
-  onRemoveFromQueue,
-  onDeleteLog,
-  onToggleList,
-}: {
-  musicDetail: MusicDetail;
-  type: "album" | "track";
-  id: string;
-  listenLog: UserListenLog | null;
-  isInQueue: boolean;
-  userDataLoading: boolean;
-  watchlistLoading: boolean;
-  confirmDelete: boolean;
-  setConfirmDelete: (v: boolean) => void;
-  userLists: UserListInfo[];
-  showListDropdown: boolean;
-  setShowListDropdown: (v: boolean) => void;
-  togglingListId: string | null;
-  listDropdownRef: React.RefObject<HTMLDivElement | null>;
-  router: ReturnType<typeof useRouter>;
-  onAddToQueue: () => void;
-  onRemoveFromQueue: () => void;
-  onDeleteLog: () => void;
-  onToggleList: (listId: string, hasItem: boolean) => void;
-}) {
-  const year = (musicDetail.release_date || "").slice(0, 4);
-  const isAlbum = type === "album";
-
-  const categoryRatings = [
-    { label: "Lyrics", value: listenLog?.lyrics_rating },
-    { label: "Production", value: listenLog?.production_rating },
-    { label: "Vocals", value: listenLog?.vocals_rating },
-    { label: "Melody", value: listenLog?.melody_rating },
-    { label: "Replay Value", value: listenLog?.replay_rating },
-    { label: "Energy", value: listenLog?.energy_rating },
-  ].filter((c) => c.value && c.value > 0);
-
-  return (
-    <div className="flex flex-col gap-0 max-w-5xl mx-auto w-full">
-      {/* Back button */}
-      <div className="mb-6">
-        <Link
-          href="/protected/discover"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Discover
-        </Link>
-      </div>
-
-      {/* Main content grid */}
-      <div className="grid md:grid-cols-[auto,1fr] gap-8">
-        {/* Art column */}
-        <div className="flex flex-col gap-4 w-56 md:w-64">
-          <div className="border-2 border-border overflow-hidden shrink-0">
-            {musicDetail.image_url ? (
-              <img
-                src={musicDetail.image_url}
-                alt={musicDetail.name}
-                className="w-full aspect-square object-cover"
-              />
-            ) : (
-              <div className="aspect-square bg-muted flex items-center justify-center">
-                <Disc3 className="w-16 h-16 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          {!userDataLoading && !listenLog && (
-            <div className="flex flex-col gap-2">
-              <Button
-                className="w-full border-2"
-                onClick={() => router.push("/protected/log")}
-              >
-                <Play className="w-4 h-4 mr-2" /> Log Listen
-              </Button>
-              {isInQueue ? (
-                <Button
-                  variant="outline"
-                  className="w-full border-2 text-muted-foreground"
-                  onClick={onRemoveFromQueue}
-                  disabled={watchlistLoading}
-                >
-                  <Check className="w-4 h-4 mr-2" /> In Queue
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full border-2"
-                  onClick={onAddToQueue}
-                  disabled={watchlistLoading}
-                >
-                  <BookmarkPlus className="w-4 h-4 mr-2" /> Add to Queue
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Add to List */}
-          {!userDataLoading && userLists.length > 0 && (
-            <div className="relative" ref={listDropdownRef}>
-              <Button
-                variant="outline"
-                className="w-full border-2"
-                onClick={() => setShowListDropdown(!showListDropdown)}
-              >
-                <ListPlus className="w-4 h-4 mr-2" /> Add to List
-              </Button>
-              {showListDropdown && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 border-2 border-border bg-card shadow-lg max-h-60 overflow-auto">
-                  {userLists.map((list) => (
-                    <button
-                      key={list.id}
-                      type="button"
-                      onClick={() => onToggleList(list.id, list.hasItem)}
-                      disabled={togglingListId === list.id}
-                      className="w-full text-left px-4 py-3 hover:bg-muted flex items-center gap-3 transition-colors text-sm"
-                    >
-                      <span className="text-lg">{list.emoji || "🎵"}</span>
-                      <span className="flex-1 truncate">{list.name}</span>
-                      {togglingListId === list.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
-                      ) : list.hasItem ? (
-                        <Check className="w-4 h-4 text-primary shrink-0" />
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Info column */}
-        <div className="flex flex-col gap-6">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant="outline" className="text-xs border-2">
-                {isAlbum ? "Album" : "Track"}
-              </Badge>
-            </div>
-            <h1 className="font-display text-3xl md:text-4xl font-bold mb-1">{musicDetail.name}</h1>
-            <p className="text-xl text-muted-foreground">{musicDetail.artist}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-            {year && (
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                {year}
-              </span>
-            )}
-            {isAlbum && musicDetail.album_name && musicDetail.album_name !== musicDetail.name && (
-              <span className="flex items-center gap-1.5">
-                <Disc3 className="w-4 h-4" />
-                {musicDetail.album_name}
-              </span>
-            )}
-            {!isAlbum && musicDetail.album_name && (
-              <span className="flex items-center gap-1.5">
-                <Disc3 className="w-4 h-4" />
-                from {musicDetail.album_name}
-              </span>
-            )}
-          </div>
-
-          {/* Spotify link */}
-          <div className="border-2 border-border p-4 bg-muted/10">
-            <h2 className="font-semibold mb-2">Listen On</h2>
-            <a
-              href={`https://open.spotify.com/${type}/${id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-[#1DB954] hover:underline"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-              </svg>
-              Open in Spotify
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* Your Review */}
-      {!userDataLoading && listenLog && (
-        <div className="border-2 border-primary/30 bg-primary/5 p-6 md:p-8 mt-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-sm uppercase tracking-wider text-primary">Your Review</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-2"
-                onClick={() => router.push(`/protected/log?edit=${listenLog.id}`)}
-              >
-                <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
-              </Button>
-              {confirmDelete ? (
-                <>
-                  <Button size="sm" variant="destructive" onClick={onDeleteLog}>Confirm</Button>
-                  <Button size="sm" variant="outline" className="border-2" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-                </>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-[1fr,auto] gap-6 md:gap-10">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <Star className="w-5 h-5 text-accent fill-accent" />
-                  <span className="font-bold text-xl">{listenLog.rating}</span>
-                  <span className="text-muted-foreground text-sm">/5</span>
-                </div>
-                {listenLog.listened_date && (
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Calendar className="w-3.5 h-3.5" />
-                    Listened {new Date(listenLog.listened_date).toLocaleDateString()}
-                  </div>
-                )}
-              </div>
-              {listenLog.review && (
-                <p className="text-muted-foreground leading-relaxed">{listenLog.review}</p>
-              )}
-            </div>
-
-            {categoryRatings.length > 0 && (
-              <div className="space-y-2 md:border-l md:border-border md:pl-8 min-w-[200px]">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Category Ratings</h4>
-                {categoryRatings.map((c) => (
-                  <div key={c.label} className="flex items-center justify-between gap-4 text-sm">
-                    <span className="text-muted-foreground">{c.label}</span>
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Star
-                          key={s}
-                          className={`w-3.5 h-3.5 ${
-                            s <= c.value!
-                              ? "text-accent fill-accent"
-                              : "text-muted-foreground/20"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        </section>
       )}
     </div>
   );

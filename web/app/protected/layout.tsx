@@ -1,5 +1,14 @@
 import { AuthButton } from "@/components/auth-button";
-import { NavAccentBar, NavLinks, NavModeToggle } from "@/components/nav-client";
+import {
+  FooterAttribution,
+  GlobalShortcuts,
+  MobileNav,
+  NavAccentBar,
+  NavLinks,
+  NavLogButton,
+  NavModeToggle,
+  ReelCueMark,
+} from "@/components/nav-client";
 import { ModeProvider } from "@/lib/mode-context";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -11,85 +20,79 @@ export default function ProtectedLayout({
 }) {
   return (
     <ModeProvider>
-      <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
-
-        {/* ── Mode accent bar ── */}
-        <NavAccentBar />
-
-        {/* ── Sticky nav ── */}
-        <nav
-          className="sticky top-0 z-50 border-b w-full"
-          style={{
-            background: "rgba(10, 10, 8, 0.92)",
-            backdropFilter: "blur(16px)",
-            borderColor: "var(--border-raw)",
-          }}
+      <GlobalShortcuts />
+      <div className="flex min-h-screen flex-col">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:border focus:border-primary focus:bg-background focus:px-3 focus:py-2 focus:text-[13px] focus:font-medium"
         >
-          <div className="max-w-[1200px] mx-auto px-6 flex items-center justify-between h-[60px] gap-6">
+          Skip to content
+        </a>
 
-            {/* Logo */}
-            <Link href="/protected" className="flex items-center gap-2.5 flex-shrink-0 group">
-              <div className="h-9 w-9 flex items-center justify-center">
-                <img
-                  src="/images/logo.png"
-                  alt="TrackEfron"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <span
-                className="font-display text-[22px] font-semibold tracking-[0.02em] hidden sm:block"
-                style={{ color: "var(--text)" }}
+        {/* ── Sticky header: accent line + nav ── */}
+        <header className="sticky top-0 z-50 w-full">
+          <NavAccentBar />
+          <nav
+            aria-label="Main"
+            className="relative w-full border-b border-[var(--border-raw)] bg-[var(--bg)]"
+          >
+            <ReelCueMark />
+            <div className="mx-auto flex h-[60px] max-w-[1200px] items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6">
+              {/* Logo */}
+              <Link
+                href="/protected"
+                aria-label="TrackEfron home"
+                className="flex flex-shrink-0 items-center gap-2.5"
               >
-                TrackEfron
-              </span>
-            </Link>
+                { }
+                <img src="/images/logo.png" alt="" className="h-9 w-9 object-contain" />
+                <span className="wordmark hidden text-[22px] xl:block">
+                  TrackEfron
+                </span>
+              </Link>
 
-            {/* Center nav links */}
-            <div className="flex-1 flex justify-center">
-              <NavLinks />
-            </div>
+              {/* Section links */}
+              <div className="flex min-w-0 flex-1 justify-center">
+                <NavLinks />
+              </div>
 
-            {/* Right side */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <NavModeToggle />
-              <Suspense>
-                <AuthButton />
-              </Suspense>
+              {/* Right side */}
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <NavLogButton />
+                <NavModeToggle />
+                <Suspense>
+                  <AuthButton />
+                </Suspense>
+              </div>
             </div>
-          </div>
-        </nav>
+          </nav>
+        </header>
 
         {/* ── Page content ── */}
-        <main className="flex-1 w-full max-w-[1200px] mx-auto px-6 py-10">
+        <main id="main" className="mx-auto w-full max-w-[1200px] flex-1 px-4 py-10 sm:px-6">
           {children}
         </main>
 
         {/* ── Footer ── */}
-        <footer
-          className="w-full border-t py-6 mt-auto"
-          style={{ borderColor: "var(--border-raw)" }}
-        >
-          <div className="max-w-[1200px] mx-auto px-6">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-3">
-                <img src="/images/logo.png" alt="TrackEfron" className="h-6 w-auto object-contain" />
-                <span className="font-display text-lg font-semibold" style={{ color: "var(--text)" }}>
-                  TrackEfron
-                </span>
-              </div>
-              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-                <div className="flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
-                  <span className="text-xs tracking-wide">Data &amp; images by</span>
-                  <img src="/images/tmdb.svg" alt="TMDB" className="h-3" />
-                </div>
-                <p className="text-xs tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  © 2026 TrackEfron
-                </p>
-              </div>
+        <footer className="mt-auto w-full border-t border-[var(--border-raw)] pb-20 pt-6 sm:pb-6">
+          <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
+            <div className="flex items-center gap-3">
+              { }
+              <img src="/images/logo.png" alt="" className="h-6 w-auto object-contain" />
+              <span className="wordmark text-[18px]">
+                TrackEfron
+              </span>
+            </div>
+            <div className="t-meta flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+              <span className="hidden md:inline">
+                Press <kbd className="border border-[var(--border-strong)] px-1.5 py-0.5 text-[11.5px] text-[var(--text)]">N</kbd> to log
+              </span>
+              <FooterAttribution />
+              <span>© 2026 TrackEfron</span>
             </div>
           </div>
         </footer>
-
+        <MobileNav />
       </div>
     </ModeProvider>
   );

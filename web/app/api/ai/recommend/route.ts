@@ -1,303 +1,172 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser, type ServerSupabase as Supabase } from "@/lib/api/auth";
+import { aiErrorStatus } from "@/lib/api/ai-status";
 import { NextResponse } from "next/server";
-import { callAI } from "@/lib/ai/provider";
-import { musicRecommendTool, filmVerifyTool } from "@/lib/ai/tools";
-import {
-  MUSIC_RECOMMEND_SYSTEM,
-  FILM_VERIFY_SYSTEM,
-  buildMusicRecommendUserPrompt,
-  buildFilmVerifyUserPrompt,
-} from "@/lib/ai/prompts";
+import { filmRecommendTool, musicRecommendTool } from "@/lib/ai/tools";
+import type {
+  FilmRecommendation,
+  MusicRecommendation,
+  MusicRecsResponse,
+  RawFilmPick,
+  SpotifyTops,
+  RecsResponse,
+  RightNow,
+} from "@/lib/ai/types";
+import { AIError, makeAI } from "@/lib/recs/ai-call";
+import { isCacheValid, nextShownHistory, readCache, writeCache, type ShownFilm } from "@/lib/recs/cache";
+import { buildFilmRecs } from "@/lib/recs/film/build";
+import { gatherFilmCandidates } from "@/lib/recs/film/candidates";
+import { makeFilmLookup } from "@/lib/recs/film/lookup";
+import type { WatchLogRow } from "@/lib/recs/film/select-logs";
+import { fetchLogYears } from "@/lib/recs/film/years";
+import { buildMusicRecs, type ListenLogRow } from "@/lib/recs/music/build";
+import { fetchSpotifyTops } from "@/lib/recs/music/tops";
+import { fetchRecentPlays, type RawPlay } from "@/lib/spotify/recent";
+import { getValidToken } from "@/lib/spotify/pkce";
 import { searchSpotify } from "@/lib/spotify/spotify";
-import { getMovieDetails, getTvDetails, getPoster } from "@/lib/tmdb/tmdb";
-import type { MusicRecommendation, FilmRecommendation } from "@/lib/ai/types";
+import { getDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
 
-const CACHE_TTL_HOURS = 24;
+export const maxDuration = 300;
+
+// The film cache keeps its existing mode value because the repo has no schema file to confirm a new one is allowed.
+const FILM_MODE = "film_explanations";
+const MUSIC_MODE = "music";
+
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode") || "music";
-  const noCache = searchParams.get("refresh") === "true";
+  const refresh = searchParams.get("refresh") === "true";
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
+  if (mode !== "film" && mode !== "music") {
+    return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
   }
 
-  if (mode === "music") {
-    return handleMusicRecommendations(supabase, user.id, noCache);
-  } else if (mode === "film") {
-    return handleFilmRecommendations(supabase, user.id, noCache);
-  }
-
-  return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
-}
-
-async function handleMusicRecommendations(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  noCache: boolean
-) {
-  if (!noCache) {
-    const { data: cached } = await supabase
-      .from("ai_recommendation_cache")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("mode", "music")
-      .single();
-
-    if (cached && new Date(cached.expires_at) > new Date()) {
-      return NextResponse.json(cached.recommendations);
-    }
-  }
-
-  const [listenRes, queueRes, dnaRes] = await Promise.all([
-    supabase.from("listen_logs").select("title, artist, rating, media_type, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating").eq("user_id", userId).order("listened_date", { ascending: false }),
-    supabase.from("music_queue").select("title, artist").eq("user_id", userId),
-    supabase.from("taste_dna").select("fingerprint, music_profile").eq("user_id", userId).single(),
-  ]);
-
-  const listenLogs = listenRes.data || [];
-  const musicQueue = queueRes.data || [];
-  const tasteDNA = dnaRes.data
-    ? { fingerprint: dnaRes.data.fingerprint, music_identity: dnaRes.data.music_profile }
-    : null;
-
-  if (listenLogs.length === 0) {
-    return NextResponse.json([]);
-  }
-
-  const userPrompt = buildMusicRecommendUserPrompt({
-    tasteDNA,
-    listenLogs,
-    musicQueue,
-  });
-
-  const result = await callAI({
-    supabase,
-    userId,
-    tier: "fast",
-    maxTokens: 3000,
-    system: MUSIC_RECOMMEND_SYSTEM,
-    tool: musicRecommendTool,
-    toolName: "recommend_music",
-    userMessage: userPrompt,
-  });
-
-  if ("error" in result) {
-    const status = result.code === "NO_API_KEY" ? 402 : 500;
-    return NextResponse.json({ error: result.error, code: result.code }, { status });
-  }
-
-  const { recommendations } = result.data as { recommendations: MusicRecommendation[] };
-
-  const validated: MusicRecommendation[] = [];
-  for (const rec of recommendations) {
-    if (validated.length >= 20) break;
-    try {
-      const results = await searchSpotify(`${rec.artist} ${rec.title}`, rec.type, 3);
-      const match = results.find((r) => {
-        const titleMatch = normalize(r.name).includes(normalize(rec.title)) || normalize(rec.title).includes(normalize(r.name));
-        const artistMatch = normalize(r.artist).includes(normalize(rec.artist)) || normalize(rec.artist).includes(normalize(r.artist));
-        return titleMatch && artistMatch;
-      }) || results[0];
-
-      if (match) {
-        validated.push({
-          ...rec,
-          spotify_id: match.id,
-          image_url: match.image_url,
-          title: match.name,
-          artist: match.artist,
-          album_name: match.album_name,
-          type: match.type,
-        });
-      }
-    } catch {
-      // Spotify search failed for this rec — skip it
-    }
-  }
-
-  const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000).toISOString();
-  await supabase.from("ai_recommendation_cache").upsert(
-    {
-      user_id: userId,
-      mode: "music",
-      recommendations: validated,
-      generated_at: new Date().toISOString(),
-      log_count_at_generation: listenLogs.length,
-      expires_at: expiresAt,
-    },
-    { onConflict: "user_id,mode" }
-  );
-
-  return NextResponse.json(validated);
-}
-
-async function handleFilmRecommendations(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  noCache: boolean
-) {
-  if (!noCache) {
-    const { data: cached } = await supabase
-      .from("ai_recommendation_cache")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("mode", "film_explanations")
-      .single();
-
-    if (cached && new Date(cached.expires_at) > new Date()) {
-      return NextResponse.json(cached.recommendations);
-    }
-  }
-
-  const mlApiUrl = process.env.ML_API_URL || "http://localhost:8000";
-  let mlCandidates: { tmdb_id: number; title: string; media_type: string; poster_url?: string }[] = [];
   try {
-    const mlRes = await fetch(`${mlApiUrl}/recommend/${userId}/items?limit=35`, {
-      signal: AbortSignal.timeout(15000),
-      cache: "no-store",
-    });
-    if (mlRes.ok) {
-      const { items } = await mlRes.json();
-      mlCandidates = Array.isArray(items) ? items : [];
+    const body = mode === "film" ? await filmRecs(supabase, user.id, refresh) : await musicRecs(supabase, user.id, refresh);
+    return NextResponse.json(body);
+  } catch (e) {
+    if (e instanceof AIError) {
+      return NextResponse.json({ error: e.message, code: e.code }, { status: aiErrorStatus(e.code) });
     }
-  } catch {
-    // ML server may not be running
+    console.error("recommend route failed:", e);
+    return NextResponse.json({ error: "Failed to generate recommendations", code: "PROVIDER_ERROR" }, { status: 500 });
   }
-
-  if (mlCandidates.length === 0) {
-    return NextResponse.json([]);
-  }
-
-  const [watchRes, dnaRes] = await Promise.all([
-    supabase.from("watch_logs").select("title, rating, review, media_type, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating").eq("user_id", userId).order("watched_date", { ascending: false }),
-    supabase.from("taste_dna").select("fingerprint, film_profile").eq("user_id", userId).single(),
-  ]);
-
-  const watchLogs = watchRes.data || [];
-  const tasteDNA = dnaRes.data
-    ? { fingerprint: dnaRes.data.fingerprint, film_identity: dnaRes.data.film_profile }
-    : null;
-
-  const userPrompt = buildFilmVerifyUserPrompt({
-    tasteDNA,
-    watchLogs,
-    mlCandidates,
-  });
-
-  const result = await callAI({
-    supabase,
-    userId,
-    tier: "fast",
-    maxTokens: 4000,
-    system: FILM_VERIFY_SYSTEM,
-    tool: filmVerifyTool,
-    toolName: "verify_film_recommendations",
-    userMessage: userPrompt,
-  });
-
-  if ("error" in result) {
-    // Fall back to ML recs without AI enrichment — enrich posters
-    const fallback = await Promise.all(
-      mlCandidates.slice(0, 20).map(async (c) => {
-        if (c.poster_url) return { ...c, explanation: "", source: "ml" };
-        try {
-          const detail = c.media_type === "tv"
-            ? await getTvDetails(c.tmdb_id)
-            : await getMovieDetails(c.tmdb_id);
-          return {
-            ...c,
-            explanation: "",
-            source: "ml",
-            poster_url: detail.poster_path ? getPoster(detail.poster_path, "w342") : null,
-          };
-        } catch {
-          return { ...c, explanation: "", source: "ml" };
-        }
-      })
-    );
-    return NextResponse.json(fallback);
-  }
-
-  const { verified } = result.data as { verified: FilmRecommendation[] };
-
-  const final: FilmRecommendation[] = [];
-  for (const rec of verified) {
-    if (final.length >= 20) break;
-
-    if (rec.source === "ml" && rec.tmdb_id) {
-      const original = mlCandidates.find((c) => c.tmdb_id === rec.tmdb_id);
-      final.push({
-        ...rec,
-        poster_url: original?.poster_url || null,
-      });
-    } else if (rec.source === "ai") {
-      try {
-        const tmdbRes = await fetch(
-          `https://api.themoviedb.org/3/search/${rec.media_type === "tv" ? "tv" : "movie"}?query=${encodeURIComponent(rec.title)}&year=${rec.year || ""}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.TMDB_BEARER_TOKEN}`,
-            },
-            signal: AbortSignal.timeout(5000),
-          }
-        );
-        if (tmdbRes.ok) {
-          const data = await tmdbRes.json();
-          const match = data.results?.[0];
-          if (match) {
-            final.push({
-              ...rec,
-              tmdb_id: match.id,
-              poster_url: match.poster_path
-                ? getPoster(match.poster_path, "w342")
-                : null,
-            });
-            continue;
-          }
-        }
-      } catch {
-        // TMDB search failed — skip this AI suggestion
-      }
-    } else {
-      final.push(rec);
-    }
-  }
-
-  // Enrich any items missing poster_url by fetching from TMDB by ID
-  await Promise.all(
-    final.map(async (item) => {
-      if (item.poster_url || !item.tmdb_id) return;
-      try {
-        const detail = item.media_type === "tv"
-          ? await getTvDetails(item.tmdb_id)
-          : await getMovieDetails(item.tmdb_id);
-        if (detail.poster_path) {
-          item.poster_url = getPoster(detail.poster_path, "w342");
-        }
-      } catch {}
-    })
-  );
-
-  const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000).toISOString();
-  await supabase.from("ai_recommendation_cache").upsert(
-    {
-      user_id: userId,
-      mode: "film_explanations",
-      recommendations: final,
-      generated_at: new Date().toISOString(),
-      log_count_at_generation: watchLogs.length,
-      expires_at: expiresAt,
-    },
-    { onConflict: "user_id,mode" }
-  );
-
-  return NextResponse.json(final);
 }
 
-function normalize(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): Promise<RecsResponse<FilmRecommendation>> {
+  const [cache, logsRes, watchlistRes, dnaRes] = await Promise.all([
+    readCache(supabase, userId, FILM_MODE),
+    supabase
+      .from("watch_logs")
+      .select(
+        "tmdb_id, title, media_type, rating, review, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, watched_date",
+      )
+      .eq("user_id", userId)
+      .order("watched_date", { ascending: false }),
+    supabase.from("watchlist").select("tmdb_id, media_type").eq("user_id", userId),
+    supabase.from("taste_dna").select("fingerprint, film_profile, blind_spots").eq("user_id", userId).maybeSingle(),
+  ]);
+  if (logsRes.error) throw new Error(`watch_logs read failed: ${logsRes.error.message}`);
+  if (watchlistRes.error) throw new Error(`watchlist read failed: ${watchlistRes.error.message}`);
+  const logs = (logsRes.data ?? []) as WatchLogRow[];
+
+  // Old rows stored a bare array; only the { items } shape is valid.
+  const cachedFilm = cache?.recommendations as { items?: FilmRecommendation[]; shown?: ShownFilm[] } | undefined;
+  if (!refresh && cachedFilm && Array.isArray(cachedFilm.items) && isCacheValid(cache, logs.length, new Date())) {
+    return { status: cachedFilm.items.length ? "ok" : "empty", items: cachedFilm.items };
+  }
+
+  // A refresh asks for something new, so it keeps out what was recommended recently.
+  // Any other rebuild (a new log, an expired cache) starts the history again.
+  const avoid =
+    refresh && cachedFilm && Array.isArray(cachedFilm.items)
+      ? nextShownHistory(cachedFilm.items, Array.isArray(cachedFilm.shown) ? cachedFilm.shown : [])
+      : [];
+
+  const result = await buildFilmRecs({
+    logs,
+    watchlist: watchlistRes.data ?? [],
+    tasteDNA: dnaRes.data ?? null,
+    yearsOf: (all) => fetchLogYears(all, getDetails),
+    gather: gatherFilmCandidates,
+    lookup: makeFilmLookup(searchByTitleYear),
+    ai: makeAI<{ picks: RawFilmPick[] }>({ supabase, userId, tool: filmRecommendTool }),
+    avoid,
+  });
+
+  if (result.status === "ok" || result.status === "empty") {
+    const shown = nextShownHistory(result.items, avoid);
+    await writeCache(supabase, userId, FILM_MODE, { items: result.items, shown }, logs.length, result.status);
+  }
+  return result;
+}
+
+async function musicRecs(supabase: Supabase, userId: string, refresh: boolean): Promise<MusicRecsResponse> {
+  const [cache, logsRes, queueRes, dnaRes] = await Promise.all([
+    readCache(supabase, userId, MUSIC_MODE),
+    supabase
+      .from("listen_logs")
+      .select(
+        "spotify_id, title, artist, media_type, rating, review, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating",
+      )
+      .eq("user_id", userId)
+      .order("listened_date", { ascending: false }),
+    supabase.from("music_queue").select("spotify_id, title, artist").eq("user_id", userId),
+    supabase.from("taste_dna").select("fingerprint, music_profile").eq("user_id", userId).maybeSingle(),
+  ]);
+  if (logsRes.error) throw new Error(`listen_logs read failed: ${logsRes.error.message}`);
+  if (queueRes.error) throw new Error(`music_queue read failed: ${queueRes.error.message}`);
+  const logs = (logsRes.data ?? []) as ListenLogRow[];
+
+  // Old rows stored a bare array; only the { items, right_now } shape is valid.
+  const cached = cache?.recommendations as { items?: MusicRecommendation[]; right_now?: RightNow | null } | undefined;
+  if (!refresh && cached && Array.isArray(cached.items) && isCacheValid(cache, logs.length, new Date())) {
+    return { status: cached.items.length ? "ok" : "empty", items: cached.items, right_now: cached.right_now ?? null };
+  }
+
+  let tops: SpotifyTops | null = null;
+  let recent: RawPlay[] | null = null;
+  try {
+    const token = await getValidToken(supabase, userId);
+    if (token) {
+      // Spotify listening is optional context; each part fails independently.
+      [tops, recent] = await Promise.all([
+        fetchSpotifyTops(token).catch((e) => {
+          console.error("Spotify tops fetch failed, continuing without it:", e);
+          return null;
+        }),
+        fetchRecentPlays(token).catch((e) => {
+          console.error("Spotify recent plays fetch failed, continuing without it:", e);
+          return null;
+        }),
+      ]);
+    }
+  } catch (e) {
+    console.error("Spotify token lookup failed, continuing without Spotify:", e);
+  }
+
+  const result = await buildMusicRecs({
+    logs,
+    queue: queueRes.data ?? [],
+    tops,
+    recent,
+    tasteDNA: dnaRes.data ?? null,
+    search: searchSpotify,
+    ai: makeAI<{ recommendations: MusicRecommendation[] }>({ supabase, userId, tool: musicRecommendTool }),
+  });
+
+  if (result.status === "ok" || result.status === "empty") {
+    await writeCache(
+      supabase,
+      userId,
+      MUSIC_MODE,
+      { items: result.items, right_now: result.right_now },
+      logs.length,
+      result.status,
+    );
+  }
+  return result;
 }

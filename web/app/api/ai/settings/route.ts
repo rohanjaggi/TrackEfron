@@ -1,34 +1,21 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/api/auth";
 import { NextResponse } from "next/server";
-
-function detectProvider(key: string): "anthropic" | "openai" | "gemini" | null {
-  if (key.startsWith("sk-ant-")) return "anthropic";
-  if (key.startsWith("AIza")) return "gemini";
-  if (key.startsWith("sk-")) return "openai";
-  return null;
-}
+import { detectProvider, envProvider, type Provider } from "@/lib/ai/detect-provider";
 
 function maskKey(key: string): string {
   if (key.length <= 8) return "****";
   return key.slice(0, 7) + "..." + key.slice(-4);
 }
 
-export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+type KeyState = { hasKey: boolean; provider: Provider | null; maskedKey: string | null; source: "byok" | "env" | "none" };
 
-  if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY) {
-    const provider = process.env.OPENAI_API_KEY ? "openai" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "gemini";
-    return NextResponse.json({
-      hasKey: true,
-      provider,
-      maskedKey: null,
-      source: "env",
-    });
-  }
+const keyState = (state: KeyState) => NextResponse.json(state);
+const noKey = () => keyState({ hasKey: false, provider: null, maskedKey: null, source: "none" });
+
+export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   const { data } = await supabase
     .from("user_ai_settings")
@@ -36,8 +23,9 @@ export async function GET() {
     .eq("user_id", user.id)
     .single();
 
+  // Same precedence as callAI: the user's own key, then a server key.
   if (data?.ai_api_key) {
-    return NextResponse.json({
+    return keyState({
       hasKey: true,
       provider: detectProvider(data.ai_api_key),
       maskedKey: maskKey(data.ai_api_key),
@@ -45,20 +33,18 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({
-    hasKey: false,
-    provider: null,
-    maskedKey: null,
-    source: "none",
-  });
+  const env = envProvider();
+  if (env) {
+    return keyState({ hasKey: true, provider: env.provider, maskedKey: null, source: "env" });
+  }
+
+  return noKey();
 }
 
 export async function PUT(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   const { apiKey } = await request.json();
   if (!apiKey || typeof apiKey !== "string" || apiKey.length < 10) {
@@ -86,30 +72,21 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({
-    hasKey: true,
-    provider,
-    maskedKey: maskKey(apiKey),
-    source: "byok",
-  });
+  return keyState({ hasKey: true, provider, maskedKey: maskKey(apiKey), source: "byok" });
 }
 
 export async function DELETE() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
-  await supabase
+  const { error } = await supabase
     .from("user_ai_settings")
     .delete()
     .eq("user_id", user.id);
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
-  return NextResponse.json({
-    hasKey: false,
-    provider: null,
-    maskedKey: null,
-    source: "none",
-  });
+  return noKey();
 }

@@ -1,0 +1,125 @@
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { FilmCandidate, RawFilmPick } from "@/lib/ai/types";
+import { matchFilmPicks } from "./match";
+
+const cand = (id: number, year: number | null = 2020, type: "movie" | "tv" = "movie"): FilmCandidate => ({
+  tmdb_id: id, media_type: type, title: `T${id}`, year, genres: [], overview: "", poster_url: `/p${id}`,
+});
+const pick = (id: number | null, over: Partial<RawFilmPick> = {}): RawFilmPick => ({
+  tmdb_id: id, title: `T${id}`, year: 2020, media_type: "movie",
+  explanation: "because", confidence: "high", ...over,
+});
+const noLookup = async () => null;
+const limits = { max: 20, maxOlder: 5, olderBefore: 2010 as number | null };
+
+describe("matchFilmPicks", () => {
+  afterEach(() => vi.restoreAllMocks());
+  test("keeps a pick whose id is in the candidate list", async () => {
+    const r = await matchFilmPicks([pick(1)], [cand(1)], new Set(), noLookup, limits);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ tmdb_id: 1, explanation: "because", confidence: "high", poster_url: "/p1" });
+  });
+  test("drops an id that is not in the candidate list and has no lookup match", async () => {
+    expect(await matchFilmPicks([pick(9)], [cand(1)], new Set(), noLookup, limits)).toEqual([]);
+  });
+  test("resolves a null-id pick through lookup", async () => {
+    const r = await matchFilmPicks([pick(null, { title: "Found" })], [], new Set(),
+      async () => cand(7, 2020), limits);
+    expect(r.map((x) => x.tmdb_id)).toEqual([7]);
+  });
+  test("drops a lookup match whose year is more than 1 from the proposed year", async () => {
+    const r = await matchFilmPicks([pick(null, { year: 2020 })], [], new Set(),
+      async () => cand(7, 2015), limits);
+    expect(r).toEqual([]);
+  });
+  test("accepts a lookup match one year off", async () => {
+    const r = await matchFilmPicks([pick(null, { year: 2020 })], [], new Set(),
+      async () => cand(7, 2021), limits);
+    expect(r).toHaveLength(1);
+  });
+  test("drops excluded keys, including lookup results", async () => {
+    const r = await matchFilmPicks([pick(1), pick(null)], [cand(1)], new Set(["movie:1", "movie:7"]),
+      async () => cand(7), limits);
+    expect(r).toEqual([]);
+  });
+  test("drops duplicates, keeping the first", async () => {
+    const r = await matchFilmPicks([pick(1, { explanation: "first" }), pick(1, { explanation: "second" })],
+      [cand(1)], new Set(), noLookup, limits);
+    expect(r).toHaveLength(1);
+    expect(r[0].explanation).toBe("first");
+  });
+  test("keeps at most limits.max", async () => {
+    const ids = [1, 2, 3, 4];
+    const r = await matchFilmPicks(ids.map((i) => pick(i)), ids.map((i) => cand(i)), new Set(), noLookup,
+      { ...limits, max: 2 });
+    expect(r.map((x) => x.tmdb_id)).toEqual([1, 2]);
+  });
+  test("keeps at most limits.maxOlder picks with year < olderBefore", async () => {
+    const ids = [1, 2, 3, 4];
+    const r = await matchFilmPicks(ids.map((i) => pick(i, { year: 1990 })), ids.map((i) => cand(i, 1990)),
+      new Set(), noLookup, { ...limits, maxOlder: 2 });
+    expect(r).toHaveLength(2);
+  });
+  test("a pick with a null year is not counted as older", async () => {
+    const ids = [1, 2, 3];
+    const r = await matchFilmPicks(ids.map((i) => pick(i, { year: null })), ids.map((i) => cand(i, null)),
+      new Set(), noLookup, { ...limits, maxOlder: 0 });
+    expect(r).toHaveLength(3);
+  });
+  test("a throwing lookup counts as no match for that pick only", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      if (title === "Boom") throw new Error("tmdb down");
+      return cand(7, 2020);
+    };
+    const r = await matchFilmPicks([pick(null, { title: "Boom" }), pick(null, { title: "Fine" })], [],
+      new Set(), lookup, limits);
+    expect(r.map((x) => x.tmdb_id)).toEqual([7]);
+  });
+  test("empty input returns []", async () => {
+    expect(await matchFilmPicks([], [], new Set(), noLookup, limits)).toEqual([]);
+  });
+  test("warns once per batch when lookups throw", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const boom = async () => { throw new Error("tmdb down"); };
+    const r = await matchFilmPicks([pick(null), pick(null), pick(null)], [], new Set(), boom, limits);
+    expect(r).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+  test("lookups run at most 5 at a time", async () => {
+    let active = 0;
+    let peak = 0;
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return cand(Number(title.slice(1)), 2020);
+    };
+    const ids = Array.from({ length: 12 }, (_, i) => i + 1);
+    const r = await matchFilmPicks(ids.map((i) => pick(null, { title: `T${i}` })), [], new Set(), lookup, limits);
+    expect(r).toHaveLength(12);
+    expect(peak).toBeLessThanOrEqual(5);
+    expect(peak).toBeGreaterThan(1);
+  });
+  test("keeps input order even when later lookups finish first", async () => {
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      const n = Number(title.slice(1));
+      await new Promise((r) => setTimeout(r, (6 - n) * 5));
+      return cand(n, 2020);
+    };
+    const r = await matchFilmPicks([1, 2, 3, 4, 5].map((i) => pick(null, { title: `T${i}` })), [],
+      new Set(), lookup, limits);
+    expect(r.map((x) => x.tmdb_id)).toEqual([1, 2, 3, 4, 5]);
+  });
+  test("applies de-duplication, cap and older limit in input order over concurrent results", async () => {
+    const lookup = async (_t: "movie" | "tv", title: string) => {
+      const n = Number(title.slice(1));
+      await new Promise((r) => setTimeout(r, (8 - n) * 3));
+      return cand(n % 4, 1990);
+    };
+    const r = await matchFilmPicks([1, 2, 3, 4, 5, 6].map((i) => pick(null, { title: `T${i}`, year: 1990 })), [],
+      new Set(), lookup, { ...limits, maxOlder: 2 });
+    expect(r.map((x) => x.tmdb_id)).toEqual([1, 2]);
+  });
+});

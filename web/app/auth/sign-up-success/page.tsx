@@ -1,32 +1,29 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import Link from "next/link";
+
+import { AuthLink, AuthShell } from "@/components/auth-shell";
+import { Button } from "@/components/ui/button";
 
 export default function Page() {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-2xl font-bold">
-                Thank you for signing up!
-              </CardTitle>
-              <CardDescription>Check your email to confirm</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                You&apos;ve successfully signed up. Please check your email to
-                confirm your account before signing in.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+    <AuthShell
+      title="Check your inbox"
+      description="One more step and your diary is open."
+      footer={
+        <>
+          Used the wrong email? <AuthLink href="/auth/sign-up">Sign up again</AuthLink>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-6">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          Your account is created. We&apos;ve sent a confirmation link to your email: open it to
+          confirm your address, then sign in. It can take a minute to arrive; check your spam
+          folder if it doesn&apos;t.
+        </p>
+        <Button asChild size="lg" className="w-full">
+          <Link href="/auth/login">Sign in</Link>
+        </Button>
       </div>
-    </div>
+    </AuthShell>
   );
 }

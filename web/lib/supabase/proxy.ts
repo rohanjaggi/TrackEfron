@@ -47,12 +47,24 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
+  const pathname = request.nextUrl.pathname;
+
+  // The design catalogue under /dev is public in development only; those
+  // pages return 404 in production, where this exemption never applies.
+  const isDevCatalogue = process.env.NODE_ENV !== "production" && pathname.startsWith("/dev/");
+
+  if (pathname !== "/" && !user && !isDevCatalogue && !pathname.startsWith("/auth")) {
+    // API callers get a JSON 401 instead of a redirect to an HTML page. The Spotify
+    // connect and callback routes are browser navigations that already redirect a
+    // signed-out user to the login page, so they keep the redirect below.
+    if (
+      (pathname === "/api" || pathname.startsWith("/api/")) &&
+      pathname !== "/api/spotify/connect" &&
+      pathname !== "/api/spotify/callback"
+    ) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";

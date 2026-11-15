@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { User, LogOut, ChevronDown } from "lucide-react";
+import { User, Users, LogOut, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Avatar } from "@/components/ui/page";
 
 interface AuthButtonClientProps {
   displayName: string;
@@ -28,16 +29,16 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 px-3 py-1.5 border border-transparent hover:border-border hover:bg-muted/50 transition-all duration-200 outline-none">
-          <div className="w-7 h-7 rounded-full overflow-hidden bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-3.5 h-3.5" />
-            )}
-          </div>
-          <span className="text-sm font-medium hidden sm:inline">{displayName}</span>
-          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+        <button
+          type="button"
+          aria-label={`Account menu for ${displayName}`}
+          className="flex h-9 items-center gap-2 border border-transparent px-1.5 transition-[background-color,border-color] duration-cut ease-mech hover:border-border hover:bg-surface-2 data-[state=open]:border-border-strong data-[state=open]:bg-surface-2"
+        >
+          <Avatar src={avatarUrl} name={displayName} size={26} />
+          <span className="hidden max-w-[120px] truncate text-[13px] font-medium xl:inline">
+            {displayName}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
@@ -45,16 +46,23 @@ export function AuthButtonClient({ displayName, avatarUrl }: AuthButtonClientPro
           className="cursor-pointer"
           onSelect={() => router.push("/protected/profile")}
         >
-          <User className="w-4 h-4 mr-2" />
+          <User aria-hidden="true" />
           Profile
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="cursor-pointer"
+          onSelect={() => router.push("/protected/friends")}
+        >
+          <Users aria-hidden="true" />
+          Friends
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="cursor-pointer text-muted-foreground"
           onSelect={handleLogout}
         >
-          <LogOut className="w-4 h-4 mr-2" />
-          Log out
+          <LogOut aria-hidden="true" />
+          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

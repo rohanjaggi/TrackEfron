@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Azeret_Mono } from "next/font/google";
-import { ThemeProvider } from "next-themes";
+import { Archivo, Sofia_Sans_Extra_Condensed, Young_Serif } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { ToastProvider } from "@/components/ui/toast";
+import { MODE_BOOT_SCRIPT } from "@/lib/mode-boot";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -14,19 +15,31 @@ export const metadata: Metadata = {
   description: "Log and review the films, TV shows, and music you love. Get personalised recommendations.",
 };
 
-const cormorant = Cormorant_Garamond({
-  weight: ["300", "400", "500", "600", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-display",
+// Film titles and the wordmark: a soft 1970s poster serif. One weight only.
+const youngSerif = Young_Serif({
+  weight: "400",
+  variable: "--font-film",
   display: "swap",
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
 });
 
-const azeretMono = Azeret_Mono({
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-mono",
+// Music titles: an extra-condensed sleeve gothic.
+const sofiaExtraCondensed = Sofia_Sans_Extra_Condensed({
+  weight: ["600", "700", "800"],
+  style: ["normal", "italic"],
+  variable: "--font-music",
   display: "swap",
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
+});
+
+// Everything you read and press, in both modes: a grotesk set semi-expanded,
+// like hi-fi faceplate lettering. The width is applied in globals.css (--ui-stretch).
+const archivo = Archivo({
+  style: ["normal", "italic"],
+  axes: ["wdth"],
+  variable: "--font-ui",
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
 });
 
 export default function RootLayout({
@@ -35,17 +48,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${cormorant.variable} ${azeretMono.variable} antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
-          {children}
-          <Analytics />
-        </ThemeProvider>
+    <html
+      lang="en"
+      // Font variables sit on <html> because the per-mode type variables that use them are resolved there.
+      className={`${youngSerif.variable} ${sofiaExtraCondensed.variable} ${archivo.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MODE_BOOT_SCRIPT }} />
+      </head>
+      <body className="antialiased">
+        <ToastProvider>{children}</ToastProvider>
+        <Analytics />
       </body>
     </html>
   );

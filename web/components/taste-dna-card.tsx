@@ -1,279 +1,201 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Sparkles,
-  RefreshCw,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
-  Film,
-  Headphones,
-  Link2,
-  Eye,
-  Zap,
-  Key,
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
-interface TasteDNAData {
-  fingerprint: string;
-  film_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  music_identity: {
-    core: string;
-    aspect_lens: string;
-    patterns: string;
-    rating_style: string;
-  };
-  cross_domain: {
-    thread: string;
-    surprising_connection: string;
-  };
-  blind_spots: string[];
-  guilty_pleasures: string[];
-  generated_at?: string;
-  film_log_count?: number;
-  music_log_count?: number;
-}
+import { Button } from "@/components/ui/button";
+import { LoadingLine, Skeleton } from "@/components/ui/loading";
+import { Notice, SectionHeader } from "@/components/ui/page";
+import { useToast } from "@/components/ui/toast";
+import type { TasteDNA, TasteObservation } from "@/lib/ai/types";
 
-function Section({
-  icon: Icon,
-  title,
-  children,
-  defaultOpen = false,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
+type TasteCardData = Pick<TasteDNA, "fingerprint" | "pulse" | "observations"> & {
+  logs_since: number;
+  needs_regenerate: boolean;
+};
 
-  return (
-    <div className="border-2 border-border">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <Icon className="w-4 h-4 text-primary" />
-          <span className="font-semibold text-sm">{title}</span>
-        </div>
-        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-      </button>
-      {open && <div className="px-4 pb-4 space-y-3 text-sm text-muted-foreground">{children}</div>}
-    </div>
-  );
-}
+type CardError =
+  | { kind: "no_key" }
+  | { kind: "not_enough" }
+  | { kind: "message"; message: string };
 
-function IdentitySection({ data }: { data: { core: string; aspect_lens: string; patterns: string; rating_style: string } }) {
+const LOAD_FAILED = "Couldn't load your taste card. Reload the page to try again.";
+const GENERATE_FAILED = "Something went wrong generating your taste card. Try again.";
+
+/** One observation as a single line, with the title it cites picked out in emphasis. */
+function Observation({ observation }: { observation: TasteObservation }) {
+  const { text, cited_title } = observation;
+  if (!cited_title) return <>{text}</>;
+
+  const at = text.toLowerCase().indexOf(cited_title.toLowerCase());
+  const cited = <strong className="font-semibold text-foreground">{at === -1 ? cited_title : text.slice(at, at + cited_title.length)}</strong>;
+  if (at === -1) {
+    return (
+      <>
+        {text} {cited}
+      </>
+    );
+  }
   return (
     <>
-      <p>{data.core}</p>
-      {data.aspect_lens && <p>{data.aspect_lens}</p>}
-      {data.patterns && <p>{data.patterns}</p>}
-      {data.rating_style && <p className="italic">{data.rating_style}</p>}
+      {text.slice(0, at)}
+      {cited}
+      {text.slice(at + cited_title.length)}
     </>
   );
 }
 
+function ErrorNotice({ error }: { error: CardError }) {
+  if (error.kind === "no_key") {
+    return (
+      <Notice tone="warning" title="API key required" className="mt-6">
+        Add an Anthropic, OpenAI or Gemini key in{" "}
+        <Link href="/protected/profile" className="text-primary underline underline-offset-4">
+          profile settings
+        </Link>{" "}
+        to generate your taste card.
+      </Notice>
+    );
+  }
+  if (error.kind === "not_enough") {
+    return (
+      <Notice tone="info" title="Not enough logged yet" className="mt-6">
+        Log a few films or albums first, then generate your taste card.
+      </Notice>
+    );
+  }
+  return (
+    <Notice tone="error" className="mt-6">
+      {error.message}
+    </Notice>
+  );
+}
+
 export function TasteDNACard() {
-  const [dna, setDna] = useState<TasteDNAData | null>(null);
+  const toast = useToast();
+  const [dna, setDna] = useState<TasteCardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [noApiKey, setNoApiKey] = useState(false);
+  const [error, setError] = useState<CardError | null>(null);
 
+  // GET only reads what was generated before; generating is always a button press.
   useEffect(() => {
-    async function fetchDNA() {
+    let cancelled = false;
+    async function load() {
       try {
         const res = await fetch("/api/ai/taste-dna");
-        if (res.ok) {
-          const data = await res.json();
-          setDna(data);
-        }
+        if (!res.ok) throw new Error("load failed");
+        // `null` means nothing has been generated yet.
+        const data: TasteCardData | null = await res.json();
+        if (!cancelled) setDna(data);
       } catch {
-        // no DNA yet — that's fine
+        if (!cancelled) setError({ kind: "message", message: LOAD_FAILED });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    fetchDNA();
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function handleGenerate() {
+    const regenerating = dna !== null;
     setGenerating(true);
     setError(null);
     try {
       const res = await fetch("/api/ai/taste-dna", { method: "POST" });
+      // A non-JSON body only means there is no server message; the status still decides the error.
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        const data = await res.json();
-        if (data.code === "NO_API_KEY") {
-          setNoApiKey(true);
-          return;
+        if (res.status === 402) {
+          setError({ kind: "no_key" });
+        } else if (res.status === 400) {
+          setError({ kind: "not_enough" });
+        } else {
+          const message = typeof body?.error === "string" && body.error ? body.error : GENERATE_FAILED;
+          setError({ kind: "message", message });
         }
-        setError(data.error || "Failed to generate Taste DNA");
         return;
       }
-      const data = await res.json();
-      setDna({ ...data, generated_at: new Date().toISOString() });
+      if (!body || typeof body.fingerprint !== "string") {
+        setError({ kind: "message", message: GENERATE_FAILED });
+        return;
+      }
+      setDna({
+        fingerprint: body.fingerprint,
+        pulse: Array.isArray(body.pulse) ? body.pulse : [],
+        observations: Array.isArray(body.observations) ? body.observations : [],
+        logs_since: 0,
+        needs_regenerate: false,
+      });
+      toast({
+        mark: regenerating ? "Updated" : "Saved",
+        title: regenerating ? "Your taste card has been rewritten" : "Your taste card is ready",
+      });
     } catch {
-      setError("Something went wrong. Check your API key.");
+      setError({ kind: "message", message: GENERATE_FAILED });
     } finally {
       setGenerating(false);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="border-2 border-border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
-        </div>
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!dna) {
-    return (
-      <div className="border-2 border-border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          Generate an AI-powered analysis of your taste in film and music.
-          Discover patterns you didn't know you had.
-        </p>
-        {noApiKey && (
-          <div className="mb-4 p-3 border-2 border-primary/30 bg-primary/5 text-sm flex items-start gap-3">
-            <Key className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">API key required</p>
-              <p className="text-muted-foreground">
-                Add an Anthropic or OpenAI key in{" "}
-                <Link href="/protected/profile" className="underline text-primary">profile settings</Link>
-                {" "}to enable AI features.
-              </p>
-            </div>
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
-            {error}
-          </div>
-        )}
-        <Button onClick={handleGenerate} disabled={generating || noApiKey} className="border-2">
-          {generating ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Analyzing your taste...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Generate Taste DNA
-            </>
-          )}
-        </Button>
-      </div>
-    );
-  }
+  const action = loading ? undefined : (
+    <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
+      {generating ? "Generating" : dna ? "Regenerate" : "Generate"}
+    </Button>
+  );
 
   return (
-    <div className="border-2 border-border p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-semibold">Taste DNA</h2>
+    <section className="frame frame-accent p-6">
+      <SectionHeader title="Your taste" action={action} />
+
+      {loading ? (
+        <div className="mt-5 flex flex-col gap-3">
+          <LoadingLine label="Loading your taste card" />
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-3 w-1/3" />
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="text-muted-foreground"
-        >
-          {generating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+      ) : (
+        <>
+          {generating && <LoadingLine label="Generating your taste card" className="mt-5" />}
+
+          {dna ? (
+            <div className="mt-5">
+              <p className="t-voice-lg">&ldquo;{dna.fingerprint}&rdquo;</p>
+              {dna.needs_regenerate ? (
+                <p className="t-meta mt-3">Regenerate to update</p>
+              ) : (
+                <>
+                  {dna.pulse.length > 0 && <p className="t-label mt-3">{dna.pulse.join(" · ")}</p>}
+                  {dna.observations.length > 0 && (
+                    <ul className="mt-5 flex flex-col gap-2 text-muted-foreground">
+                      {dna.observations.map((o, i) => (
+                        <li key={i}>
+                          <Observation observation={o} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+              {dna.logs_since > 0 && (
+                <p className="t-meta mt-4">
+                  {dna.logs_since} {dna.logs_since === 1 ? "log" : "logs"} since this was generated
+                </p>
+              )}
+            </div>
           ) : (
-            <RefreshCw className="w-4 h-4" />
+            !error &&
+            !generating && (
+              <p className="t-meta mt-5">A short read on your taste, built from what you&apos;ve logged.</p>
+            )
           )}
-          <span className="ml-2">{generating ? "Generating..." : "Regenerate"}</span>
-        </Button>
-      </div>
 
-      {error && (
-        <div className="mb-4 p-3 border-2 border-destructive bg-destructive/10 text-destructive text-sm">
-          {error}
-        </div>
+          {error && <ErrorNotice error={error} />}
+        </>
       )}
-
-      {/* Fingerprint */}
-      <div className="mb-6 p-4 bg-primary/5 border-2 border-primary/20">
-        <p className="text-lg font-semibold text-center italic">
-          &ldquo;{dna.fingerprint}&rdquo;
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        {dna.film_identity?.core && (
-          <Section icon={Film} title="Film Identity" defaultOpen>
-            <IdentitySection data={dna.film_identity} />
-          </Section>
-        )}
-
-        {dna.music_identity?.core && (
-          <Section icon={Headphones} title="Music Identity">
-            <IdentitySection data={dna.music_identity} />
-          </Section>
-        )}
-
-        {dna.cross_domain?.thread && (
-          <Section icon={Link2} title="The Thread Between">
-            <p>{dna.cross_domain.thread}</p>
-            {dna.cross_domain.surprising_connection && (
-              <p className="italic">{dna.cross_domain.surprising_connection}</p>
-            )}
-          </Section>
-        )}
-
-        {dna.blind_spots && dna.blind_spots.length > 0 && (
-          <Section icon={Eye} title="Blind Spots">
-            <ul className="list-disc list-inside space-y-1">
-              {dna.blind_spots.map((spot, i) => (
-                <li key={i}>{spot}</li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        {dna.guilty_pleasures && dna.guilty_pleasures.length > 0 && (
-          <Section icon={Zap} title="Guilty Pleasures">
-            <ul className="list-disc list-inside space-y-1">
-              {dna.guilty_pleasures.map((gp, i) => (
-                <li key={i}>{gp}</li>
-              ))}
-            </ul>
-          </Section>
-        )}
-      </div>
-
-      {dna.generated_at && (
-        <p className="text-xs text-muted-foreground mt-4 text-right">
-          Generated {new Date(dna.generated_at).toLocaleDateString()}
-        </p>
-      )}
-    </div>
+    </section>
   );
 }

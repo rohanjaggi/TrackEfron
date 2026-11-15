@@ -1,81 +1,109 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  LayoutGrid,
-  List,
-  Search,
-  Plus,
-  Star,
-  Film,
-  Tv,
-  Trash2,
   Check,
   Clock,
-  Loader2,
-  ListMusic,
-  X,
   Disc3,
+  Film,
+  LayoutGrid,
+  List,
+  ListChecks,
+  ListMusic,
   Music2,
+  Plus,
+  Search,
+  Tv,
+  type LucideIcon,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import { Input } from "@/components/ui/input";
+import {
+  LoadingLine,
+  MediaGridSkeleton,
+  PageLoading,
+  RowListSkeleton,
+} from "@/components/ui/loading";
+import { MediaCard, MediaGrid } from "@/components/ui/media-card";
+import {
+  EmptyState,
+  Field,
+  Notice,
+  PageHeader,
+  StatBlock,
+} from "@/components/ui/page";
+import { SegmentedControl, TabBar } from "@/components/ui/segmented-control";
+import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import { TYPE_META, formatDay, isMusicType } from "@/lib/media";
+import type { WatchlistItem } from "@/lib/types";
+import { resizePoster } from "@/lib/tmdb/poster";
+import { useAddDropdown } from "@/hooks/use-add-dropdown";
+import { ListsPanel, type UserList } from "@/components/watchlist/lists-panel";
+import { saveToQueue, saveToWatchlist } from "@/lib/saved-items";
+import { searchSpotify, searchTmdb } from "@/lib/search-client";
+import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ViewType = "grid" | "list";
-type FilterType = "all" | "film" | "movies" | "tv" | "music" | "albums";
 type ActiveTab = "watchlist" | "lists";
+type FilmType = "movie" | "tv";
+type MusicType = "album" | "track";
+type MediaType = FilmType | MusicType;
+type TypeFilter = "all" | MediaType;
 
-type WatchlistItem = {
-  id: string;
-  tmdb_id: number | null;
-  spotify_id: string | null;
-  artist: string | null;
-  title: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  poster_url: string | null;
-  image_url?: string | null;
-  added_at: string;
-};
-
+/** A row of the `music_queue` table. */
 type MusicQueueItem = {
   id: string;
   spotify_id: string | null;
-  media_type: "album" | "track";
+  media_type: string;
   title: string;
   artist: string | null;
   image_url: string | null;
   added_at: string;
 };
 
-type SearchResult = {
-  id: number | string;
-  spotify_id?: string;
-  artist?: string;
-  title?: string;
-  name?: string;
-  media_type: "movie" | "tv" | "album" | "track";
-  release_date?: string;
-  first_air_date?: string;
-  poster_url?: string | null;
-  image_url?: string | null;
-  vote_average?: number;
-};
-
-type UserList = {
+/** What the page renders: both tables normalised, discriminated on `kind`. */
+type EntryBase = {
   id: string;
-  name: string;
-  description: string | null;
-  emoji: string | null;
-  list_type: "film" | "music";
-  created_at: string;
-  updated_at: string;
-  list_items: { count: number }[];
+  /** The table the row lives in, so removal goes to the right place. */
+  source: "watchlist" | "music_queue";
+  title: string;
+  image: string | null;
+  addedAt: string;
 };
+type FilmEntry = EntryBase & { kind: "film"; mediaType: FilmType; tmdbId: number | null };
+type MusicEntry = EntryBase & {
+  kind: "music";
+  mediaType: MusicType;
+  spotifyId: string | null;
+  artist: string | null;
+};
+type Entry = FilmEntry | MusicEntry;
+
+type FilmResult = {
+  kind: "film";
+  tmdbId: number;
+  mediaType: FilmType;
+  title: string;
+  year: string;
+  image: string | null;
+  voteAverage: number | null;
+};
+type MusicResult = {
+  kind: "music";
+  spotifyId: string;
+  mediaType: MusicType;
+  title: string;
+  artist: string | null;
+  year: string;
+  image: string | null;
+};
+type SearchResult = FilmResult | MusicResult;
 
 const FILM_EMOJI_OPTIONS = [
   "🎬", "🍿", "🎥", "📺", "🌙", "❤️", "🔥", "⭐",
@@ -89,245 +117,404 @@ const MUSIC_EMOJI_OPTIONS = [
   "🎻", "🎺", "🌍", "🏆"
 ];
 
-function upscalePoster(url: string | null, size = "w500"): string | null {
-  if (!url) return null;
-  return url.replace(/\/w\d+\//, `/${size}/`);
+const LOG_HREF = "/protected/log";
+
+function formatDate(iso: string): string {
+  if (!iso) return "";
+  return formatDay(iso);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function isFilmType(value: unknown): value is FilmType {
+  return value === "movie" || value === "tv";
+}
+
+function parseFilmResults(raw: unknown): FilmResult[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((r: unknown): FilmResult[] => {
+    if (!isRecord(r) || typeof r.id !== "number" || !isFilmType(r.media_type)) return [];
+    return [
+      {
+        kind: "film",
+        tmdbId: r.id,
+        mediaType: r.media_type,
+        title: text(r.title) ?? text(r.name) ?? "Untitled",
+        year: (text(r.release_date) ?? text(r.first_air_date) ?? "").slice(0, 4),
+        image: text(r.poster_url),
+        voteAverage: typeof r.vote_average === "number" ? r.vote_average : null,
+      },
+    ];
+  });
+}
+
+function parseMusicResults(raw: unknown): MusicResult[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((r: unknown): MusicResult[] => {
+    if (!isRecord(r) || typeof r.id !== "string" || !isMusicType(r.type)) return [];
+    return [
+      {
+        kind: "music",
+        spotifyId: r.id,
+        mediaType: r.type,
+        title: text(r.name) ?? "Untitled",
+        artist: text(r.artist),
+        year: (text(r.release_date) ?? "").slice(0, 4),
+        image: text(r.image_url),
+      },
+    ];
+  });
+}
+
+function resultKey(result: SearchResult): string {
+  return result.kind === "music"
+    ? `${result.mediaType}-${result.spotifyId}`
+    : `${result.mediaType}-${result.tmdbId}`;
+}
+
+function watchlistEntry(row: WatchlistItem): FilmEntry[] {
+  if (!isFilmType(row.media_type)) return [];
+  return [
+    {
+      id: row.id,
+      source: "watchlist",
+      kind: "film",
+      title: row.title,
+      addedAt: row.added_at ?? "",
+      mediaType: row.media_type,
+      tmdbId: row.tmdb_id,
+      image: row.poster_url,
+    },
+  ];
+}
+
+function queueEntry(row: MusicQueueItem): MusicEntry[] {
+  if (!isMusicType(row.media_type)) return [];
+  return [{
+    id: row.id,
+    source: "music_queue",
+    kind: "music",
+    title: row.title,
+    mediaType: row.media_type,
+    spotifyId: row.spotify_id,
+    artist: row.artist,
+    image: row.image_url,
+    addedAt: row.added_at,
+  }];
+}
+
+function entryHref(entry: Entry): string | undefined {
+  if (entry.kind === "film") {
+    return entry.tmdbId != null ? `/protected/media/${entry.mediaType}/${entry.tmdbId}` : undefined;
+  }
+  return entry.spotifyId ? `/protected/media/${entry.mediaType}/${entry.spotifyId}` : undefined;
+}
+
+function entrySubtitle(entry: Entry): string {
+  const label = TYPE_META[entry.mediaType].shortLabel;
+  return entry.kind === "music" && entry.artist ? `${entry.artist} · ${label}` : label;
+}
+
+/** Small artwork for rows and search results: 2:3 for film, square for music. */
+function Thumb({
+  image,
+  square,
+  icon: Icon,
+}: {
+  image: string | null;
+  square: boolean;
+  icon: LucideIcon;
+}) {
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2 ${
+        square ? "h-12 w-12" : "h-[60px] w-10"
+      }`}
+    >
+      {image ? (
+         
+        <img src={image} alt="" loading="lazy" className="h-full w-full object-cover" />
+      ) : (
+        <Icon className="size-4 text-dim" aria-hidden="true" />
+      )}
+    </div>
+  );
 }
 
 function WatchlistPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const searchRef = useRef<HTMLDivElement>(null);
   const { mode } = useMode();
+  const toast = useToast();
+
+  const isMusicMode = mode === "music";
+  const listNoun = isMusicMode ? "queue" : "watchlist";
 
   const initialTab = searchParams.get("tab") === "lists" ? "lists" : "watchlist";
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
 
-  // Watchlist state — default filter follows mode
+  // Watchlist state
   const [viewType, setViewType] = useState<ViewType>("grid");
-  const [filter, setFilter] = useState<FilterType>(mode === "music" ? "music" : "film");
-
-  // When mode changes externally, reset to mode-appropriate default
-  useEffect(() => {
-    setFilter(mode === "music" ? "music" : "film");
-    setViewType("grid");
-  }, [mode]);
+  const [filter, setFilter] = useState<TypeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [musicQueue, setMusicQueue] = useState<MusicQueueItem[]>([]);
-  const [musicQueueLoading, setMusicQueueLoading] = useState(true);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(true);
+  const [entriesFailed, setEntriesFailed] = useState(false);
+  const modeRef = useRef(mode);
+  const entriesRequest = useRef(0);
+  const listsRequest = useRef(0);
 
   // Add search state
-  const [addQuery, setAddQuery] = useState("");
-  const [addResults, setAddResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [showAddDropdown, setShowAddDropdown] = useState(false);
-  const [addingId, setAddingId] = useState<string | number | null>(null);
+  const {
+    ref: dropdownRef,
+    open: dropdownOpen,
+    show: showDropdown,
+    hide: hideDropdown,
+    onKeyDown: onDropdownKeyDown,
+    onQueryChange,
+    onFocus: onInputFocus,
+  } = useAddDropdown();
+  const {
+    query: addQuery,
+    setQuery: setAddQuery,
+    results: addResults,
+    loading: isSearching,
+    error: searchError,
+  } = useDebouncedSearch<SearchResult>(async (q) => {
+    const raw = await (mode === "music" ? searchSpotify(q, "album,track") : searchTmdb(q));
+    showDropdown();
+    return mode === "music" ? parseMusicResults(raw) : parseFilmResults(raw);
+  }, [mode]);
+  const searchFailed = searchError !== null;
+  const [addingKey, setAddingKey] = useState<string | null>(null);
 
   // Lists state
   const [lists, setLists] = useState<UserList[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
+  const [listsFailed, setListsFailed] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListDescription, setNewListDescription] = useState("");
-  const defaultEmoji = mode === "music" ? "🎵" : "🎬";
-  const emojiOptions = mode === "music" ? MUSIC_EMOJI_OPTIONS : FILM_EMOJI_OPTIONS;
+  const defaultEmoji = isMusicMode ? "🎵" : "🎬";
+  const emojiOptions = isMusicMode ? MUSIC_EMOJI_OPTIONS : FILM_EMOJI_OPTIONS;
   const [newListEmoji, setNewListEmoji] = useState(defaultEmoji);
   const [creatingList, setCreatingList] = useState(false);
-  const [deletingListId, setDeletingListId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchWatchlist();
-    fetchMusicQueue();
-  }, []);
-
-  useEffect(() => {
-    fetchLists();
-  }, [mode]);
-
-  async function fetchMusicQueue() {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("music_queue")
-        .select("*")
-        .order("added_at", { ascending: false });
-      if (error) throw error;
-      setMusicQueue(data || []);
-    } catch {
-      // silently fail
-    } finally {
-      setMusicQueueLoading(false);
-    }
-  }
-
-  async function fetchWatchlist() {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("watchlist")
-        .select("*")
-        .order("added_at", { ascending: false });
-
-      if (error) throw error;
-      setWatchlist(data || []);
-    } catch {
-      // silently fail
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function fetchLists() {
-    try {
-      setListsLoading(true);
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from("lists")
-        .select("*, list_items(count)")
-        .eq("list_type", mode)
-        .order("updated_at", { ascending: false });
-
-      if (error) throw error;
-      setLists((data as UserList[]) || []);
-    } catch {
-      // silently fail
-    } finally {
-      setListsLoading(false);
-    }
-  }
-
-  // Debounced search for adding
-  useEffect(() => {
-    const q = addQuery.trim();
-    if (!q) {
-      setAddResults([]);
-      setShowAddDropdown(false);
-      return;
-    }
-
-    const t = setTimeout(async () => {
-      try {
-        setIsSearching(true);
-        let results: SearchResult[];
-        if (mode === "music") {
-          const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-          const raw = await res.json();
-          results = Array.isArray(raw)
-            ? raw.map((r: any) => ({
-                id: r.id,
-                spotify_id: r.id,
-                artist: r.artist,
-                name: r.name,
-                media_type: r.type as "album" | "track",
-                image_url: r.image_url,
-                poster_url: r.image_url,
-                release_date: r.release_date,
-              }))
-            : [];
-        } else {
-          const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-          const raw = await res.json();
-          results = Array.isArray(raw) ? raw : [];
-        }
-        setAddResults(results);
-        setShowAddDropdown(true);
-      } catch {
-        // silently fail
-      } finally {
-        setIsSearching(false);
-      }
-    }, 350);
-
-    return () => clearTimeout(t);
-  }, [addQuery]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowAddDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  async function handleAdd(result: SearchResult) {
-    setAddingId(result.id);
+  const loadEntries = useCallback(async (forMode: "film" | "music") => {
+    if (modeRef.current !== forMode) return;
+    const token = ++entriesRequest.current;
+    const current = () => token === entriesRequest.current && modeRef.current === forMode;
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const isMusic = result.media_type === "album" || result.media_type === "track";
-      if (isMusic) {
-        const { error } = await supabase.from("music_queue").insert({
-          user_id: user.id,
-          spotify_id: result.spotify_id || String(result.id),
-          media_type: result.media_type,
-          title: result.title || result.name || "Untitled",
-          artist: result.artist || null,
-          image_url: result.image_url || result.poster_url || null,
-        });
-        if (error && error.code !== "23505") throw error;
-        await fetchMusicQueue();
+      if (!current()) return;
+      if (!user) {
+        setEntriesFailed(true);
+        setEntries([]);
+        setEntriesLoading(false);
+        return;
+      }
+      if (forMode === "music") {
+        const { data, error } = await supabase
+          .from("music_queue")
+          .select("id, spotify_id, media_type, title, artist, image_url, added_at")
+          .eq("user_id", user.id)
+          .order("added_at", { ascending: false });
+        if (!current()) return;
+        if (error) {
+          setEntriesFailed(true);
+        } else {
+          setEntriesFailed(false);
+          setEntries(((data as MusicQueueItem[] | null) ?? []).flatMap(queueEntry));
+        }
       } else {
-        const { error } = await supabase.from("watchlist").insert({
-          user_id: user.id,
-          tmdb_id: result.id as number,
-          title: result.title || result.name || "Untitled",
-          media_type: result.media_type,
-          poster_url: result.poster_url || null,
+        const { data, error } = await supabase
+          .from("watchlist")
+          .select("id, tmdb_id, media_type, title, poster_url, added_at")
+          .eq("user_id", user.id)
+          .in("media_type", ["movie", "tv"])
+          .order("added_at", { ascending: false });
+        if (!current()) return;
+        if (error) {
+          setEntriesFailed(true);
+        } else {
+          setEntriesFailed(false);
+          setEntries(((data as WatchlistItem[] | null) ?? []).flatMap(watchlistEntry));
+        }
+      }
+    } catch {
+      if (!current()) return;
+      setEntriesFailed(true);
+    }
+    if (current()) setEntriesLoading(false);
+  }, []);
+
+  const fetchLists = useCallback(async (forMode: "film" | "music") => {
+    if (modeRef.current !== forMode) return;
+    const token = ++listsRequest.current;
+    const current = () => token === listsRequest.current && modeRef.current === forMode;
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!current()) return;
+      if (!user) {
+        setListsFailed(true);
+        setListsLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("lists")
+        .select("*, list_items(count)")
+        .eq("user_id", user.id)
+        .eq("list_type", forMode)
+        .order("updated_at", { ascending: false });
+      if (!current()) return;
+      if (error) {
+        setListsFailed(true);
+      } else {
+        setListsFailed(false);
+        setLists((data as UserList[]) || []);
+      }
+    } catch {
+      if (!current()) return;
+      setListsFailed(true);
+    }
+    if (current()) setListsLoading(false);
+  }, []);
+
+  // When the mode changes: drop the other mode's transient state and refetch.
+  useEffect(() => {
+    modeRef.current = mode;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a mode switch resets the page state and starts the new mode's fetches
+    setFilter("all");
+    setViewType("grid");
+    setNewListEmoji(mode === "music" ? "🎵" : "🎬");
+    setSearchQuery("");
+    setAddQuery("");
+    hideDropdown();
+    setShowCreateForm(false);
+    setEntries([]);
+    setEntriesLoading(true);
+    setLists([]);
+    setListsLoading(true);
+    void loadEntries(mode);
+    void fetchLists(mode);
+  }, [mode, loadEntries, fetchLists, setAddQuery, hideDropdown]);
+
+  async function handleAdd(result: SearchResult) {
+    const noun = result.kind === "music" ? "queue" : "watchlist";
+    const failed = () =>
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't add ${result.title} to your ${noun}`,
+        description: "Check your connection and try again.",
+      });
+
+    setAddingKey(resultKey(result));
+    try {
+      const status =
+        result.kind === "music"
+          ? await saveToQueue({
+              spotify_id: result.spotifyId,
+              media_type: result.mediaType,
+              title: result.title,
+              artist: result.artist,
+              image_url: result.image,
+            })
+          : await saveToWatchlist({
+              tmdb_id: result.tmdbId,
+              title: result.title,
+              media_type: result.mediaType,
+              poster_url: result.image,
+            });
+
+      if (status === "signed_out") {
+        toast({
+          mark: "Failed",
+          tone: "error",
+          title: `Couldn't add ${result.title} to your ${noun}`,
+          description: "Your session has ended. Sign in again and retry.",
         });
-        if (error && error.code !== "23505") throw error;
-        await fetchWatchlist();
+        return;
+      }
+      if (status === "failed" || status === "unreachable") {
+        failed();
+        return;
       }
 
+      if (status === "duplicate") {
+        toast({ tone: "info", title: `${result.title} is already in your ${noun}` });
+      } else {
+        toast({ mark: "Added", title: `${result.title} added to your ${noun}` });
+      }
+
+      await loadEntries(mode);
+
       setAddQuery("");
-      setShowAddDropdown(false);
+      hideDropdown();
     } catch {
-      // silently fail
+      failed();
     } finally {
-      setAddingId(null);
+      setAddingKey(null);
     }
   }
 
-  async function handleRemoveMusicQueue(id: string) {
+  async function handleRemove(entry: Entry) {
+    const noun = entry.source === "music_queue" ? "queue" : "watchlist";
+    const failed = () =>
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't remove ${entry.title} from your ${noun}`,
+        description: "It is still here. Try again in a moment.",
+      });
+
     try {
       const supabase = createClient();
-      await supabase.from("music_queue").delete().eq("id", id);
-      setMusicQueue(musicQueue.filter((item) => item.id !== id));
+      const { data, error } = await supabase
+        .from(entry.source)
+        .delete()
+        .eq("id", entry.id)
+        .select("id");
+      if (error || !data || data.length === 0) {
+        failed();
+        return;
+      }
+      setEntries((items) => items.filter((item) => item.id !== entry.id));
+      toast({ mark: "Removed", title: `${entry.title} removed from your ${noun}` });
     } catch {
-      // silently fail
+      failed();
     }
   }
 
-  async function handleRemove(id: string) {
-    try {
-      const supabase = createClient();
-      await supabase.from("watchlist").delete().eq("id", id);
-      setWatchlist(watchlist.filter((item) => item.id !== id));
-    } catch {
-      // silently fail
-    }
-  }
-
-  function handleMarkWatched(item: WatchlistItem) {
-    router.push("/protected/log");
+  function closeCreateForm() {
+    setShowCreateForm(false);
+    setNewListName("");
+    setNewListDescription("");
+    setNewListEmoji(defaultEmoji);
   }
 
   async function handleCreateList() {
     const name = newListName.trim();
     if (!name) return;
 
+    const failed = (description: string) =>
+      toast({ mark: "Failed", tone: "error", title: `Couldn't create ${name}`, description });
+
     setCreatingList(true);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        failed("Your session has ended. Sign in again and retry.");
+        return;
+      }
 
       const { error } = await supabase.from("lists").insert({
         user_id: user.id,
@@ -337,775 +524,456 @@ function WatchlistPageContent() {
         list_type: mode,
       });
 
-      if (error) throw error;
+      if (error) {
+        failed("Your list is still in the form. Try again in a moment.");
+        return;
+      }
 
-      setNewListName("");
-      setNewListDescription("");
-      setNewListEmoji(defaultEmoji);
-      setShowCreateForm(false);
-      await fetchLists();
+      toast({
+        mark: "Created",
+        title: `${name} is ready for its first ${isMusicMode ? "album or track" : "film or show"}`,
+      });
+      closeCreateForm();
+      await fetchLists(mode);
     } catch {
-      // silently fail
+      failed("Your list is still in the form. Try again in a moment.");
     } finally {
       setCreatingList(false);
     }
   }
 
-  async function handleDeleteList(listId: string) {
-    setDeletingListId(listId);
+  async function handleDeleteList(list: UserList) {
+    const failed = () =>
+      toast({
+        mark: "Failed",
+        tone: "error",
+        title: `Couldn't delete ${list.name}`,
+        description: "It is still here. Try again in a moment.",
+      });
+
     try {
       const supabase = createClient();
-      await supabase.from("lists").delete().eq("id", listId);
-      setLists(lists.filter((l) => l.id !== listId));
+      const { data, error } = await supabase
+        .from("lists")
+        .delete()
+        .eq("id", list.id)
+        .select("id");
+      if (error || !data || data.length === 0) {
+        failed();
+        return;
+      }
+      setLists((items) => items.filter((l) => l.id !== list.id));
+      toast({ mark: "Removed", title: `${list.name} deleted` });
     } catch {
-      // silently fail
-      await fetchLists();
-    } finally {
-      setDeletingListId(null);
-      setConfirmDeleteId(null);
+      failed();
     }
   }
 
-  const filteredItems = watchlist.filter((item) => {
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "film" && (item.media_type === "movie" || item.media_type === "tv")) ||
-      (filter === "movies" && item.media_type === "movie") ||
-      (filter === "tv" && item.media_type === "tv") ||
-      (filter === "music" && (item.media_type === "album" || item.media_type === "track")) ||
-      (filter === "albums" && item.media_type === "album");
+  const needle = searchQuery.trim().toLowerCase();
+  const filteredItems = entries.filter(
+    (entry) =>
+      (filter === "all" || entry.mediaType === filter) &&
+      entry.title.toLowerCase().includes(needle),
+  );
+  const isFiltered = filter !== "all" || needle.length > 0;
 
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
+  const countOf = (type: MediaType) => entries.filter((e) => e.mediaType === type).length;
+  const stats = isMusicMode
+    ? [
+        { label: "In queue", value: entries.length },
+        { label: "Albums", value: countOf("album") },
+        { label: "Tracks", value: countOf("track") },
+      ]
+    : [
+        { label: "To watch", value: entries.length },
+        { label: "Films", value: countOf("movie") },
+        { label: "TV shows", value: countOf("tv") },
+      ];
 
-    return matchesFilter && matchesSearch;
-  });
+  const filterOptions: { value: TypeFilter; label: string; icon?: LucideIcon }[] = isMusicMode
+    ? [
+        { value: "all", label: "All" },
+        { value: "album", label: "Albums", icon: Disc3 },
+        { value: "track", label: "Tracks", icon: Music2 },
+      ]
+    : [
+        { value: "all", label: "All" },
+        { value: "movie", label: "Films", icon: Film },
+        { value: "tv", label: "TV", icon: Tv },
+      ];
 
-  const isMusicFilter = filter === "music" || filter === "albums";
-  const effectiveViewType = filter === "all" ? "list" : viewType;
+  const filmKeys = new Set<string>();
+  const spotifyIds = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind === "film") {
+      if (entry.tmdbId != null) filmKeys.add(`${entry.mediaType}:${entry.tmdbId}`);
+    } else if (entry.spotifyId) {
+      spotifyIds.add(entry.spotifyId);
+    }
+  }
+  const isAlreadyAdded = (result: SearchResult) =>
+    result.kind === "music"
+      ? spotifyIds.has(result.spotifyId)
+      : filmKeys.has(`${result.mediaType}:${result.tmdbId}`);
 
-  const stats = mode === "music"
-    ? {
-        total: musicQueue.length,
-        albums: musicQueue.filter((i) => i.media_type === "album").length,
-        tracks: musicQueue.filter((i) => i.media_type === "track").length,
-      }
-    : {
-        total: watchlist.length,
-        movies: watchlist.filter((i) => i.media_type === "movie").length,
-        tvShows: watchlist.filter((i) => i.media_type === "tv").length,
-        albums: 0,
-      };
-
-  const watchlistTmdbIds = new Set(watchlist.map((i) => i.tmdb_id));
-  const musicQueueSpotifyIds = new Set(musicQueue.map((i) => i.spotify_id).filter(Boolean));
+  const logText = (entry: Entry) => (entry.kind === "music" ? "Log listen" : "Log watch");
+  const logAria = (entry: Entry) => `${logText(entry)}: ${entry.title}`;
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Header */}
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
-              {activeTab === "watchlist"
-                ? (mode === "music" ? "My Queue" : "My Watchlist")
-                : "My Lists"}
-            </h1>
-            <p className="text-muted-foreground">
-              {activeTab === "watchlist"
-                ? mode === "music"
-                  ? "Albums and tracks you want to listen to next"
-                  : "Movies and shows you want to watch next"
-                : "Curate collections of movies, shows, and music"}
-            </p>
-          </div>
-        </div>
+    <div>
+      <PageHeader
+        title={
+          <>
+            Your <em>{listNoun}</em>
+          </>
+        }
+        description={
+          activeTab === "watchlist"
+            ? isMusicMode
+              ? "Albums and tracks you want to listen to next."
+              : "Films and shows you want to watch next."
+            : isMusicMode
+              ? "Curate collections of albums and tracks."
+              : "Curate collections of films and shows."
+        }
+      />
 
-        {/* Tab Bar */}
-        <div className="flex items-center gap-1 border-2 border-border p-1 w-fit">
-          <button
-            onClick={() => setActiveTab("watchlist")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === "watchlist"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            Watchlist
-          </button>
-          <button
-            onClick={() => setActiveTab("lists")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === "lists"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <ListMusic className="w-4 h-4" />
-            My Lists
-          </button>
-        </div>
-      </div>
+      <TabBar
+        label={`${isMusicMode ? "Queue" : "Watchlist"} sections`}
+        idBase="watchlist"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          {
+            value: "watchlist",
+            label: isMusicMode ? "Queue" : "Watchlist",
+            icon: Clock,
+            count: entriesLoading ? undefined : entries.length,
+          },
+          {
+            value: "lists",
+            label: "Lists",
+            icon: isMusicMode ? ListMusic : ListChecks,
+            count: listsLoading ? undefined : lists.length,
+          },
+        ]}
+      />
 
-      {/* ============ WATCHLIST TAB ============ */}
+      {/* ============ WATCHLIST / QUEUE TAB ============ */}
       {activeTab === "watchlist" && (
-        <>
-          {/* Add to Watchlist Search */}
-          <div ref={searchRef} className="relative border-2 border-primary/30 bg-primary/5 p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Plus className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium text-primary">Add to Watchlist</span>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder={mode === "music" ? "Search for an album or track..." : "Search for a movie or TV show..."}
-                value={addQuery}
-                onChange={(e) => setAddQuery(e.target.value)}
-                onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
-                className="pl-10 py-5 text-base bg-card border-2 border-border"
-              />
-              {isSearching && (
-                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
+        <div
+          role="tabpanel"
+          id="watchlist-panel-watchlist"
+          aria-labelledby="watchlist-tab-watchlist"
+          className="mt-8 flex flex-col gap-10"
+        >
+          {/* Search to add */}
+          <div>
+            <Field label={`Add to your ${listNoun}`} htmlFor="watchlist-add" className="max-w-xl">
+              <div
+                ref={dropdownRef}
+                className="relative"
+                onKeyDown={onDropdownKeyDown}
+              >
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  id="watchlist-add"
+                  type="search"
+                  autoComplete="off"
+                  placeholder={isMusicMode ? "Search for an album or track" : "Search for a film or TV show"}
+                  value={addQuery}
+                  onChange={(e) => {
+                    setAddQuery(e.target.value);
+                    onQueryChange(e.target.value);
+                  }}
+                  onFocus={() => onInputFocus(addResults.length > 0)}
+                  className="pl-9"
+                />
 
-            {showAddDropdown && addResults.length > 0 && (
-              <div className="absolute left-5 right-5 z-50 border-2 border-border bg-card max-h-72 overflow-auto shadow-lg">
-                {addResults.slice(0, 8).map((result) => {
-                  const label = result.title || result.name || "Untitled";
-                  const year = (result.release_date || result.first_air_date || "").slice(0, 4);
-                  const isMusicResult = result.media_type === "album" || result.media_type === "track";
-                  const alreadyAdded = isMusicResult
-                    ? musicQueueSpotifyIds.has(result.spotify_id || String(result.id))
-                    : watchlistTmdbIds.has(result.id as number);
-                  const artUrl = result.image_url || result.poster_url || null;
-                  return (
-                    <div
-                      key={`${result.media_type}-${result.id}`}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted transition-colors"
-                    >
-                      {artUrl ? (
-                        <img
-                          src={artUrl}
-                          alt={label}
-                          className={`object-cover rounded shrink-0 ${isMusicResult ? "w-10 h-10" : "w-8 h-12"}`}
-                        />
-                      ) : (
-                        <div className={`bg-muted/50 rounded flex items-center justify-center shrink-0 ${isMusicResult ? "w-10 h-10" : "w-8 h-12"}`}>
-                          {result.media_type === "movie" ? <Film className="w-4 h-4 text-muted-foreground" />
-                            : result.media_type === "tv" ? <Tv className="w-4 h-4 text-muted-foreground" />
-                            : result.media_type === "album" ? <Disc3 className="w-4 h-4 text-muted-foreground" />
-                            : <Music2 className="w-4 h-4 text-muted-foreground" />}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{label}</div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          {isMusicResult && result.artist && (
-                            <span className="text-accent truncate">{result.artist}</span>
-                          )}
-                          <span>{isMusicResult ? (result.media_type === "album" ? "Album" : "Track") : result.media_type === "movie" ? "Movie" : "TV Show"}</span>
-                          {year && <><span>·</span><span>{year}</span></>}
-                          {!isMusicResult && result.vote_average != null && result.vote_average > 0 && (
+                {dropdownOpen && !searchFailed && (
+                  <div className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
+                    {addResults.length === 0 ? (
+                      <p className="t-meta px-3 py-4">
+                        Nothing found for &ldquo;{addQuery.trim()}&rdquo;. Try another title.
+                      </p>
+                    ) : (
+                      <ul>
+                        {addResults.slice(0, 8).map((result) => {
+                          const key = resultKey(result);
+                          const meta = TYPE_META[result.mediaType];
+                          const details = [
+                            result.kind === "music" ? result.artist : null,
+                            meta.shortLabel,
+                            result.year || null,
+                            result.kind === "film" && result.voteAverage != null && result.voteAverage > 0
+                              ? `TMDB ${result.voteAverage.toFixed(1)}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ");
+                          const body = (
                             <>
-                              <span>·</span>
-                              <span className="flex items-center gap-1">
-                                <Star className="w-3 h-3 text-accent fill-accent" />
-                                {result.vote_average.toFixed(1)}
+                              <Thumb image={resizePoster(result.image, "w185")} square={result.kind === "music"} icon={meta.icon} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-foreground">{result.title}</span>
+                                <span className="t-meta block truncate">{details}</span>
                               </span>
                             </>
-                          )}
-                        </div>
-                      </div>
-                      {alreadyAdded ? (
-                        <span className="text-xs text-muted-foreground px-3 py-1.5 border border-border rounded-md">
-                          Added
-                        </span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="shrink-0"
-                          disabled={addingId === result.id}
-                          onClick={() => handleAdd(result)}
-                        >
-                          {addingId === result.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <><Plus className="w-4 h-4 mr-1" /> Add</>
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
+                          );
+                          const rowClass = "flex w-full items-center gap-3 px-3 py-2.5 text-left";
+                          return (
+                            <li key={key} className="row-item last:border-b-0">
+                              {isAlreadyAdded(result) ? (
+                                <div className={rowClass}>
+                                  {body}
+                                  <Badge variant="success" className="shrink-0">
+                                    <Check className="size-3" aria-hidden="true" />
+                                    In {listNoun}
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={addingKey !== null}
+                                  onClick={() => handleAdd(result)}
+                                  className={`${rowClass} group/result -outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
+                                >
+                                  {body}
+                                  <span className="t-label flex shrink-0 items-center gap-1 transition-colors duration-cut ease-mech group-hover/result:text-primary group-focus-visible/result:text-primary">
+                                    <Plus className="size-3.5" aria-hidden="true" />
+                                    {addingKey === key ? "Adding" : "Add"}
+                                  </span>
+                                </button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
+            </Field>
+            <div className="mt-2 min-h-[18px]">
+              {isSearching && <LoadingLine label="Searching" />}
+            </div>
+            {searchFailed && !isSearching && (
+              <Notice tone="error" title="Search didn't go through" className="mt-1 max-w-xl">
+                Check your connection, then type the title again.
+              </Notice>
             )}
           </div>
 
-          {/* Stats Bar */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="border-2 border-border p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 border-2 border-primary flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold">{stats.total}</div>
-                  <p className="text-sm text-muted-foreground">{mode === "music" ? "In Queue" : "To Watch"}</p>
-                </div>
-              </div>
-            </div>
-            {mode === "music" ? (<>
-              <div className="border-2 border-border p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
-                    <Disc3 className="w-5 h-5 text-accent" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{(stats as any).albums}</div>
-                    <p className="text-sm text-muted-foreground">Albums</p>
-                  </div>
-                </div>
-              </div>
-              <div className="border-2 border-border p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
-                    <Music2 className="w-5 h-5 text-secondary" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{(stats as any).tracks}</div>
-                    <p className="text-sm text-muted-foreground">Tracks</p>
-                  </div>
-                </div>
-              </div>
-            </>) : (<>
-              <div className="border-2 border-border p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 border-2 border-accent flex items-center justify-center">
-                    <Film className="w-5 h-5 text-accent" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{(stats as any).movies}</div>
-                    <p className="text-sm text-muted-foreground">{(stats as any).movies === 1 ? "Movie" : "Movies"}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="border-2 border-border p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 border-2 border-secondary flex items-center justify-center">
-                    <Tv className="w-5 h-5 text-secondary" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{(stats as any).tvShows}</div>
-                    <p className="text-sm text-muted-foreground">{(stats as any).tvShows === 1 ? "TV Show" : "TV Shows"}</p>
-                  </div>
-                </div>
-              </div>
-            </>)}
+          {/* Figures */}
+          <div className="flex flex-wrap gap-x-12 gap-y-6">
+            {stats.map((stat) => (
+              <StatBlock key={stat.label} label={stat.label} value={stat.value} loading={entriesLoading} />
+            ))}
           </div>
 
-          {/* Filters & Search */}
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-            <div className="flex items-center gap-1 border-2 border-border p-1 flex-wrap">
-              {mode === "music" ? (
-                <>
-                  <button
-                    onClick={() => { setFilter("music"); setViewType("grid"); }}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                      filter === "music" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Music2 className="w-4 h-4" />
-                    Music
-                  </button>
-                  <button
-                    onClick={() => { setFilter("albums"); setViewType("grid"); }}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                      filter === "albums" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Disc3 className="w-4 h-4" />
-                    Albums
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { setFilter("film"); setViewType("grid"); }}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                      filter === "film" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Film className="w-4 h-4" />
-                    Film &amp; TV
-                  </button>
-                  <button
-                    onClick={() => { setFilter("movies"); setViewType("grid"); }}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                      filter === "movies" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Film className="w-4 h-4" />
-                    Movies
-                  </button>
-                  <button
-                    onClick={() => { setFilter("tv"); setViewType("grid"); }}
-                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
-                      filter === "tv" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Tv className="w-4 h-4" />
-                    TV Shows
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => setFilter("all")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  filter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All
-              </button>
-            </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="relative flex-1 sm:flex-none">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder={mode === "music" ? "Filter queue..." : "Filter watchlist..."}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 bg-card/50 border-border/50 w-full sm:w-64"
+          <div>
+            {/* Filters & view */}
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <SegmentedControl
+                label="Filter by type"
+                value={filter}
+                onChange={setFilter}
+                options={filterOptions}
+              />
+              <div className="flex w-full items-center gap-3 sm:w-auto">
+                <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+                  <label htmlFor="watchlist-filter" className="sr-only">
+                    Filter your {listNoun} by title
+                  </label>
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="watchlist-filter"
+                    type="search"
+                    placeholder={`Filter ${listNoun}`}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-9 pl-9"
+                  />
+                </div>
+                <SegmentedControl
+                  label="View"
+                  value={viewType}
+                  onChange={setViewType}
+                  className="shrink-0"
+                  options={[
+                    { value: "grid", label: "Grid view", icon: LayoutGrid, iconOnly: true },
+                    { value: "list", label: "List view", icon: List, iconOnly: true },
+                  ]}
                 />
               </div>
-
-              {filter !== "all" && (
-                <div className="flex items-center gap-1 bg-card/50 border border-border/50 rounded-lg p-1">
-                  <button
-                    onClick={() => setViewType("grid")}
-                    className={`p-2 rounded transition-colors ${
-                      viewType === "grid" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    title="Grid view"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setViewType("list")}
-                    className={`p-2 rounded transition-colors ${
-                      viewType === "list" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    title="List view"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
 
-          {/* Content — music mode shows music_queue, film mode shows watchlist */}
-          {mode === "music" ? (
-            musicQueueLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : musicQueue.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                  <Disc3 className="w-10 h-10 text-muted-foreground" />
-                </div>
-                <h2 className="text-xl font-semibold mb-2">Your music queue is empty</h2>
-                <p className="text-muted-foreground mb-6 max-w-md">
-                  Use the search bar above to find albums and tracks to add.
+            {/* Content */}
+            {entriesLoading ? (
+              viewType === "grid" ? (
+                <MediaGridSkeleton aspect={isMusicMode ? "square" : "poster"} />
+              ) : (
+                <RowListSkeleton count={5} />
+              )
+            ) : entriesFailed ? (
+              <Notice tone="error" title={`Couldn't load your ${listNoun}`}>
+                Check your connection and reload the page.
+              </Notice>
+            ) : entries.length === 0 ? (
+              <EmptyState
+                icon={isMusicMode ? Disc3 : Clock}
+                title={isMusicMode ? "Nothing queued up yet." : "Nothing on your watchlist yet."}
+                description={
+                  isMusicMode
+                    ? "Search above for an album or track to listen to next, or see what Discover suggests."
+                    : "Search above for a film or show to watch next, or see what Discover suggests."
+                }
+                action={
+                  <Button asChild>
+                    <Link href="/protected/discover">Browse Discover</Link>
+                  </Button>
+                }
+              />
+            ) : filteredItems.length === 0 ? (
+              <EmptyState
+                icon={Search}
+                title={`Nothing in your ${listNoun} matches.`}
+                description="Try a different title, or clear the filters to see everything."
+                action={
+                  isFiltered ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setFilter("all");
+                        setSearchQuery("");
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : viewType === "grid" ? (
+              <>
+                <MediaGrid>
+                  {filteredItems.map((entry) => (
+                    <MediaCard
+                      key={entry.id}
+                      title={entry.title}
+                      subtitle={entrySubtitle(entry)}
+                      image={resizePoster(entry.image, "w342")}
+                      aspect={entry.kind === "music" ? "square" : "poster"}
+                      href={entryHref(entry)}
+                      fallbackIcon={TYPE_META[entry.mediaType].icon}
+                      actions={
+                        <>
+                          <Button
+                            asChild
+                            size="icon"
+                            variant="outline"
+                            className="bg-background/90"
+                          >
+                            <Link
+                              href={LOG_HREF}
+                              aria-label={logAria(entry)}
+                              title={logText(entry)}
+                            >
+                              <Check aria-hidden="true" />
+                            </Link>
+                          </Button>
+                          <ConfirmButton
+                            iconOnly
+                            label={`Remove ${entry.title} from your ${listNoun}`}
+                            confirmLabel="Remove?"
+                            className="bg-background/90"
+                            onConfirm={() => handleRemove(entry)}
+                          />
+                        </>
+                      }
+                    />
+                  ))}
+                </MediaGrid>
+                <p className="t-meta mt-8">
+                  On each cover, the tick opens the log page and the bin removes it from your {listNoun}.
                 </p>
-              </div>
+              </>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {musicQueue.map((item) => (
-                  <div
-                    key={item.id}
-                    className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 relative"
-                  >
-                    <div className="aspect-square bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden">
-                      {item.image_url ? (
-                        <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
-                      ) : item.media_type === "album" ? (
-                        <Disc3 className="w-12 h-12 text-white/50" />
-                      ) : (
-                        <Music2 className="w-12 h-12 text-white/50" />
-                      )}
-                      <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <Button
-                          size="sm"
-                          className="bg-green-500 hover:bg-green-600"
-                          onClick={(e) => { e.stopPropagation(); router.push("/protected/log"); }}
-                        >
-                          <Check className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={(e) => { e.stopPropagation(); handleRemoveMusicQueue(item.id); }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+              <ul className="advance border-t border-border">
+                {filteredItems.map((entry) => {
+                  const href = entryHref(entry);
+                  const meta = TYPE_META[entry.mediaType];
+                  return (
+                    <li key={entry.id} className="row-item relative flex items-center gap-4 px-2 py-3">
+                      <Thumb
+                        image={resizePoster(entry.image, "w185")}
+                        square={entry.kind === "music"}
+                        icon={meta.icon}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="t-card truncate">
+                          {href ? (
+                            <Link href={href} className="after:absolute after:inset-0 after:content-['']">
+                              {entry.title}
+                            </Link>
+                          ) : (
+                            entry.title
+                          )}
+                        </h3>
+                        <p className="t-meta mt-1 truncate">
+                          {entrySubtitle(entry)}
+                          {entry.addedAt && ` · Added ${formatDate(entry.addedAt)}`}
+                        </p>
                       </div>
-                    </div>
-                    <div className="p-3 space-y-1">
-                      <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors text-sm">
-                        {item.title}
-                      </h3>
-                      {item.artist && (
-                        <p className="text-xs text-accent truncate">{item.artist}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {item.media_type === "album" ? "Album" : "Track"}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          ) : loading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                <Clock className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">Your watchlist is empty</h2>
-              <p className="text-muted-foreground mb-6 max-w-md">
-                {searchQuery
-                  ? "No results match your search. Try different keywords."
-                  : "Use the search bar above to find movies and TV shows to add."}
-              </p>
-            </div>
-          ) : effectiveViewType === "grid" ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {filteredItems.map((item) => {
-                const isMusic = item.media_type === "album" || item.media_type === "track";
-                const logLabel = isMusic ? "Listened" : "Watched";
-                return (
-                  <div
-                    key={item.id}
-                    className="group border-2 border-border overflow-hidden hover:border-primary hover:-translate-y-1 hover:shadow-xl transition-all duration-300 cursor-pointer relative"
-                    onClick={() => router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
-                  >
-                    {/* Art — portrait for film, square for music */}
-                    <div className={`${isMusic ? "aspect-square" : "aspect-[2/3]"} bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center relative overflow-hidden`}>
-                      {item.poster_url ? (
-                        <img
-                          src={upscalePoster(item.poster_url)!}
-                          alt={item.title}
-                          className="w-full h-full object-cover"
+                      <div className="relative z-[2] flex shrink-0 items-center gap-1">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={LOG_HREF} aria-label={logAria(entry)}>
+                            <Check aria-hidden="true" />
+                            <span className="hidden sm:inline">{logText(entry)}</span>
+                          </Link>
+                        </Button>
+                        <ConfirmButton
+                          iconOnly
+                          label={`Remove ${entry.title} from your ${listNoun}`}
+                          confirmLabel="Remove?"
+                          onConfirm={() => handleRemove(entry)}
                         />
-                      ) : item.media_type === "movie" ? (
-                        <Film className="w-12 h-12 text-white/50" />
-                      ) : item.media_type === "tv" ? (
-                        <Tv className="w-12 h-12 text-white/50" />
-                      ) : (
-                        <Disc3 className="w-12 h-12 text-white/50" />
-                      )}
-                      <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <Button
-                          size="sm"
-                          className="bg-green-500 hover:bg-green-600"
-                          onClick={(e) => { e.stopPropagation(); handleMarkWatched(item); }}
-                        >
-                          <Check className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={(e) => { e.stopPropagation(); handleRemove(item.id); }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
                       </div>
-                    </div>
-                    <div className="p-3 space-y-1.5">
-                      <h3 className="font-semibold line-clamp-1 group-hover:text-primary transition-colors text-sm">
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>
-                          {item.media_type === "movie" ? "Movie"
-                            : item.media_type === "tv" ? "TV Show"
-                            : "Album"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredItems.map((item) => {
-                const isMusic = item.media_type === "album" || item.media_type === "track";
-                const logLabel = isMusic ? "Listened" : "Watched";
-                return (
-                  <div
-                    key={item.id}
-                    className="group flex items-center gap-4 p-4 border-2 border-border hover:border-primary hover:translate-x-1 transition-all duration-300 cursor-pointer"
-                    onClick={() => router.push(`/protected/media/${item.media_type}/${item.tmdb_id}`)}
-                  >
-                    {/* Thumbnail — portrait for film, square for music */}
-                    <div className={`flex-shrink-0 bg-gradient-to-br from-primary/30 via-accent/20 to-secondary/30 flex items-center justify-center overflow-hidden ${
-                      isMusic ? "w-14 h-14" : "w-14 h-20"
-                    }`}>
-                      {item.poster_url ? (
-                        <img
-                          src={upscalePoster(item.poster_url, "w185")!}
-                          alt={item.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : item.media_type === "movie" ? (
-                        <Film className="w-6 h-6 text-white/50" />
-                      ) : item.media_type === "tv" ? (
-                        <Tv className="w-6 h-6 text-white/50" />
-                      ) : (
-                        <Disc3 className="w-6 h-6 text-white/50" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
-                        {item.title}
-                      </h3>
-                      <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                        <span className="flex items-center gap-1">
-                          {isMusic ? <Disc3 className="w-3 h-3" /> : item.media_type === "movie" ? <Film className="w-3 h-3" /> : <Tv className="w-3 h-3" />}
-                          {item.media_type === "movie" ? "Movie" : item.media_type === "tv" ? "TV Show" : "Album"}
-                        </span>
-                        <span className="text-xs">
-                          Added {new Date(item.added_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="bg-green-500 hover:bg-green-600"
-                        onClick={(e) => { e.stopPropagation(); handleMarkWatched(item); }}
-                        title={isMusic ? "Mark as listened" : "Mark as watched"}
-                      >
-                        <Check className="w-4 h-4 mr-1" />
-                        {logLabel}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={(e) => { e.stopPropagation(); handleRemove(item.id); }}
-                        title="Remove from queue"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Tips */}
-          {!loading && filteredItems.length > 0 && (
-            <div className="border-2 border-border p-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Click <Check className="w-4 h-4 inline text-green-500" /> to log a {mode === "music" ? "listen" : "watch"}, or <Trash2 className="w-4 h-4 inline text-destructive" /> to remove from {mode === "music" ? "queue" : "watchlist"}.
-              </p>
-            </div>
-          )}
-        </>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
 
-      {/* ============ MY LISTS TAB ============ */}
+      {/* ============ LISTS TAB ============ */}
       {activeTab === "lists" && (
-        <>
-          {/* Create List */}
-          {showCreateForm ? (
-            <div className="border-2 border-primary/30 bg-primary/5 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium text-primary">Create New List</span>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setNewListName("");
-                    setNewListDescription("");
-                    setNewListEmoji(defaultEmoji);
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Emoji Selector */}
-              <div>
-                <label className="text-sm text-muted-foreground mb-2 block">Pick an icon</label>
-                <div className="flex flex-wrap gap-2">
-                  {emojiOptions.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setNewListEmoji(emoji)}
-                      className={`w-10 h-10 text-lg flex items-center justify-center rounded-lg border-2 transition-colors ${
-                        newListEmoji === emoji
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground mb-1.5 block">Name *</label>
-                <Input
-                  placeholder={mode === "music" ? "e.g. Chill Vibes Playlist" : "e.g. Movie Night with Friends"}
-                  value={newListName}
-                  onChange={(e) => setNewListName(e.target.value)}
-                  className="bg-card border-2 border-border"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground mb-1.5 block">Description (optional)</label>
-                <textarea
-                  placeholder="What's this list about?"
-                  value={newListDescription}
-                  onChange={(e) => setNewListDescription(e.target.value)}
-                  rows={2}
-                  className="flex w-full rounded-md border-2 border-border bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleCreateList}
-                  disabled={!newListName.trim() || creatingList}
-                >
-                  {creatingList ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...</>
-                  ) : (
-                    <><Plus className="w-4 h-4 mr-2" /> Create List</>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setNewListName("");
-                    setNewListDescription("");
-                    setNewListEmoji(defaultEmoji);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="outline"
-              className="border-2 border-dashed border-primary/40 text-primary hover:bg-primary/5 py-6 w-full"
-              onClick={() => setShowCreateForm(true)}
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Create New List
-            </Button>
-          )}
-
-          {/* Lists Grid */}
-          {listsLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : lists.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-20 h-20 rounded-full bg-card/50 flex items-center justify-center mb-6">
-                <ListMusic className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">No lists yet</h2>
-              <p className="text-muted-foreground mb-6 max-w-md">
-                {mode === "music"
-                  ? "Create lists to organise albums and tracks by genre, mood, or vibe."
-                  : "Create lists to organise movies and shows by genre, mood, or occasion."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {lists.map((list) => {
-                const itemCount = list.list_items?.[0]?.count ?? 0;
-                return (
-                  <div
-                    key={list.id}
-                    className="group border-2 border-border p-5 hover:border-primary hover:-translate-y-1 hover:shadow-lg transition-all duration-300 cursor-pointer relative"
-                    onClick={() => router.push(`/protected/lists/${list.id}`)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-3xl">{list.emoji || "🎬"}</span>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors truncate">
-                          {list.name}
-                        </h3>
-                        {list.description && (
-                          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-                            {list.description}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            {list.list_type === "music" ? <Music2 className="w-3 h-3" /> : <Film className="w-3 h-3" />}
-                            {itemCount} {itemCount === 1 ? "title" : "titles"}
-                          </span>
-                          <span>
-                            {new Date(list.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirmDeleteId === list.id) {
-                          handleDeleteList(list.id);
-                        } else {
-                          setConfirmDeleteId(list.id);
-                          setTimeout(() => setConfirmDeleteId(null), 3000);
-                        }
-                      }}
-                      className={`absolute top-3 right-3 p-2 rounded-lg transition-colors ${
-                        confirmDeleteId === list.id
-                          ? "bg-destructive text-destructive-foreground"
-                          : "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      }`}
-                      title={confirmDeleteId === list.id ? "Click again to confirm" : "Delete list"}
-                    >
-                      {deletingListId === list.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+        <ListsPanel
+          lists={lists}
+          loading={listsLoading}
+          failed={listsFailed}
+          isMusicMode={isMusicMode}
+          showCreateForm={showCreateForm}
+          newListName={newListName}
+          newListDescription={newListDescription}
+          newListEmoji={newListEmoji}
+          emojiOptions={emojiOptions}
+          creatingList={creatingList}
+          onOpenForm={() => setShowCreateForm(true)}
+          onCloseForm={closeCreateForm}
+          onNameChange={setNewListName}
+          onDescriptionChange={setNewListDescription}
+          onEmojiChange={setNewListEmoji}
+          onCreate={handleCreateList}
+          onDelete={handleDeleteList}
+        />
       )}
     </div>
   );
@@ -1113,11 +981,7 @@ function WatchlistPageContent() {
 
 export default function WatchlistPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    }>
+    <Suspense fallback={<PageLoading label="Loading" />}>
       <WatchlistPageContent />
     </Suspense>
   );
