@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { RecentPlays } from "@/components/log/recent-plays";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine, PageLoading } from "@/components/ui/loading";
@@ -16,6 +17,7 @@ import { StarInput, Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode, useSyncMode } from "@/lib/mode-context";
+import { localDay, type RecentCandidate } from "@/lib/spotify/recent";
 import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 import { resizePoster } from "@/lib/tmdb/poster";
 import type { MediaSearchResult } from "@/lib/types";
@@ -641,6 +643,28 @@ function LogWatchForm() {
     }
   };
 
+  // Start a music log from a recent Spotify play: same state as picking it from search results.
+  const pickRecent = (c: RecentCandidate) => {
+    setMediaType(c.type);
+    setTitle(c.name);
+    setSelectedMovie({
+      id: 1,
+      media_type: c.type,
+      spotify_id: c.id,
+      name: c.name,
+      artist: c.artist,
+      album_name: c.album_name,
+      poster_url: c.image_url,
+    });
+    setSpotifyId(c.id);
+    setArtist(c.artist);
+    setAlbumName(c.album_name);
+    setSearchOpen(false);
+    setActiveIndex(-1);
+    setWatchedDate(localDay(c.last_played_at));
+    setListenedOn("Spotify");
+  };
+
   useEffect(() => {
     chooseRef.current = chooseResult;
   });
@@ -866,6 +890,10 @@ function LogWatchForm() {
                   </div>
                 )}
               </div>
+            )}
+
+            {mode === "music" && !isEditMode && !initialPrefill && !selectedMovie && title.trim() === "" && (
+              <RecentPlays onPick={pickRecent} />
             )}
 
             {/* Compact confirmation of the match; the artwork is in the preview */}
