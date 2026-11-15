@@ -138,14 +138,3 @@ export async function getSpotifyItem(
   const data = await res.json();
   return type === "album" ? normaliseAlbum(data) : normaliseTrack(data);
 }
-
-export async function getNewReleases(limit = 20): Promise<SpotifySearchResult[]> {
-  const token = await getSpotifyToken();
-  const res = await fetch(`${BASE_URL}/browse/new-releases?limit=${limit}&country=US`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Spotify new-releases error: ${res.statusText}`);
-
-  const data = await res.json();
-  return (data.albums?.items || []).filter(Boolean).map(normaliseAlbum);
-}

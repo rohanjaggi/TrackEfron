@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { normaliseTrack, type RawTrack } from "@/lib/spotify/spotify";
+import { fetchRecentPlays, groupRecentPlays } from "@/lib/spotify/recent";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -34,6 +35,22 @@ export async function GET(request: NextRequest) {
       const data = await res.json();
       const tracks = (data.items || []).map((t: RawTrack) => normaliseTrack(t));
       return NextResponse.json(tracks);
+    }
+
+    if (action === "recently-played") {
+      const plays = await fetchRecentPlays(accessToken);
+      if (plays === null) return NextResponse.json({ connected: false, reason: "token_invalid" });
+
+      const { data: logs, error: logsError } = await supabase
+        .from("listen_logs")
+        .select("spotify_id")
+        .eq("user_id", user.id);
+      if (logsError) throw new Error(`listen_logs read failed: ${logsError.message}`);
+
+      const logged = new Set<string>(
+        (logs ?? []).map((r) => r.spotify_id).filter((id): id is string => !!id)
+      );
+      return NextResponse.json(groupRecentPlays(plays, logged));
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

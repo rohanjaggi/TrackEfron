@@ -1,7 +1,6 @@
 import {
   searchSpotify,
   getSpotifyItem,
-  getNewReleases,
 } from "@/lib/spotify/spotify";
 import { NextResponse } from "next/server";
 
@@ -30,15 +29,6 @@ export async function GET(request: Request) {
     try {
       const item = await getSpotifyItem(id, type);
       return NextResponse.json(item);
-    } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Spotify request failed" }, { status: 500 });
-    }
-  }
-
-  if (action === "new-releases") {
-    try {
-      const results = await getNewReleases(20);
-      return NextResponse.json(results);
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Spotify request failed" }, { status: 500 });
     }

@@ -50,7 +50,7 @@ const THE_REST: { term: string; detail: string }[] = [
   { term: "Library", detail: "Everything you've logged, with artwork, ratings and reviews." },
   { term: "Watchlist and queue", detail: "Save films and albums for later from search or discover." },
   { term: "Search", detail: "Films and shows from TMDB, albums and tracks from Spotify." },
-  { term: "Spotify", detail: "Connect your account to bring in your listening history." },
+  { term: "Spotify", detail: "Connect your account to log from your recent plays and sharpen your music picks." },
   { term: "Friends", detail: "Add friends and read each other's profiles." },
   { term: "Lists", detail: "Make your own lists, each with a name and a note." },
   { term: "Context", detail: "Note where you watched and who you were with." },
