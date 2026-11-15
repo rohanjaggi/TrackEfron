@@ -47,38 +47,14 @@ const RECENT_LISTENS: Entry[] = [
 ];
 
 const THE_REST: { term: string; detail: string }[] = [
-  {
-    term: "Library",
-    detail: "Every film, show and album you have logged, with its artwork, your rating and your review.",
-  },
-  {
-    term: "Watchlist and queue",
-    detail: "Save films to watch later and albums to listen to later, straight from search or discover.",
-  },
-  {
-    term: "Search",
-    detail: "Find any film or show through TMDB and any album or track through Spotify. The details fill themselves in.",
-  },
-  {
-    term: "Spotify",
-    detail: "Connect your account to pull in album art, metadata and your listening history.",
-  },
-  {
-    term: "Friends",
-    detail: "Find people you know, send a request, and read each other's profiles.",
-  },
-  {
-    term: "Lists",
-    detail: "Gather entries into lists of your own, each with a name and a note on what it is for.",
-  },
-  {
-    term: "Context",
-    detail: "Note where you watched and who you were with, so the entry remembers the evening too.",
-  },
-  {
-    term: "Your own key",
-    detail: "The AI features run on your own API key from OpenAI, Anthropic or Gemini. Your data stays yours.",
-  },
+  { term: "Library", detail: "Everything you've logged, with artwork, ratings and reviews." },
+  { term: "Watchlist and queue", detail: "Save films and albums for later from search or discover." },
+  { term: "Search", detail: "Films and shows from TMDB, albums and tracks from Spotify." },
+  { term: "Spotify", detail: "Connect your account to bring in your listening history." },
+  { term: "Friends", detail: "Add friends and read each other's profiles." },
+  { term: "Lists", detail: "Make your own lists, each with a name and a note." },
+  { term: "Context", detail: "Note where you watched and who you were with." },
+  { term: "Your own key", detail: "Add an OpenAI, Anthropic or Gemini key for the AI features." },
 ];
 
 /** Empty artwork panel in the right proportion: 2:3 for a poster, square for a cover. */
@@ -184,8 +160,8 @@ export default function Home() {
               A diary for everything you <em>watch and hear.</em>
             </h1>
             <p className="mt-7 max-w-[54ch] text-muted-foreground">
-              TrackEfron keeps every film, show and album you log, with your rating and your review, and shows you
-              the patterns in your taste you had not noticed. Free to use, no ads.
+              Log films, shows and albums with a rating and a review, and see the patterns in your taste. Free to
+              use, no ads.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <Button asChild size="lg">
@@ -214,13 +190,10 @@ export default function Home() {
                 </div>
               </div>
               <p className="t-prose mt-5">
-                Slow for an hour, and then it isn&rsquo;t. The last shot of the harbour has stayed with me all week.
+                Slow first hour, but the last shot of the harbour is worth the wait.
               </p>
               <CategoryRatings ratings={FILM_RATINGS} className="mt-5 border-t border-border pt-3" />
             </div>
-            <figcaption className="t-meta mt-5">
-              A specimen diary entry. The film is invented; the six ratings are the ones you get.
-            </figcaption>
           </figure>
         </section>
 
@@ -233,8 +206,8 @@ export default function Home() {
               </>
             }
           >
-            Film mode holds what you watch, in gold. Music mode holds what you hear, in teal. One switch moves the
-            whole interface between them, and each has its own vocabulary and its own six things to rate.
+            One switch moves between film mode and music mode. Each has its own colours, words and six rating
+            categories.
           </SectionHead>
 
           <div className="advance grid gap-x-10 gap-y-14 md:grid-cols-2">
@@ -255,10 +228,6 @@ export default function Home() {
                     <CategoryRatings ratings={FILM_RATINGS} className="mt-3" />
                   </div>
                 </div>
-                <p className="mt-5 border-t border-border pt-4 text-muted-foreground">
-                  You <span className="text-film">watch</span>, you keep a{" "}
-                  <span className="text-film">watchlist</span>, and posters stand two by three.
-                </p>
               </div>
               <EntryList label="Recently watched" entries={RECENT_WATCHES} shape="poster" />
             </div>
@@ -280,10 +249,6 @@ export default function Home() {
                     <CategoryRatings ratings={MUSIC_RATINGS} className="mt-3" />
                   </div>
                 </div>
-                <p className="mt-5 border-t border-border pt-4 text-muted-foreground">
-                  You <span className="text-music">listen</span>, you keep a{" "}
-                  <span className="text-music">queue</span>, and covers sit square.
-                </p>
               </div>
               <EntryList label="Recently played" entries={RECENT_LISTENS} shape="square" />
             </div>
@@ -300,28 +265,20 @@ export default function Home() {
             }
           />
           <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-            <div className="min-w-0">
-              <p className="t-prose">
-                Log for a while and the diary starts answering questions you never asked it.
-              </p>
-              <dl className="mt-7">
-                <div className="hairline py-4">
-                  <dt className="t-card">Analytics</dt>
-                  <dd className="mt-1.5 text-muted-foreground">
-                    Rating distributions, activity month by month, genres and decades, the directors, actors and
-                    artists you keep coming back to, and where you part ways with the crowd.
-                  </dd>
-                </div>
-                <div className="py-4">
-                  <dt className="t-card">Taste DNA</dt>
-                  <dd className="mt-1.5 text-muted-foreground">
-                    AI reads your ratings and reviews and writes a portrait of your taste: your film identity, your
-                    music identity, your blind spots and guilty pleasures, and the thread that connects what you
-                    watch to what you hear.
-                  </dd>
-                </div>
-              </dl>
-            </div>
+            <dl className="min-w-0">
+              <div className="hairline pb-4">
+                <dt className="t-card">Analytics</dt>
+                <dd className="mt-1.5 text-muted-foreground">
+                  Genres, decades, film lengths, your top artists, and where your taste differs from the crowd.
+                </dd>
+              </div>
+              <div className="py-4">
+                <dt className="t-card">Taste DNA</dt>
+                <dd className="mt-1.5 text-muted-foreground">
+                  AI reads your ratings and reviews and sums up your taste in film and music, blind spots included.
+                </dd>
+              </div>
+            </dl>
 
             <figure className="min-w-0">
               <div className="frame p-5 sm:p-6">
@@ -339,7 +296,7 @@ export default function Home() {
                   <LeaderRow label="Against the crowd" value="Kinder to slow films" />
                 </div>
               </div>
-              <figcaption className="t-meta mt-4">Specimen figures, not anyone&rsquo;s real library.</figcaption>
+              <figcaption className="t-meta mt-4">Example figures.</figcaption>
             </figure>
           </div>
         </section>
@@ -371,7 +328,7 @@ export default function Home() {
                       <p className="t-meta mt-0.5">Film, 2014</p>
                       <p className="mt-2 text-muted-foreground">
                         <span className="t-label mr-2">Why it fits</span>
-                        Empty roads, a patient score, and you rate cinematography above everything else.
+                        Empty night roads, and you rate cinematography highest.
                       </p>
                     </div>
                   </li>
@@ -382,35 +339,32 @@ export default function Home() {
                       <p className="t-meta mt-0.5">Album, Wren Okafor</p>
                       <p className="mt-2 text-muted-foreground">
                         <span className="t-label mr-2">Why it fits</span>
-                        Low energy, high replay value: the two things your favourite albums share.
+                        Low energy and high replay value, like your favourite albums.
                       </p>
                     </div>
                   </li>
                 </ul>
               </div>
-              <figcaption className="t-meta mt-4">A specimen search. The results are invented.</figcaption>
+              <figcaption className="t-meta mt-4">Example search.</figcaption>
             </figure>
 
             <dl className="order-1 min-w-0 lg:order-2">
               <div className="hairline pb-4">
                 <dt className="t-card">Recommendations</dt>
                 <dd className="mt-1.5 text-muted-foreground">
-                  AI picks for film and for music, built from your own ratings and listening. Every suggestion says why
-                  it fits your taste.
+                  AI picks for film and music, based on your ratings and listening, each with a reason it fits.
                 </dd>
               </div>
               <div className="hairline py-4">
                 <dt className="t-card">Vibe search</dt>
                 <dd className="mt-1.5 text-muted-foreground">
-                  Search by mood instead of title. Describe a feeling, &ldquo;rainy Sunday melancholy&rdquo; or
-                  &ldquo;heist energy&rdquo;, and get films and albums that match it.
+                  Search by mood instead of title, like &ldquo;rainy Sunday melancholy&rdquo; or &ldquo;heist
+                  energy&rdquo;.
                 </dd>
               </div>
               <div className="py-4">
                 <dt className="t-card">Trending and discover</dt>
-                <dd className="mt-1.5 text-muted-foreground">
-                  See what is trending today, or browse by genre, by mood, or out of plain curiosity.
-                </dd>
+                <dd className="mt-1.5 text-muted-foreground">See what&rsquo;s trending, or browse by genre.</dd>
               </div>
             </dl>
           </div>
@@ -434,9 +388,6 @@ export default function Home() {
           <h2 className="t-display max-w-[16ch] text-[clamp(40px,6vw,76px)] leading-none">
             Start with the last thing you <em>loved.</em>
           </h2>
-          <p className="mt-6 max-w-[54ch] text-muted-foreground">
-            Free to use. No ads. Your films, your music, your data.
-          </p>
           <div className="mt-8">
             <Button asChild size="lg">
               <Link href="/auth/sign-up">

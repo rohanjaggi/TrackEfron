@@ -55,13 +55,13 @@ Chart chrome: grid lines `var(--border-raw)`, axis text `var(--text-muted)`, too
 
 ## Type
 
-Set like the 1970s: a soft poster serif for film, a condensed sleeve gothic for music, one plain grotesque for everything you read and press. No monospace. Sentence case everywhere.
+Set like the 1970s: a soft poster serif for film, a condensed sleeve gothic for music, one wide grotesque for everything you read and press. No monospace. Sentence case everywhere.
 
 | Face | Where | Notes |
 |---|---|---|
 | Young Serif | Film titles, figures and the wordmark | One weight only. Never add `font-medium`/`font-semibold`/`font-bold` to a title role: it would be faked. No italic either; emphasis is the accent colour. |
 | Sofia Sans Extra Condensed | Music titles and figures | 600–800, with italics. Runs about 1.5× larger than the film face because condensed type needs the height; the role classes handle this. |
-| Schibsted Grotesk | Interface, both modes: body, labels, buttons, nav, tabs, badges, reviews | 400 body, 500 labels and nav, 600 buttons. Italic for quoted reviews. |
+| Archivo, semi-expanded | Interface, both modes: body, labels, buttons, nav, tabs, badges, reviews | Set at 112% width (`--ui-stretch`, applied on `body`), like hi-fi faceplate lettering. 400 body, 500 labels and nav, 600 buttons. Italic for quoted reviews. Never narrow it back with `font-stretch` on a component. |
 
 The wordmark (`.wordmark`) is fixed in Young Serif in both modes. A logo does not change voice with the mode.
 

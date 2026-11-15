@@ -16,3 +16,25 @@ export function isCacheValid(
   if (row.log_count_at_generation !== logCount) return false;
   return new Date(row.expires_at).getTime() > now.getTime();
 }
+
+/** How many recently recommended titles a refresh keeps out: about three refreshes' worth. */
+export const SHOWN_HISTORY = 60;
+
+export type ShownFilm = { tmdb_id: number; media_type: "movie" | "tv"; title: string };
+
+/**
+ * The titles to keep out of the next refresh: this batch first, then the
+ * earlier history, one entry per title, cut to `max` with the oldest dropped.
+ */
+export function nextShownHistory(batch: ShownFilm[], previous: ShownFilm[], max = SHOWN_HISTORY): ShownFilm[] {
+  const seen = new Set<string>();
+  const out: ShownFilm[] = [];
+  for (const f of [...batch, ...previous]) {
+    const key = `${f.media_type}:${f.tmdb_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tmdb_id: f.tmdb_id, media_type: f.media_type, title: f.title });
+    if (out.length >= max) break;
+  }
+  return out;
+}

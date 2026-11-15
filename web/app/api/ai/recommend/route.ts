@@ -11,7 +11,7 @@ import type {
   RightNow,
 } from "@/lib/ai/types";
 import { AIError, makeAI } from "@/lib/recs/ai-call";
-import { cacheExpiry, isCacheValid } from "@/lib/recs/cache";
+import { cacheExpiry, isCacheValid, nextShownHistory, type ShownFilm } from "@/lib/recs/cache";
 import { buildFilmRecs } from "@/lib/recs/film/build";
 import { gatherFilmCandidates } from "@/lib/recs/film/candidates";
 import { makeFilmLookup } from "@/lib/recs/film/lookup";
@@ -116,10 +116,17 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
   const logs = (logsRes.data ?? []) as WatchLogRow[];
 
   // Old rows stored a bare array; only the { items } shape is valid.
-  const cachedFilm = cache?.recommendations as { items?: FilmRecommendation[] } | undefined;
+  const cachedFilm = cache?.recommendations as { items?: FilmRecommendation[]; shown?: ShownFilm[] } | undefined;
   if (!refresh && cachedFilm && Array.isArray(cachedFilm.items) && isCacheValid(cache, logs.length, new Date())) {
     return { status: cachedFilm.items.length ? "ok" : "empty", items: cachedFilm.items };
   }
+
+  // A refresh asks for something new, so it keeps out what was recommended recently.
+  // Any other rebuild (a new log, an expired cache) starts the history again.
+  const avoid =
+    refresh && cachedFilm && Array.isArray(cachedFilm.items)
+      ? nextShownHistory(cachedFilm.items, Array.isArray(cachedFilm.shown) ? cachedFilm.shown : [])
+      : [];
 
   const result = await buildFilmRecs({
     logs,
@@ -129,10 +136,12 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
     gather: gatherFilmCandidates,
     lookup: makeFilmLookup(searchByTitleYear),
     ai: makeAI<{ picks: RawFilmPick[] }>({ supabase, userId, tool: filmRecommendTool }),
+    avoid,
   });
 
   if (result.status === "ok" || result.status === "empty") {
-    await writeCache(supabase, userId, FILM_MODE, { items: result.items }, logs.length, result.status);
+    const shown = nextShownHistory(result.items, avoid);
+    await writeCache(supabase, userId, FILM_MODE, { items: result.items, shown }, logs.length, result.status);
   }
   return result;
 }

@@ -103,8 +103,10 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
   const rating = ratingOf(item);
 
   return (
-    <div className="light-leak h-full">
-      <article className="frame frame-accent frame-raised ticks flex h-full">
+    // Hugs its artwork instead of stretching to the greeting's height: a square cover
+    // would otherwise sit in a frame much taller than it.
+    <div className="light-leak self-start">
+      <article className="frame frame-accent frame-raised ticks flex">
         <div
           className={cn(
             "w-[120px] shrink-0 self-start overflow-hidden border-r border-border bg-surface-2 lg:w-[180px]",
@@ -577,7 +579,13 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </div>
 
         {loading ? (
-          <Skeleton className="h-[180px] w-full lg:h-full lg:min-h-[300px]" />
+          <Skeleton
+            className={cn(
+              "w-full self-start",
+              // The height of the artwork the card will hug: square cover or 2:3 poster.
+              music ? "h-[122px] lg:h-[182px]" : "h-[182px] lg:h-[272px]",
+            )}
+          />
         ) : (
           !loadFailed && latest && <FeaturedEntry item={latest} />
         )}

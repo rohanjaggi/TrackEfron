@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Schibsted_Grotesk, Sofia_Sans_Extra_Condensed, Young_Serif } from "next/font/google";
+import { Archivo, Sofia_Sans_Extra_Condensed, Young_Serif } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/ui/toast";
@@ -33,9 +33,11 @@ const sofiaExtraCondensed = Sofia_Sans_Extra_Condensed({
   subsets: ["latin", "latin-ext"],
 });
 
-// Everything you read and press, in both modes.
-const schibsted = Schibsted_Grotesk({
+// Everything you read and press, in both modes: a grotesk set semi-expanded,
+// like hi-fi faceplate lettering. The width is applied in globals.css (--ui-stretch).
+const archivo = Archivo({
   style: ["normal", "italic"],
+  axes: ["wdth"],
   variable: "--font-ui",
   display: "swap",
   subsets: ["latin", "latin-ext"],
@@ -50,7 +52,7 @@ export default function RootLayout({
     <html
       lang="en"
       // Font variables sit on <html> because the per-mode type variables that use them are resolved there.
-      className={`${youngSerif.variable} ${sofiaExtraCondensed.variable} ${schibsted.variable}`}
+      className={`${youngSerif.variable} ${sofiaExtraCondensed.variable} ${archivo.variable}`}
       suppressHydrationWarning
     >
       <head>

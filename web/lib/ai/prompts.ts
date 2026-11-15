@@ -206,6 +206,7 @@ export function buildFilmRecommendUserPrompt(data: {
   era: { topDecades: number[]; olderBefore: number | null; maxOlder: number };
   logsText: string;
   seenTitles: string[];
+  recentTitles?: string[];
   candidates: { tmdb_id: number; media_type: string; title: string; year: number | null; genres: string[]; overview: string }[];
 }): string {
   const parts: string[] = [];
@@ -227,6 +228,9 @@ export function buildFilmRecommendUserPrompt(data: {
 
   parts.push(`\nWATCH HISTORY:\n${data.logsText}`);
   parts.push(`\nALREADY SEEN (do not recommend these): ${data.seenTitles.join(", ")}`);
+  if (data.recentTitles?.length) {
+    parts.push(`\nRECOMMENDED RECENTLY (do not repeat these): ${data.recentTitles.join(", ")}`);
+  }
 
   parts.push("\nCANDIDATES (id | type | title | year | genres | overview):");
   for (const c of data.candidates) {

@@ -99,6 +99,18 @@ describe("buildFilmRecs", () => {
     expect(exclude.has("movie:100")).toBe(true);
     expect(r.status).toBe("empty");
   });
+  test("titles shown recently are kept out of candidates and picks, and listed in the prompt", async () => {
+    const { ai, gather, d } = deps({ avoid: [{ tmdb_id: 100, media_type: "movie", title: "Cand100" }] });
+    const r = await buildFilmRecs(d);
+    expect(gather.mock.calls[0][1].has("movie:100")).toBe(true);
+    expect(ai.mock.calls[0][1]).toContain("RECOMMENDED RECENTLY (do not repeat these): Cand100");
+    expect(r.status).toBe("empty");
+  });
+  test("no recently-shown line when there is nothing to avoid", async () => {
+    const { ai, d } = deps();
+    await buildFilmRecs(d);
+    expect(ai.mock.calls[0][1]).not.toContain("RECOMMENDED RECENTLY");
+  });
   test("returns empty when matching drops everything", async () => {
     const { d } = deps({ ai: async () => ({ picks: [pick(999)] }) });
     expect(await buildFilmRecs(d)).toEqual({ status: "empty", items: [] });

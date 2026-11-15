@@ -22,6 +22,9 @@
 
 @layer base {
   :root {
+    /* ── Interface face width: Archivo's wdth axis, semi-expanded ── */
+    --ui-stretch: 112%;
+
     /* ── Surfaces: a ladder you can actually see ── */
     --bg: #0a0a08;            /* 4%  page */
     --surface: #161613;       /* 8%  frames, cards */
@@ -191,6 +194,7 @@
       radial-gradient(120% 70% at 50% -12%, #15150f 0%, var(--bg) 58%) fixed,
       var(--bg);
     font-family: var(--font-ui), system-ui, sans-serif;
+    font-stretch: var(--ui-stretch);
     font-size: 14px;
     line-height: 1.55;
     caret-color: var(--mode-accent);
@@ -209,6 +213,11 @@
   }
   :focus:not(:focus-visible) {
     outline: none;
+  }
+
+  /* Form controls reset font-stretch in the UA sheet; keep the interface width. */
+  button, input, select, textarea, optgroup {
+    font-stretch: inherit;
   }
 
   a {
@@ -248,7 +257,7 @@ body::before {
   /* ═══ Type ═══════════════════════════════════════════════════
      Three faces. Film titles: Young Serif, a soft 1970s poster serif.
      Music titles: Sofia Sans Extra Condensed, a sleeve gothic.
-     Everything you read and press: Schibsted Grotesk, in sentence case.
+     Everything you read and press: Archivo at 112% width, in sentence case.
      Title roles read their face, weight and scale from the mode
      variables below, so a heading changes voice with the mode.
      Young Serif has ONE weight: never put a bold class on a title role. */
