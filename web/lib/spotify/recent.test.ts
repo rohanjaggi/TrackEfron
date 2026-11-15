@@ -68,6 +68,11 @@ describe("groupRecentPlays", () => {
     );
     expect(out.map((c) => [c.type, c.id])).toEqual([["track", "t4"]]);
   });
+  test("an album whose played tracks are all logged individually is dropped", () => {
+    const plays = ["t1", "t2", "t3"].map((t, i) => play(t, "a1", `2026-11-15T0${9 - i}:00:00Z`));
+    expect(groupRecentPlays(plays, new Set(["t1", "t2", "t3"]))).toEqual([]);
+    expect(groupRecentPlays(plays, new Set(["t1", "t2"])).map((c) => [c.type, c.id])).toEqual([["album", "a1"]]);
+  });
   test("plays with a null track or a track without an id are skipped", () => {
     const out = groupRecentPlays(
       [{ track: null, played_at: "2026-11-15T10:00:00Z" }, play("", "a1", "2026-11-15T09:00:00Z")],

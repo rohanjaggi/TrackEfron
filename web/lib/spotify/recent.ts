@@ -72,8 +72,9 @@ export function groupRecentPlays(plays: RawPlay[], loggedIds: Set<string>, max =
     });
   }
   for (const albumId of foldedAlbums) {
-    if (loggedIds.has(albumId)) continue;
     const gs = byAlbum.get(albumId)!;
+    // Logged as an album, or every played track of it already logged one by one.
+    if (loggedIds.has(albumId) || gs.every((g) => loggedIds.has(g.track.id))) continue;
     const album = gs[0].track.album!;
     out.push({
       type: "album",

@@ -226,11 +226,19 @@ function LogWatchForm() {
   const [listenedOn, setListenedOn] = useState("");
   const [listeningContext, setListeningContext] = useState("");
 
+  // The date and "listened on" a recent Spotify play replaced, put back when that pick is dropped.
+  const [beforeRecent, setBeforeRecent] = useState<{ date: string; listenedOn: string } | null>(null);
+
   const clearSelection = () => {
     setSelectedMovie(null);
     setSpotifyId(null);
     setArtist("");
     setAlbumName("");
+    if (beforeRecent) {
+      setWatchedDate(beforeRecent.date);
+      setListenedOn(beforeRecent.listenedOn);
+      setBeforeRecent(null);
+    }
   };
 
   // A single item's page follows the item: an edited log or a pre-filled link moves the app to its mode.
@@ -662,8 +670,11 @@ function LogWatchForm() {
     setAlbumName(c.album_name);
     setSearchOpen(false);
     setActiveIndex(-1);
+    setBeforeRecent({ date: watchedDate, listenedOn });
     setWatchedDate(localDay(c.last_played_at));
     setListenedOn("Spotify");
+    // The list unmounts on pick: keep keyboard focus in the form.
+    titleRef.current?.focus();
   };
 
   useEffect(() => {

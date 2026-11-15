@@ -40,12 +40,11 @@ export function RecentPlays({ onPick }: { onPick: (c: RecentCandidate) => void }
             <button
               type="button"
               onClick={() => onPick(c)}
-              aria-label={`Log ${c.name} by ${c.artist}`}
               className="flex w-full items-center gap-3 px-2 py-2.5 text-left"
             >
               <Avatar src={c.image_url} name={c.name} size={36} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-foreground">
+                <span className="t-card block truncate">
                   {c.name} · {c.artist}
                 </span>
                 <span className="t-meta block truncate">{metaLine(c, now)}</span>
