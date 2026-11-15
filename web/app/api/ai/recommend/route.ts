@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser, type ServerSupabase as Supabase } from "@/lib/api/auth";
+import { aiErrorStatus } from "@/lib/api/ai-status";
 import { NextResponse } from "next/server";
 import { filmRecommendTool, musicRecommendTool } from "@/lib/ai/tools";
 import type {
@@ -11,7 +12,7 @@ import type {
   RightNow,
 } from "@/lib/ai/types";
 import { AIError, makeAI } from "@/lib/recs/ai-call";
-import { cacheExpiry, isCacheValid, nextShownHistory, type ShownFilm } from "@/lib/recs/cache";
+import { isCacheValid, nextShownHistory, readCache, writeCache, type ShownFilm } from "@/lib/recs/cache";
 import { buildFilmRecs } from "@/lib/recs/film/build";
 import { gatherFilmCandidates } from "@/lib/recs/film/candidates";
 import { makeFilmLookup } from "@/lib/recs/film/lookup";
@@ -22,30 +23,23 @@ import { fetchSpotifyTops } from "@/lib/recs/music/tops";
 import { fetchRecentPlays, type RawPlay } from "@/lib/spotify/recent";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { searchSpotify } from "@/lib/spotify/spotify";
-import { getMovieDetails, getTvDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
+import { getDetails, searchByTitleYear } from "@/lib/tmdb/tmdb";
 
 export const maxDuration = 300;
 
 // The film cache keeps its existing mode value because the repo has no schema file to confirm a new one is allowed.
 const FILM_MODE = "film_explanations";
 const MUSIC_MODE = "music";
-type CacheMode = typeof FILM_MODE | typeof MUSIC_MODE;
 
-type Supabase = Awaited<ReturnType<typeof createClient>>;
-type CacheRow = { recommendations: unknown; expires_at: string; log_count_at_generation: number };
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const mode = searchParams.get("mode") || "music";
   const refresh = searchParams.get("refresh") === "true";
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
   if (mode !== "film" && mode !== "music") {
     return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
   }
@@ -55,48 +49,11 @@ export async function GET(request: Request) {
     return NextResponse.json(body);
   } catch (e) {
     if (e instanceof AIError) {
-      return NextResponse.json({ error: e.message, code: e.code }, { status: e.code === "NO_API_KEY" ? 402 : 500 });
+      return NextResponse.json({ error: e.message, code: e.code }, { status: aiErrorStatus(e.code) });
     }
     console.error("recommend route failed:", e);
     return NextResponse.json({ error: "Failed to generate recommendations", code: "PROVIDER_ERROR" }, { status: 500 });
   }
-}
-
-async function readCache(supabase: Supabase, userId: string, mode: CacheMode): Promise<CacheRow | null> {
-  const { data, error } = await supabase
-    .from("ai_recommendation_cache")
-    .select("recommendations, expires_at, log_count_at_generation")
-    .eq("user_id", userId)
-    .eq("mode", mode)
-    .maybeSingle();
-  if (error) {
-    console.error("recommendation cache read failed:", error.message);
-    return null;
-  }
-  return (data as CacheRow | null) ?? null;
-}
-
-async function writeCache(
-  supabase: Supabase,
-  userId: string,
-  mode: CacheMode,
-  recommendations: unknown,
-  logCount: number,
-  status: "ok" | "empty",
-) {
-  const now = new Date();
-  const { error } = await supabase.from("ai_recommendation_cache").upsert(
-    {
-      user_id: userId,
-      mode,
-      recommendations,
-      generated_at: now.toISOString(),
-      log_count_at_generation: logCount,
-      expires_at: cacheExpiry(status, now).toISOString(),
-    },
-    { onConflict: "user_id,mode" },
-  );
-  if (error) console.error("ai_recommendation_cache write failed:", error.message);
 }
 
 async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): Promise<RecsResponse<FilmRecommendation>> {
@@ -133,7 +90,7 @@ async function filmRecs(supabase: Supabase, userId: string, refresh: boolean): P
     logs,
     watchlist: watchlistRes.data ?? [],
     tasteDNA: dnaRes.data ?? null,
-    yearsOf: (all) => fetchLogYears(all, (type, id) => (type === "movie" ? getMovieDetails(id) : getTvDetails(id))),
+    yearsOf: (all) => fetchLogYears(all, getDetails),
     gather: gatherFilmCandidates,
     lookup: makeFilmLookup(searchByTitleYear),
     ai: makeAI<{ picks: RawFilmPick[] }>({ supabase, userId, tool: filmRecommendTool }),

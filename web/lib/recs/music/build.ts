@@ -1,7 +1,7 @@
 import type { MusicRecommendation, MusicRecsResponse, SpotifyTops } from "@/lib/ai/types";
 import { buildMusicRecommendUserPrompt, MUSIC_RECOMMEND_SYSTEM } from "@/lib/ai/prompts";
 import { groupRecentPlays, type RawPlay } from "@/lib/spotify/recent";
-import type { searchSpotify } from "@/lib/spotify/spotify";
+import { artistNames, type searchSpotify } from "@/lib/spotify/spotify";
 import { matchMusicPicks } from "./match";
 import { computeRightNow } from "./right-now";
 
@@ -61,7 +61,7 @@ export async function buildMusicRecs(deps: {
     for (const p of newestFirst) {
       if (!p.track?.id || seen.has(p.track.id)) continue;
       seen.add(p.track.id);
-      recentTracks.push({ name: p.track.name, artist: (p.track.artists ?? []).map((a) => a.name).join(", ") });
+      recentTracks.push({ name: p.track.name, artist: artistNames(p.track.artists) });
       if (recentTracks.length >= RECENT_PROMPT_MAX) break;
     }
   }

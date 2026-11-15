@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { AuthLink, AuthShell, PasswordInput, authErrorMessage } from "@/components/auth-shell";
+import { AuthLink, AuthShell, EmailField, authErrorMessage } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/input";
 import { Field, Notice } from "@/components/ui/page";
 import { createClient } from "@/lib/supabase/client";
 
@@ -51,20 +51,7 @@ export function LoginForm() {
       }
     >
       <form onSubmit={handleLogin} className="flex flex-col gap-5">
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            autoCapitalize="none"
-            spellCheck={false}
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
+        <EmailField value={email} onChange={setEmail} />
         <Field label="Password" htmlFor="password">
           <PasswordInput
             id="password"

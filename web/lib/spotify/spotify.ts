@@ -6,7 +6,7 @@ const BASE_URL = "https://api.spotify.com/v1";
 // Module-level, so it persists within a warm server instance.
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
-export async function getSpotifyToken(): Promise<string> {
+async function getSpotifyToken(): Promise<string> {
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     throw new Error("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET environment variables");
   }
@@ -49,7 +49,7 @@ export type SpotifySearchResult = {
 
 type RawArtist = { name: string };
 type RawImage = { url: string };
-export type RawAlbum = {
+type RawAlbum = {
   id: string;
   name: string;
   artists?: RawArtist[];
@@ -63,11 +63,13 @@ export type RawTrack = {
   album?: RawAlbum;
 };
 
-function normaliseAlbum(a: RawAlbum): SpotifySearchResult {
+export const artistNames = (artists?: RawArtist[] | null) => (artists || []).map((a) => a.name).join(", ");
+
+export function normaliseAlbum(a: RawAlbum): SpotifySearchResult {
   return {
     id: a.id,
     name: a.name,
-    artist: (a.artists || []).map((ar) => ar.name).join(", "),
+    artist: artistNames(a.artists),
     album_name: a.name,
     image_url: a.images?.[0]?.url ?? null,
     release_date: a.release_date || "",
@@ -79,7 +81,7 @@ export function normaliseTrack(t: RawTrack): SpotifySearchResult {
   return {
     id: t.id,
     name: t.name,
-    artist: (t.artists || []).map((ar) => ar.name).join(", "),
+    artist: artistNames(t.artists),
     album_name: t.album?.name || "",
     image_url: t.album?.images?.[0]?.url ?? null,
     release_date: t.album?.release_date || "",

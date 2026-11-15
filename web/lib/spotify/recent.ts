@@ -1,4 +1,4 @@
-import type { RawTrack } from "@/lib/spotify/spotify";
+import { normaliseAlbum, normaliseTrack, type RawTrack } from "@/lib/spotify/spotify";
 
 export type RawPlay = { track: RawTrack | null; played_at: string };
 export type RecentCandidate = {
@@ -13,7 +13,7 @@ export type RecentCandidate = {
   last_played_at: string; // ISO, the newest play in the group
 };
 
-export const ALBUM_THRESHOLD = 3;
+const ALBUM_THRESHOLD = 3;
 
 /** null when Spotify rejects the token (401) or scope (403); [] on 204 or an empty body. Throws on other failures. */
 export async function fetchRecentPlays(accessToken: string): Promise<RawPlay[] | null> {
@@ -29,7 +29,6 @@ export async function fetchRecentPlays(accessToken: string): Promise<RawPlay[] |
   return data.items ?? [];
 }
 
-const names = (artists?: { name: string }[]) => (artists ?? []).map((a) => a.name).join(", ");
 const time = (iso: string) => Date.parse(iso);
 
 type TrackGroup = { track: RawTrack; plays: number; last: string };
@@ -60,13 +59,8 @@ export function groupRecentPlays(plays: RawPlay[], loggedIds: Set<string>, max =
     if (albumId && foldedAlbums.has(albumId)) continue;
     if (loggedIds.has(g.track.id)) continue;
     out.push({
+      ...normaliseTrack(g.track),
       type: "track",
-      id: g.track.id,
-      name: g.track.name,
-      artist: names(g.track.artists),
-      album_name: g.track.album?.name ?? "",
-      image_url: g.track.album?.images?.[0]?.url ?? null,
-      release_date: g.track.album?.release_date ?? "",
       plays: g.plays,
       last_played_at: g.last,
     });
@@ -77,13 +71,8 @@ export function groupRecentPlays(plays: RawPlay[], loggedIds: Set<string>, max =
     if (loggedIds.has(albumId) || gs.every((g) => loggedIds.has(g.track.id))) continue;
     const album = gs[0].track.album!;
     out.push({
+      ...normaliseAlbum(album),
       type: "album",
-      id: albumId,
-      name: album.name,
-      artist: names(album.artists),
-      album_name: album.name,
-      image_url: album.images?.[0]?.url ?? null,
-      release_date: album.release_date ?? "",
       plays: gs.length,
       last_played_at: gs.reduce((a, g) => (time(g.last) > time(a) ? g.last : a), gs[0].last),
     });

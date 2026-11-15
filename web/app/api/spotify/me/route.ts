@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/api/auth";
 import { getValidToken } from "@/lib/spotify/pkce";
 import { normaliseTrack, type RawTrack } from "@/lib/spotify/spotify";
 import { fetchRecentPlays, groupRecentPlays } from "@/lib/spotify/recent";
@@ -9,11 +9,9 @@ export async function GET(request: NextRequest) {
   const action = searchParams.get("action");
   const timeRange = searchParams.get("time_range") || "medium_term";
 
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   // Get a valid (auto-refreshed) access token
   const accessToken = await getValidToken(supabase, user.id);
@@ -38,13 +36,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === "recently-played") {
-      const plays = await fetchRecentPlays(accessToken);
+      const [plays, { data: logs, error: logsError }] = await Promise.all([
+        fetchRecentPlays(accessToken),
+        supabase.from("listen_logs").select("spotify_id").eq("user_id", user.id),
+      ]);
       if (plays === null) return NextResponse.json({ connected: false, reason: "token_invalid" });
-
-      const { data: logs, error: logsError } = await supabase
-        .from("listen_logs")
-        .select("spotify_id")
-        .eq("user_id", user.id);
       if (logsError) throw new Error(`listen_logs read failed: ${logsError.message}`);
 
       const logged = new Set<string>(

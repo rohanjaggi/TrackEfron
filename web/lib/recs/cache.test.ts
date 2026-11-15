@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { CACHE_DAYS, EMPTY_CACHE_HOURS, SHOWN_HISTORY, cacheExpiry, isCacheValid, nextShownHistory } from "./cache";
+import { SHOWN_HISTORY, cacheExpiry, isCacheValid, nextShownHistory } from "./cache";
 
 const now = new Date("2026-11-14T12:00:00Z");
 const future = "2026-11-20T12:00:00Z";
@@ -18,15 +18,9 @@ describe("isCacheValid", () => {
   test("invalid when expired", () => {
     expect(isCacheValid({ expires_at: past, log_count_at_generation: 5 }, 5, now)).toBe(false);
   });
-  test("CACHE_DAYS is 7", () => {
-    expect(CACHE_DAYS).toBe(7);
-  });
 });
 
 describe("cacheExpiry", () => {
-  test("EMPTY_CACHE_HOURS is 1", () => {
-    expect(EMPTY_CACHE_HOURS).toBe(1);
-  });
   test("ok results expire after CACHE_DAYS", () => {
     expect(cacheExpiry("ok", now).toISOString()).toBe("2026-11-21T12:00:00.000Z");
   });

@@ -1,7 +1,7 @@
 const baseUrl = "https://api.themoviedb.org/3";
 
 type Params = Record<string, string | number>;
-type MediaType = "movie" | "tv";
+export type MediaType = "movie" | "tv";
 
 /** A TMDB list or search hit. Only the fields the app reads are named. */
 export interface TmdbResult {
@@ -24,11 +24,6 @@ export interface TmdbResult {
 export interface TmdbDetail extends TmdbResult {
     genres?: { id: number; name: string }[];
     credits?: { cast?: unknown[]; crew?: unknown[] };
-}
-
-export interface TmdbPersonCredits {
-    cast?: TmdbResult[];
-    crew?: TmdbResult[];
 }
 
 interface TmdbList {
@@ -70,54 +65,33 @@ export async function searchMulti(query: string) {
     return results.filter((r) => r.media_type === "movie" || r.media_type === "tv");
 }
 
-export function getMovieDetails(id: number) {
-    return tmdbGet<TmdbDetail>(`/movie/${id}`, { append_to_response: "credits" });
-}
-
-export function getTvDetails(id: number) {
-    return tmdbGet<TmdbDetail>(`/tv/${id}`, { append_to_response: "credits" });
+export function getDetails(type: MediaType, id: number) {
+    return tmdbGet<TmdbDetail>(`/${type}/${id}`, { append_to_response: "credits" });
 }
 
 export function getTrending() {
     return listResults("/trending/all/day");
 }
 
-async function getProviders(type: MediaType, id: number) {
+export async function getProviders(type: MediaType, id: number) {
     const data = await tmdbGet<{ results?: Record<string, unknown> }>(`/${type}/${id}/watch/providers`);
     return data.results;
 }
 
-export const getMovieProviders = (id: number) => getProviders("movie", id);
-export const getTvProviders = (id: number) => getProviders("tv", id);
-
 export function getNowPlaying() {
     return listResults("/movie/now_playing", { language: "en-US", page: 1 });
-}
-
-export function getUpcoming() {
-    return listResults("/movie/upcoming", { language: "en-US", page: 1 });
 }
 
 export function getTopRated(type: MediaType) {
     return listResults(`/${type}/top_rated`, { language: "en-US", page: 1 });
 }
 
+function discoverBase(): Params {
+    return { sort_by: "vote_average.desc", "vote_count.gte": 50, language: "en-US", page: 1 };
+}
+
 export function discoverByGenre(type: MediaType, genreIds: string) {
-    return listResults(`/discover/${type}`, {
-        with_genres: genreIds,
-        sort_by: "vote_average.desc",
-        "vote_count.gte": 50,
-        language: "en-US",
-        page: 1,
-    });
-}
-
-export function getSimilar(type: MediaType, id: number) {
-    return listResults(`/${type}/${id}/similar`, { language: "en-US", page: 1 });
-}
-
-export function getPersonCredits(personId: number) {
-    return tmdbGet<TmdbPersonCredits>(`/person/${personId}/combined_credits`, { language: "en-US" });
+    return listResults(`/discover/${type}`, { with_genres: genreIds, ...discoverBase() });
 }
 
 export function getRecommendations(type: MediaType, id: number) {
@@ -134,13 +108,7 @@ export function discoverFiltered(
     type: MediaType,
     options: { genreIds: number[]; maxVoteCount?: number; minVoteAverage?: number },
 ) {
-    const params: Params = {
-        with_genres: options.genreIds.join("|"),
-        sort_by: "vote_average.desc",
-        "vote_count.gte": 50,
-        language: "en-US",
-        page: 1,
-    };
+    const params: Params = { with_genres: options.genreIds.join("|"), ...discoverBase() };
     if (options.maxVoteCount != null) params["vote_count.lte"] = options.maxVoteCount;
     if (options.minVoteAverage != null) params["vote_average.gte"] = options.minVoteAverage;
     return listResults(`/discover/${type}`, params);

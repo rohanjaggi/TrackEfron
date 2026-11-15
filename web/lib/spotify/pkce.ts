@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 
-export type SpotifyTokenResponse = {
+type SpotifyTokenResponse = {
   access_token: string;
   refresh_token: string;
   expires_in: number;
@@ -67,7 +67,7 @@ export async function exchangeCodeForTokens(
   };
 }
 
-export async function refreshAccessToken(
+async function refreshAccessToken(
   refreshToken: string
 ): Promise<SpotifyTokenResponse & { rotated_refresh_token?: string }> {
   const body = new URLSearchParams({

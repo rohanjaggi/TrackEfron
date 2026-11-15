@@ -2,18 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  Disc3,
-  Film,
-  LayoutGrid,
-  List,
-  Music2,
-  Pencil,
-  Plus,
-  Search,
-  Tv,
-  type LucideIcon,
-} from "lucide-react";
+import { Disc3, Film, LayoutGrid, List, Music2, Pencil, Plus, Search, Tv } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input, Select } from "@/components/ui/input";
@@ -24,7 +13,8 @@ import { SegmentedControl, type SegmentOption } from "@/components/ui/segmented-
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
-import { useMode } from "@/lib/mode-context";
+import { useMode, type AppMode } from "@/lib/mode-context";
+import { TYPE_META, averageRating, formatDay, isMusicType, mediaHref } from "@/lib/media";
 import type { WatchLog as SharedWatchLog } from "@/lib/types";
 import { resizePoster } from "@/lib/tmdb/poster";
 
@@ -57,51 +47,22 @@ type WatchLog = Omit<SharedWatchLog, "rating" | "watched_date"> & {
   watched_date: string | null;
 };
 
-const TYPE_LABEL: Record<WatchLog["media_type"], string> = {
-  movie: "Film",
-  tv: "TV show",
-  album: "Album",
-  track: "Track",
-};
-
-const TYPE_ICON: Record<WatchLog["media_type"], LucideIcon> = {
-  movie: Film,
-  tv: Tv,
-  album: Disc3,
-  track: Music2,
-};
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
 function isMusicItem(item: WatchLog): boolean {
-  return item.media_type === "album" || item.media_type === "track";
-}
-
-/** The media page for an entry, when it has an id to link to. */
-function mediaHref(item: WatchLog): string | undefined {
-  if (isMusicItem(item) && item.spotify_id) return `/protected/media/${item.media_type}/${item.spotify_id}`;
-  if (item.tmdb_id) return `/protected/media/${item.media_type}/${item.tmdb_id}`;
-  return undefined;
+  return isMusicType(item.media_type);
 }
 
 function metaLine(item: WatchLog): string {
-  const label = TYPE_LABEL[item.media_type];
-  return item.watched_date ? `${label} · ${formatDate(item.watched_date)}` : label;
+  const label = TYPE_META[item.media_type].label;
+  return item.watched_date ? `${label} · ${formatDay(item.watched_date)}` : label;
+}
+
+function itemHref(item: WatchLog): string | undefined {
+  return mediaHref(item.media_type, { tmdbId: item.tmdb_id, spotifyId: item.spotify_id });
 }
 
 function isRated(item: WatchLog): boolean {
   return Number(item.rating) > 0;
 }
-
-function averageRating(items: WatchLog[]): string {
-  const rated = items.filter(isRated);
-  if (rated.length === 0) return "—";
-  return (rated.reduce((acc, i) => acc + Number(i.rating), 0) / rated.length).toFixed(1);
-}
-
-type AppMode = "film" | "music";
 
 const DEFAULT_FILTER: Record<AppMode, FilterType> = { film: "film", music: "music" };
 
@@ -113,29 +74,28 @@ export default function LibraryPage() {
   const toast = useToast();
   const isMusicMode = mode === "music";
 
-  const appMode: AppMode = isMusicMode ? "music" : "film";
-  const defaultFilter = DEFAULT_FILTER[appMode];
+  const defaultFilter = DEFAULT_FILTER[mode];
   const [viewType, setViewType] = useState<ViewType>("grid");
   // Filter, sort and search belong to one mode; a mode switch falls back to defaults.
   const [viewState, setViewState] = useState<ViewState>({
-    mode: appMode,
+    mode,
     filter: defaultFilter,
     sortBy: null,
     searchQuery: "",
   });
   const current: ViewState =
-    viewState.mode === appMode
+    viewState.mode === mode
       ? viewState
-      : { mode: appMode, filter: defaultFilter, sortBy: null, searchQuery: "" };
+      : { mode, filter: defaultFilter, sortBy: null, searchQuery: "" };
   const { filter, sortBy, searchQuery } = current;
   function patchView(patch: Partial<ViewState>) {
-    setViewState({ ...current, ...patch, mode: appMode });
+    setViewState({ ...current, ...patch, mode });
   }
 
   // Library rows for one mode; data tagged with another mode counts as not loaded.
   const [data, setData] = useState<LibraryData | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const loaded = data !== null && data.mode === appMode;
+  const loaded = data !== null && data.mode === mode;
   const loading = !loaded;
   const loadFailed = loaded && data.failed;
   const watchedItems: WatchLog[] = loaded ? data.items : [];
@@ -143,13 +103,13 @@ export default function LibraryPage() {
   useEffect(() => {
     let cancelled = false;
     async function fetchLibrary() {
-      let result: LibraryData = { mode: appMode, items: [], failed: true };
+      let result: LibraryData = { mode, items: [], failed: true };
       try {
         const supabase = createClient();
         const { data: userData } = await supabase.auth.getUser();
         const user = userData.user;
         if (user) {
-          if (appMode === "film") {
+          if (mode === "film") {
             const res = await supabase
               .from("watch_logs")
               .select("id, title, media_type, rating, review, watched_date, poster_url, tmdb_id, created_at")
@@ -169,7 +129,7 @@ export default function LibraryPage() {
                 tmdb_id: r.tmdb_id,
                 created_at: r.created_at,
               }));
-            result = { mode: appMode, items, failed: Boolean(res.error) };
+            result = { mode, items, failed: Boolean(res.error) };
           } else {
             const res = await supabase
               .from("listen_logs")
@@ -177,7 +137,7 @@ export default function LibraryPage() {
               .eq("user_id", user.id)
               .order("created_at", { ascending: false });
             const items: WatchLog[] = (res.data || [])
-              .filter((m) => m.media_type === "album" || m.media_type === "track")
+              .filter((m) => isMusicType(m.media_type))
               .map((m) => ({
                 id: m.id,
                 source: "listen_logs" as const,
@@ -192,11 +152,11 @@ export default function LibraryPage() {
                 created_at: m.created_at,
                 artist: m.artist,
               }));
-            result = { mode: appMode, items, failed: Boolean(res.error) };
+            result = { mode, items, failed: Boolean(res.error) };
           }
         }
       } catch {
-        result = { mode: appMode, items: [], failed: true };
+        result = { mode, items: [], failed: true };
       }
       if (!cancelled) setData(result);
     }
@@ -204,7 +164,7 @@ export default function LibraryPage() {
     return () => {
       cancelled = true;
     };
-  }, [appMode, reloadKey]);
+  }, [mode, reloadKey]);
 
   const retryLoad = useCallback(() => {
     setData(null);
@@ -239,10 +199,6 @@ export default function LibraryPage() {
     toast({ mark: "Removed", title: `${item.title} removed from your library`, tone: "info" });
   }
 
-  function handleFilterChange(next: FilterType) {
-    patchView({ filter: next });
-  }
-
   function clearFilters() {
     patchView({ searchQuery: "", filter: defaultFilter });
   }
@@ -253,7 +209,7 @@ export default function LibraryPage() {
         (filter === "film" && (item.media_type === "movie" || item.media_type === "tv")) ||
         (filter === "movies" && item.media_type === "movie") ||
         (filter === "tv" && item.media_type === "tv") ||
-        (filter === "music" && (item.media_type === "album" || item.media_type === "track")) ||
+        (filter === "music" && isMusicType(item.media_type)) ||
         (filter === "albums" && item.media_type === "album") ||
         (filter === "tracks" && item.media_type === "track");
 
@@ -280,8 +236,6 @@ export default function LibraryPage() {
           return b.created_at.localeCompare(a.created_at);
         case "date_added_asc":
           return a.created_at.localeCompare(b.created_at);
-        default:
-          return 0;
       }
     });
 
@@ -300,13 +254,13 @@ export default function LibraryPage() {
         { label: "Total logged", value: musicItems.length },
         { label: counts.albums === 1 ? "Album" : "Albums", value: counts.albums },
         { label: counts.tracks === 1 ? "Track" : "Tracks", value: counts.tracks },
-        { label: "Avg rating", value: averageRating(musicItems) },
+        { label: "Avg rating", value: averageRating(musicItems.map((i) => i.rating)) },
       ]
     : [
         { label: "Total watched", value: filmItems.length },
         { label: counts.movies === 1 ? "Film" : "Films", value: counts.movies },
         { label: counts.tvShows === 1 ? "TV show" : "TV shows", value: counts.tvShows },
-        { label: "Avg rating", value: averageRating(filmItems) },
+        { label: "Avg rating", value: averageRating(filmItems.map((i) => i.rating)) },
       ];
 
   const filterOptions: SegmentOption<FilterType>[] = isMusicMode
@@ -323,7 +277,6 @@ export default function LibraryPage() {
 
   // Whether the current filter shows music content (square art) or film content (portrait art)
   const isMusicFilter = filter === "music" || filter === "albums" || filter === "tracks";
-  const effectiveViewType: ViewType = viewType;
 
   const hasQuery = searchQuery.trim() !== "";
   // Nothing to show and nothing narrowing the view: the library itself is empty.
@@ -385,7 +338,7 @@ export default function LibraryPage() {
           <SegmentedControl
             label="Filter by type"
             value={filter}
-            onChange={handleFilterChange}
+            onChange={(next) => patchView({ filter: next })}
             options={filterOptions}
           />
         </div>
@@ -442,7 +395,7 @@ export default function LibraryPage() {
         )}
 
         {loading ? (
-          effectiveViewType === "grid" ? (
+          viewType === "grid" ? (
             <MediaGridSkeleton aspect={isMusicFilter ? "square" : "poster"} />
           ) : (
             <RowListSkeleton count={6} />
@@ -481,7 +434,7 @@ export default function LibraryPage() {
               }
             />
           )
-        ) : effectiveViewType === "grid" ? (
+        ) : viewType === "grid" ? (
           <MediaGrid>
             {filteredItems.map((item) => (
               <MediaCard
@@ -490,10 +443,10 @@ export default function LibraryPage() {
                 subtitle={isMusicItem(item) && item.artist ? item.artist : undefined}
                 image={resizePoster(item.poster_url, "w342")}
                 aspect={isMusicItem(item) ? "square" : "poster"}
-                href={mediaHref(item)}
+                href={itemHref(item)}
                 rating={isRated(item) ? Number(item.rating) : null}
                 footer={metaLine(item)}
-                fallbackIcon={TYPE_ICON[item.media_type]}
+                fallbackIcon={TYPE_META[item.media_type].icon}
                 caption={
                   item.review ? (
                     <p className="line-clamp-4 italic">&ldquo;{item.review}&rdquo;</p>
@@ -507,9 +460,9 @@ export default function LibraryPage() {
           <ul className="advance border-t border-border">
             {filteredItems.map((item) => {
               const music = isMusicItem(item);
-              const href = mediaHref(item);
+              const href = itemHref(item);
               const poster = resizePoster(item.poster_url, "w185");
-              const FallbackIcon = TYPE_ICON[item.media_type];
+              const FallbackIcon = TYPE_META[item.media_type].icon;
               return (
                 <li key={item.id} className="row-item group relative flex items-start gap-4 px-2 py-4">
                   {/* Film thumbnails are portrait, music thumbnails square */}

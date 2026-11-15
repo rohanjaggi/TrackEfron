@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bookmark, Disc3, Film, Library, Music2, Plus, Tv, type LucideIcon } from "lucide-react";
+import { ArrowRight, Bookmark, Disc3, Film, Library, Music2, Plus, Tv } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,18 @@ import { MediaCard, MediaGrid } from "@/components/ui/media-card";
 import { EmptyState, Notice, PageHeader, SectionHeader, StatBlock } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
+import { useSavedKeys } from "@/hooks/use-saved-keys";
 import type {
   FilmRecommendation,
   MusicRecommendation,
   MusicRecsResponse,
   RecsResponse,
 } from "@/lib/ai/types";
+import { loadRecs } from "@/lib/ai/recs-client";
 import { useMode, type AppMode } from "@/lib/mode-context";
 import { createClient } from "@/lib/supabase/client";
+import { TYPE_META, averageRating, countReviews, isMusicType } from "@/lib/media";
+import { saveToQueue, saveToWatchlist, titleKey } from "@/lib/saved-items";
 import { resizePoster } from "@/lib/tmdb/poster";
 import { cn } from "@/lib/utils";
 
@@ -50,21 +54,10 @@ type LogsState = {
   failed: boolean;
 };
 
-/** Postgres unique-violation: the row is already there. */
-const DUPLICATE_ROW = "23505";
 
 interface DashboardClientProps {
   userName: string;
 }
-
-const TYPE_LABEL: Record<MediaType, string> = {
-  movie: "Film",
-  tv: "TV",
-  album: "Album",
-  track: "Track",
-};
-
-const isMusicType = (type: MediaType) => type === "album" || type === "track";
 
 /** "2026-11-01" is a calendar day, not a moment: format it without shifting time zone. */
 function formatDate(value: string): string {
@@ -81,13 +74,6 @@ function mediaHref(item: LogEntry): string | null {
   return id ? `/protected/media/${item.media_type}/${id}` : null;
 }
 
-const FALLBACK_ICON: Record<MediaType, LucideIcon> = {
-  movie: Film,
-  tv: Tv,
-  album: Disc3,
-  track: Music2,
-};
-
 /** Unrated (null or 0) has no rating: no stars, and it is left out of the average. */
 function ratingOf(item: LogEntry): number | null {
   const value = Number(item.rating);
@@ -99,7 +85,7 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
   const music = isMusicType(item.media_type);
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w500");
-  const Fallback = FALLBACK_ICON[item.media_type];
+  const Fallback = TYPE_META[item.media_type].icon;
   const rating = ratingOf(item);
 
   return (
@@ -139,7 +125,7 @@ function FeaturedEntry({ item }: { item: LogEntry }) {
           </h2>
           {rating != null && <Stars value={rating} size={15} className="mt-2" />}
           <p className="t-meta mt-2">
-            {TYPE_LABEL[item.media_type]}
+            {TYPE_META[item.media_type].shortLabel}
             {item.watched_date && ` · ${formatDate(item.watched_date)}`}
           </p>
           {item.review && (
@@ -158,7 +144,7 @@ function RecentRow({ item }: { item: LogEntry }) {
   const music = isMusicType(item.media_type);
   const href = mediaHref(item);
   const image = resizePoster(item.poster_url, "w185");
-  const Fallback = FALLBACK_ICON[item.media_type];
+  const Fallback = TYPE_META[item.media_type].icon;
   const rating = ratingOf(item);
   const rowClass = "row-item flex items-center gap-4 py-4";
 
@@ -181,7 +167,7 @@ function RecentRow({ item }: { item: LogEntry }) {
       <div className="min-w-0 flex-1">
         <h3 className="t-card truncate">{item.title}</h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <Badge variant="outline">{TYPE_LABEL[item.media_type]}</Badge>
+          <Badge variant="outline">{TYPE_META[item.media_type].shortLabel}</Badge>
           {item.watched_date && <span className="t-meta">{formatDate(item.watched_date)}</span>}
         </div>
       </div>
@@ -210,8 +196,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const [filmRecs, setFilmRecs] = useState<RecsResult<FilmRecommendation> | null>(null);
   const [musicRecs, setMusicRecs] = useState<RecsResult<MusicRecommendation> | null>(null);
   const recsRequested = useRef<Record<AppMode, boolean>>({ film: false, music: false });
-  const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
-  const [watchlistKeys, setWatchlistKeys] = useState<Set<string>>(new Set());
+  const { queuedIds, watchlistKeys, markQueued, markWatchlisted } = useSavedKeys(mode);
   const [addingKey, setAddingKey] = useState<string | null>(null);
 
   // Only the current mode's logs; a response for another mode never lands.
@@ -300,24 +285,13 @@ export function DashboardClient({ userName }: DashboardClientProps) {
       url: string,
       done: (result: RecsResult<T>) => void,
     ) {
-      try {
-        const res = await fetch(url);
-        if (res.status === 402) {
-          done({ status: "nokey", items: [] });
-          return;
-        }
-        if (!res.ok) {
-          done({ status: "failed", items: [] });
-          return;
-        }
-        const data: R = await res.json();
-        if (data.status === "not_enough_logs") done({ status: "few", items: [] });
-        else if (data.status === "ok" && Array.isArray(data.items) && data.items.length > 0) {
-          done({ status: "ok", items: data.items });
-        } else done({ status: "failed", items: [] });
-      } catch {
-        done({ status: "failed", items: [] });
-      }
+      const load = await loadRecs<R>(url);
+      if (load.kind === "no_key") done({ status: "nokey", items: [] });
+      else if (load.kind === "error") done({ status: "failed", items: [] });
+      else if (load.body.status === "not_enough_logs") done({ status: "few", items: [] });
+      else if (load.body.status === "ok" && load.body.items.length > 0) {
+        done({ status: "ok", items: load.body.items });
+      } else done({ status: "failed", items: [] });
     }
 
     // Each result lands in its own mode's slot, so a late answer never shows in the wrong mode.
@@ -332,52 +306,12 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     }
   }, [ready, mode]);
 
-  // What is already saved, so a pick shows its state from the start.
-  useEffect(() => {
-    let cancelled = false;
-    const requestMode = mode;
-
-    async function fetchSaved() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user || cancelled) return;
-        if (requestMode === "music") {
-          const { data, error } = await supabase.from("music_queue").select("spotify_id").eq("user_id", user.id);
-          if (!cancelled && !error && data) {
-            const ids = data
-              .map((r: { spotify_id: string | null }) => r.spotify_id)
-              .filter((id): id is string => Boolean(id));
-            setQueuedIds(new Set(ids));
-          }
-        } else {
-          const { data, error } = await supabase
-            .from("watchlist")
-            .select("tmdb_id, media_type")
-            .eq("user_id", user.id);
-          if (!cancelled && !error && data) {
-            setWatchlistKeys(
-              new Set(data.map((r: { tmdb_id: number; media_type: string }) => `${r.media_type}:${r.tmdb_id}`)),
-            );
-          }
-        }
-      } catch {
-        // Buttons fall back to "add"; a duplicate is handled on save.
-      }
-    }
-
-    fetchSaved();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode]);
-
   function retryLogs() {
     setReloadKey((k) => k + 1);
   }
 
   async function addToWatchlist(item: FilmRecommendation) {
-    const key = `${item.media_type}:${item.tmdb_id}`;
+    const key = titleKey(item.media_type, item.tmdb_id);
     const failed = () =>
       toast({
         tone: "error",
@@ -388,36 +322,28 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
     setAddingKey(key);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          tone: "error",
-          title: "Your session has ended",
-          description: "Sign in again to add to your watchlist.",
-        });
-        return;
-      }
-      const { error } = await supabase.from("watchlist").insert({
-        user_id: user.id,
+      const status = await saveToWatchlist({
         tmdb_id: item.tmdb_id,
         title: item.title,
         media_type: item.media_type,
         poster_url: item.poster_url,
       });
-      // 23505: unique violation, i.e. it was already on the watchlist.
-      if (error && error.code !== DUPLICATE_ROW) {
+      if (status === "signed_out") {
+        toast({
+          tone: "error",
+          title: "Your session has ended",
+          description: "Sign in again to add to your watchlist.",
+        });
+      } else if (status === "failed" || status === "unreachable") {
         failed();
-        return;
+      } else {
+        markWatchlisted(key);
+        toast(
+          status === "duplicate"
+            ? { tone: "info", title: `${item.title} is already on your watchlist` }
+            : { mark: "Added", title: `${item.title} added to your watchlist` },
+        );
       }
-      setWatchlistKeys((prev) => new Set([...prev, key]));
-      toast(
-        error
-          ? { tone: "info", title: `${item.title} is already on your watchlist` }
-          : { mark: "Added", title: `${item.title} added to your watchlist` },
-      );
-    } catch {
-      failed();
     } finally {
       setAddingKey(null);
     }
@@ -436,36 +362,29 @@ export function DashboardClient({ userName }: DashboardClientProps) {
 
     setAddingKey(spotifyId);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          tone: "error",
-          title: "Your session has ended",
-          description: "Sign in again to add to your queue.",
-        });
-        return;
-      }
-      const { error } = await supabase.from("music_queue").insert({
-        user_id: user.id,
+      const status = await saveToQueue({
         spotify_id: spotifyId,
         media_type: item.type,
         title: item.title,
         artist: item.artist,
         image_url: item.image_url ?? null,
       });
-      if (error && error.code !== DUPLICATE_ROW) {
+      if (status === "signed_out") {
+        toast({
+          tone: "error",
+          title: "Your session has ended",
+          description: "Sign in again to add to your queue.",
+        });
+      } else if (status === "failed" || status === "unreachable") {
         failed();
-        return;
+      } else {
+        markQueued(spotifyId);
+        toast(
+          status === "duplicate"
+            ? { tone: "info", title: `${item.title} is already in your queue` }
+            : { mark: "Added", title: `${item.title} added to your queue` },
+        );
       }
-      setQueuedIds((prev) => new Set([...prev, spotifyId]));
-      toast(
-        error
-          ? { tone: "info", title: `${item.title} is already in your queue` }
-          : { mark: "Added", title: `${item.title} added to your queue` },
-      );
-    } catch {
-      failed();
     } finally {
       setAddingKey(null);
     }
@@ -492,12 +411,13 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     return created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
   };
 
-  const ratings = activeLogs.map(ratingOf).filter((r): r is number => r != null);
   const stats = {
     count: activeLogs.length,
-    reviews: activeLogs.filter((i) => i.review && i.review.trim().length > 0).length,
-    avgRating:
-      ratings.length > 0 ? (ratings.reduce((acc, r) => acc + r, 0) / ratings.length).toFixed(1) : "–",
+    reviews: countReviews(activeLogs),
+    avgRating: averageRating(
+      activeLogs.map((i) => i.rating),
+      { empty: "–" },
+    ),
     thisMonth: activeLogs.filter(isThisMonth).length,
   };
 
@@ -696,7 +616,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           ) : (
             <MediaGrid>
               {filmRecs!.items.map((item) => {
-                const key = `${item.media_type}:${item.tmdb_id}`;
+                const key = titleKey(item.media_type, item.tmdb_id);
                 const saved = watchlistKeys.has(key);
                 const type = item.media_type === "movie" ? "Film" : "TV";
                 return (

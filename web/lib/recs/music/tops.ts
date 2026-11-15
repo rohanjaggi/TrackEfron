@@ -1,4 +1,5 @@
 import type { SpotifyRange, SpotifyTops } from "@/lib/ai/types";
+import { artistNames } from "@/lib/spotify/spotify";
 
 interface RawArtist {
   id: string;
@@ -46,7 +47,7 @@ export async function fetchSpotifyTops(accessToken: string): Promise<SpotifyTops
     tops.tracks[range] = trackLists[i]!.map((t) => ({
       id: t.id,
       name: t.name,
-      artist: (t.artists ?? []).map((ar) => ar.name).join(", "),
+      artist: artistNames(t.artists),
     }));
   });
   return tops;

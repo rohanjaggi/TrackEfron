@@ -1,8 +1,10 @@
 "use client";
 
+import { PG_UNIQUE_VIOLATION } from "@/lib/postgrest";
 import { useState, useEffect, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
   Clock,
@@ -25,8 +27,10 @@ import { MediaCard, MediaGrid } from "@/components/ui/media-card";
 import { Avatar, EmptyState, Notice, SectionHeader, StatBlock } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
+import { pairFilter, relationshipFrom, type FriendshipRow, type RelationshipStatus } from "@/lib/friendships";
 import { resizePoster } from "@/lib/tmdb/poster";
 import { createClient } from "@/lib/supabase/client";
+import { averageRating, countLabel, countReviews, formatDay, hasReview, mediaHref } from "@/lib/media";
 import type { WatchLog, WatchlistItem } from "@/lib/types";
 
 type Profile = {
@@ -34,7 +38,6 @@ type Profile = {
   username: string;
   full_name: string | null;
   avatar_url: string | null;
-  profile_color: string | null;
   created_at: string;
 };
 
@@ -67,28 +70,12 @@ type QueueItem = {
   spotify_id: string;
 };
 
-type RelationshipStatus = "self" | "friends" | "pending_sent" | "pending_received" | "none";
-
-type FriendshipRow = {
-  id: string;
-  requester_id: string;
-  addressee_id: string;
-  status: string;
-};
-
 /** "14 Nov 2026", or "November 2026" when only the month matters. */
 function formatDate(value: string, style: "day" | "month" = "day"): string {
-  return new Date(value).toLocaleDateString(
-    "en-GB",
-    style === "month"
-      ? { month: "long", year: "numeric" }
-      : { day: "numeric", month: "short", year: "numeric" },
-  );
-}
-
-function relationshipFrom(row: FriendshipRow, viewerId: string): RelationshipStatus {
-  if (row.status === "accepted") return "friends";
-  return row.requester_id === viewerId ? "pending_sent" : "pending_received";
+  if (style === "month") {
+    return new Date(value).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  }
+  return formatDay(value);
 }
 
 function BackLink({ solid = false }: { solid?: boolean }) {
@@ -125,6 +112,88 @@ function ProfileSkeleton() {
   );
 }
 
+const PREVIEW_LIMIT = 12;
+
+/** One recent log: artwork, title and stars, a meta line, an optional extra line; a link when `href` is set. */
+function ActivityRow({
+  href,
+  align,
+  thumbClass,
+  image,
+  FallbackIcon,
+  title,
+  rating,
+  meta,
+  extra,
+}: {
+  href?: string;
+  align: "items-start" | "items-center";
+  thumbClass: string;
+  image: string | null;
+  FallbackIcon: LucideIcon;
+  title: string;
+  rating: number;
+  meta: React.ReactNode;
+  extra?: React.ReactNode;
+}) {
+  const row = (
+    <>
+      <span
+        className={`flex ${thumbClass} shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2`}
+      >
+        {image ? (
+          <img src={image} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <FallbackIcon className="size-5 text-dim" aria-hidden="true" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="t-card min-w-0 truncate">{title}</span>
+          <Stars value={rating} />
+        </span>
+        <span className="t-meta mt-1 block">{meta}</span>
+        {extra}
+      </span>
+    </>
+  );
+  const className = `flex ${align} gap-4 px-2 py-4`;
+  return (
+    <li className="row-item">
+      {href ? (
+        <Link href={href} className={className}>
+          {row}
+        </Link>
+      ) : (
+        <div className={className}>{row}</div>
+      )}
+    </li>
+  );
+}
+
+/** A titled grid of the first dozen cards, with a "+N more" note beneath when there are more. */
+function PreviewGrid<T>({
+  title,
+  meta,
+  items,
+  renderCard,
+}: {
+  title: string;
+  meta: string;
+  items: T[];
+  renderCard: (item: T) => React.ReactNode;
+}) {
+  return (
+    <section>
+      <SectionHeader title={title} as="h3" meta={meta} />
+      <MediaGrid dense>{items.slice(0, PREVIEW_LIMIT).map(renderCard)}</MediaGrid>
+      {items.length > PREVIEW_LIMIT && (
+        <p className="t-meta mt-8">+{items.length - PREVIEW_LIMIT} more</p>
+      )}
+    </section>
+  );
+}
+
 /** A person's lists for one domain, counted in that domain's own nouns. */
 function ProfileLists({
   title,
@@ -142,10 +211,7 @@ function ProfileLists({
       <ul>
         {lists.map((list) => {
           const count = list.list_items?.[0]?.count ?? 0;
-          const countLabel =
-            noun === "film"
-              ? count === 1 ? "1 film or show" : `${count} films and shows`
-              : count === 1 ? "1 album or track" : `${count} albums and tracks`;
+          const label = countLabel(count, noun === "music");
           return (
             <li key={list.id} className="row-item">
               <Link href={`/protected/lists/${list.id}`} className="flex items-center gap-4 px-2 py-4">
@@ -161,7 +227,7 @@ function ProfileLists({
                     <span className="t-meta mt-1 line-clamp-1 block">{list.description}</span>
                   )}
                 </span>
-                <span className="t-label shrink-0">{countLabel}</span>
+                <span className="t-label shrink-0">{label}</span>
               </Link>
             </li>
           );
@@ -210,10 +276,15 @@ function UserProfileContent() {
         setLoadFailed(false);
         const supabase = createClient();
 
+        // The current user does not depend on the profile, so start both together.
+        // A rejection only matters once the profile has loaded, as before.
+        const userRequest = supabase.auth.getUser();
+        userRequest.catch(() => {});
+
         // Get target user's profile
         const { data: profileData, error } = await supabase
           .from("profiles")
-          .select("*")
+          .select("id, username, full_name, avatar_url, created_at")
           .eq("username", targetUsername)
           .single();
 
@@ -228,7 +299,7 @@ function UserProfileContent() {
         setProfile(profileData);
 
         // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await userRequest;
         if (!user) { setLoading(false); return; }
 
         // Check if viewing own profile
@@ -244,9 +315,7 @@ function UserProfileContent() {
         const { data: friendships, error: friendshipsError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
-          .or(
-            `and(requester_id.eq.${user.id},addressee_id.eq.${profileData.id}),and(requester_id.eq.${profileData.id},addressee_id.eq.${user.id})`
-          );
+          .or(pairFilter(user.id, profileData.id));
         // Without this the page cannot tell "no friendship" from "couldn't check", so it shows no actions.
         if (friendshipsError) throw friendshipsError;
 
@@ -279,7 +348,7 @@ function UserProfileContent() {
       try {
         const supabase = createClient();
 
-        const [logsRes, watchlistRes, listsRes, listensRes, queueRes] = await Promise.all([
+        const [logsRes, watchlistRes, listsRes, listensRes, queueRes, dnaRes] = await Promise.all([
           supabase
             .from("watch_logs")
             .select("id, title, media_type, rating, review, poster_url, tmdb_id, created_at")
@@ -305,6 +374,7 @@ function UserProfileContent() {
             .select("id, title, artist, media_type, image_url, spotify_id")
             .eq("user_id", profile!.id)
             .order("added_at", { ascending: false }),
+          supabase.from("taste_dna").select("fingerprint").eq("user_id", profile!.id).maybeSingle(),
         ]);
 
         if (logsRes.error || watchlistRes.error || listsRes.error) {
@@ -318,13 +388,8 @@ function UserProfileContent() {
         setListenLogs(listensRes.error ? [] : ((listensRes.data as ListenLog[]) ?? []));
         setMusicQueue(queueRes.error ? [] : ((queueRes.data as QueueItem[]) ?? []));
 
-        // Fetch friend's taste fingerprint
-        const { data: dnaData } = await supabase
-          .from("taste_dna")
-          .select("fingerprint")
-          .eq("user_id", profile!.id)
-          .maybeSingle();
-        if (dnaData?.fingerprint) setFingerprint(dnaData.fingerprint);
+        // A failed taste_dna read is ignored: there is just no fingerprint to show.
+        if (dnaRes.data?.fingerprint) setFingerprint(dnaRes.data.fingerprint);
       } catch (err) {
         console.error("Failed to fetch friend data:", err);
         setFilmDataFailed(true);
@@ -361,7 +426,7 @@ function UserProfileContent() {
         .select("id")
         .single();
 
-      if (error && error.code !== "23505") {
+      if (error && error.code !== PG_UNIQUE_VIOLATION) {
         console.error("Failed to send friend request:", error);
         actionFailed(`Couldn't send your request to ${displayName}`);
         return;
@@ -375,9 +440,7 @@ function UserProfileContent() {
         const { data: existing, error: existingError } = await supabase
           .from("friendships")
           .select("id, requester_id, addressee_id, status")
-          .or(
-            `and(requester_id.eq.${user.id},addressee_id.eq.${profile.id}),and(requester_id.eq.${profile.id},addressee_id.eq.${user.id})`
-          );
+          .or(pairFilter(user.id, profile.id));
         if (existingError) {
           console.error("Failed to read existing friendship:", existingError);
           actionFailed(`Couldn't confirm your friendship status with ${displayName}`);
@@ -486,10 +549,11 @@ function UserProfileContent() {
     watched: watchLogs.length,
     movies: watchLogs.filter((i) => i.media_type === "movie").length,
     tvShows: watchLogs.filter((i) => i.media_type === "tv").length,
-    reviews: watchLogs.filter((i) => i.review && i.review.trim().length > 0).length,
-    avgRating: watchLogs.length > 0
-      ? (watchLogs.reduce((acc, i) => acc + Number(i.rating), 0) / watchLogs.length).toFixed(1)
-      : "—",
+    reviews: countReviews(watchLogs),
+    avgRating: averageRating(
+      watchLogs.map((i) => i.rating),
+      { includeUnrated: true },
+    ),
   };
 
   const filmLists = lists.filter((l) => l.list_type !== "music");
@@ -501,13 +565,14 @@ function UserProfileContent() {
     listens: listenLogs.length,
     albums: listenLogs.filter((i) => i.media_type === "album").length,
     tracks: listenLogs.filter((i) => i.media_type === "track").length,
-    avgRating: listenLogs.length > 0
-      ? (listenLogs.reduce((acc, i) => acc + Number(i.rating), 0) / listenLogs.length).toFixed(1)
-      : "—",
+    avgRating: averageRating(
+      listenLogs.map((i) => i.rating),
+      { includeUnrated: true },
+    ),
   };
 
   const recentReviews = watchLogs
-    .filter((l) => l.review && l.review.trim().length > 0)
+    .filter((l) => hasReview(l.review))
     .slice(0, 5);
 
   return (
@@ -624,72 +689,41 @@ function UserProfileContent() {
                     <section>
                       <SectionHeader title="Recent reviews" as="h3" />
                       <ul className="advance">
-                        {recentReviews.map((log) => {
-                          const poster = resizePoster(log.poster_url, "w185");
-                          const FallbackIcon = log.media_type === "movie" ? Film : Tv;
-                          const row = (
-                            <>
-                              <span className="flex h-[72px] w-12 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
-                                {poster ? (
-                                   
-                                  <img src={poster} alt="" className="h-full w-full object-cover" />
-                                ) : (
-                                  <FallbackIcon className="size-5 text-dim" aria-hidden="true" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                  <span className="t-card min-w-0 truncate">{log.title}</span>
-                                  <Stars value={Number(log.rating)} />
-                                </span>
-                                <span className="t-meta mt-1 block">{formatDate(log.created_at)}</span>
-                                <span className="t-prose mt-2 line-clamp-2">{log.review}</span>
-                              </span>
-                            </>
-                          );
-                          return (
-                            <li key={log.id} className="row-item">
-                              {log.tmdb_id ? (
-                                <Link
-                                  href={`/protected/media/${log.media_type}/${log.tmdb_id}`}
-                                  className="flex items-start gap-4 px-2 py-4"
-                                >
-                                  {row}
-                                </Link>
-                              ) : (
-                                <div className="flex items-start gap-4 px-2 py-4">{row}</div>
-                              )}
-                            </li>
-                          );
-                        })}
+                        {recentReviews.map((log) => (
+                          <ActivityRow
+                            key={log.id}
+                            href={log.tmdb_id ? `/protected/media/${log.media_type}/${log.tmdb_id}` : undefined}
+                            align="items-start"
+                            thumbClass="h-[72px] w-12"
+                            image={resizePoster(log.poster_url, "w185")}
+                            FallbackIcon={log.media_type === "movie" ? Film : Tv}
+                            title={log.title}
+                            rating={Number(log.rating)}
+                            meta={formatDate(log.created_at)}
+                            extra={<span className="t-prose mt-2 line-clamp-2">{log.review}</span>}
+                          />
+                        ))}
                       </ul>
                     </section>
                   )}
 
                   {watchlist.length > 0 && (
-                    <section>
-                      <SectionHeader
-                        title="Watchlist"
-                        as="h3"
-                        meta={`${watchlist.length} ${watchlist.length === 1 ? "film or show" : "films and shows"}`}
-                      />
-                      <MediaGrid dense>
-                        {watchlist.slice(0, 12).map((item) => (
-                          <MediaCard
-                            key={item.id}
-                            title={item.title}
-                            subtitle={item.media_type === "movie" ? "Film" : "TV"}
-                            image={resizePoster(item.poster_url, "w342")}
-                            aspect="poster"
-                            href={item.tmdb_id ? `/protected/media/${item.media_type}/${item.tmdb_id}` : undefined}
-                            fallbackIcon={item.media_type === "movie" ? Film : Tv}
-                          />
-                        ))}
-                      </MediaGrid>
-                      {watchlist.length > 12 && (
-                        <p className="t-meta mt-8">+{watchlist.length - 12} more</p>
+                    <PreviewGrid
+                      title="Watchlist"
+                      meta={countLabel(watchlist.length, false)}
+                      items={watchlist}
+                      renderCard={(item) => (
+                        <MediaCard
+                          key={item.id}
+                          title={item.title}
+                          subtitle={item.media_type === "movie" ? "Film" : "TV"}
+                          image={resizePoster(item.poster_url, "w342")}
+                          aspect="poster"
+                          href={mediaHref(item.media_type, { tmdbId: item.tmdb_id })}
+                          fallbackIcon={item.media_type === "movie" ? Film : Tv}
+                        />
                       )}
-                    </section>
+                    />
                   )}
 
                   <ProfileLists title="Film & TV lists" lists={filmLists} noun="film" />
@@ -716,72 +750,45 @@ function UserProfileContent() {
                     <section>
                       <SectionHeader title="Recent listens" as="h3" />
                       <ul className="advance">
-                        {listenLogs.slice(0, 5).map((log) => {
-                          const row = (
-                            <>
-                              <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden border border-border bg-surface-2">
-                                {log.image_url ? (
-                                   
-                                  <img src={log.image_url} alt="" className="h-full w-full object-cover" />
-                                ) : (
-                                  <Music2 className="size-5 text-dim" aria-hidden="true" />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                  <span className="t-card min-w-0 truncate">{log.title}</span>
-                                  <Stars value={Number(log.rating)} />
-                                </span>
-                                <span className="t-meta mt-1 block">
-                                  {log.artist ? `${log.artist} · ` : ""}
-                                  {formatDate(log.created_at)}
-                                </span>
-                              </span>
-                            </>
-                          );
-                          return (
-                            <li key={log.id} className="row-item">
-                              {log.spotify_id ? (
-                                <Link
-                                  href={`/protected/media/${log.media_type}/${log.spotify_id}`}
-                                  className="flex items-center gap-4 px-2 py-4"
-                                >
-                                  {row}
-                                </Link>
-                              ) : (
-                                <div className="flex items-center gap-4 px-2 py-4">{row}</div>
-                              )}
-                            </li>
-                          );
-                        })}
+                        {listenLogs.slice(0, 5).map((log) => (
+                          <ActivityRow
+                            key={log.id}
+                            href={log.spotify_id ? `/protected/media/${log.media_type}/${log.spotify_id}` : undefined}
+                            align="items-center"
+                            thumbClass="h-14 w-14"
+                            image={log.image_url}
+                            FallbackIcon={Music2}
+                            title={log.title}
+                            rating={Number(log.rating)}
+                            meta={
+                              <>
+                                {log.artist ? `${log.artist} · ` : ""}
+                                {formatDate(log.created_at)}
+                              </>
+                            }
+                          />
+                        ))}
                       </ul>
                     </section>
                   )}
 
                   {musicQueue.length > 0 && (
-                    <section>
-                      <SectionHeader
-                        title="Queue"
-                        as="h3"
-                        meta={`${musicQueue.length} ${musicQueue.length === 1 ? "album or track" : "albums and tracks"}`}
-                      />
-                      <MediaGrid dense>
-                        {musicQueue.slice(0, 12).map((item) => (
-                          <MediaCard
-                            key={item.id}
-                            title={item.title}
-                            subtitle={item.artist ?? (item.media_type === "album" ? "Album" : "Track")}
-                            image={item.image_url}
-                            aspect="square"
-                            href={`/protected/media/${item.media_type}/${item.spotify_id}`}
-                            fallbackIcon={item.media_type === "album" ? Disc3 : Music2}
-                          />
-                        ))}
-                      </MediaGrid>
-                      {musicQueue.length > 12 && (
-                        <p className="t-meta mt-8">+{musicQueue.length - 12} more</p>
+                    <PreviewGrid
+                      title="Queue"
+                      meta={countLabel(musicQueue.length, true)}
+                      items={musicQueue}
+                      renderCard={(item) => (
+                        <MediaCard
+                          key={item.id}
+                          title={item.title}
+                          subtitle={item.artist ?? (item.media_type === "album" ? "Album" : "Track")}
+                          image={item.image_url}
+                          aspect="square"
+                          href={`/protected/media/${item.media_type}/${item.spotify_id}`}
+                          fallbackIcon={item.media_type === "album" ? Disc3 : Music2}
+                        />
                       )}
-                    </section>
+                    />
                   )}
 
                   <ProfileLists title="Music lists" lists={musicLists} noun="music" />

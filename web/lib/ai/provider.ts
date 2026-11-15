@@ -3,23 +3,21 @@ import OpenAI from "openai";
 import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { detectProvider, envProvider, type Provider } from "./detect-provider";
+import type { Tool } from "./tools";
 
-type Tier = "powerful" | "fast" | "fastest";
+type Tier = "powerful" | "fastest";
 
 const MODEL_MAP: Record<Provider, Record<Tier, string>> = {
   anthropic: {
     powerful: "claude-sonnet-5-5",
-    fast: "claude-haiku-5-5",
     fastest: "claude-haiku-5-5",
   },
   openai: {
     powerful: "gpt-6-luna",
-    fast: "gpt-6-luna",
     fastest: "gpt-6-luna",
   },
   gemini: {
     powerful: "gemini-2.5-flash-lite",
-    fast: "gemini-2.5-flash-lite",
     fastest: "gemini-2.5-flash-lite",
   },
 };
@@ -28,16 +26,13 @@ const MODEL_MAP: Record<Provider, Record<Tier, string>> = {
 // against the output limit, so the callers' 2,000-4,000 would truncate.
 const MIN_OUTPUT_TOKENS = 16000;
 
-type AnthropicTool = Anthropic.Messages.Tool;
-
 interface CallAIOptions {
   supabase: SupabaseClient;
   userId: string;
   tier: Tier;
   maxTokens: number;
   system: string;
-  tool: AnthropicTool;
-  toolName: string;
+  tool: Tool;
   userMessage: string;
 }
 
@@ -182,7 +177,7 @@ async function callGemini(
       toolConfig: {
         functionCallingConfig: {
           mode: FunctionCallingConfigMode.ANY,
-          allowedFunctionNames: [options.toolName],
+          allowedFunctionNames: [options.tool.name],
         },
       },
     },

@@ -1,22 +1,17 @@
 import {
   discoverByGenre,
-  getMovieDetails,
-  getMovieProviders,
+  getDetails,
   getNowPlaying,
-  getPersonCredits,
   getPoster,
-  getSimilar,
+  getProviders,
   getTopRated,
   getTrending,
-  getTvDetails,
-  getTvProviders,
-  getUpcoming,
   searchMulti,
+  type MediaType,
   type TmdbResult,
 } from "@/lib/tmdb/tmdb";
 import { NextResponse } from "next/server";
 
-type MediaType = "movie" | "tv";
 type Handler = (params: URLSearchParams) => Promise<unknown>;
 
 class BadRequest extends Error {}
@@ -29,9 +24,9 @@ function mediaType(params: URLSearchParams, fallback?: MediaType): MediaType {
   return type;
 }
 
-function id(params: URLSearchParams, label = "id"): number {
+function id(params: URLSearchParams): number {
   const value = Number(params.get("id"));
-  if (!value) throw new BadRequest(`Invalid ${label}`);
+  if (!value) throw new BadRequest("Invalid id");
   return value;
 }
 
@@ -56,7 +51,7 @@ const handlers: Record<string, Handler> = {
 
   detail: async (params) => {
     const type = mediaType(params);
-    const detail = await (type === "movie" ? getMovieDetails(id(params)) : getTvDetails(id(params)));
+    const detail = await getDetails(type, id(params));
     return {
       ...detail,
       poster_url: detail.poster_path ? getPoster(detail.poster_path, "w500") : null,
@@ -66,13 +61,11 @@ const handlers: Record<string, Handler> = {
 
   providers: async (params) => {
     const type = mediaType(params);
-    const results = await (type === "movie" ? getMovieProviders(id(params)) : getTvProviders(id(params)));
+    const results = await getProviders(type, id(params));
     return results || {};
   },
 
   now_playing: async () => (await getNowPlaying()).map((r) => withPoster(r, { media_type: "movie" })),
-
-  upcoming: async () => (await getUpcoming()).map((r) => withPoster(r, { media_type: "movie" })),
 
   top_rated: async (params) => {
     const type = mediaType(params, "movie");
@@ -85,29 +78,6 @@ const handlers: Record<string, Handler> = {
     if (!genres) throw new BadRequest("genres param required");
     if (!GENRES_PATTERN.test(genres)) throw new BadRequest("Invalid genres");
     return (await discoverByGenre(type, genres)).map((r) => withPoster(r, { media_type: type }));
-  },
-
-  similar: async (params) => {
-    const type = mediaType(params);
-    const results = await getSimilar(type, id(params));
-    return results.map((r) => withPoster(r, { media_type: r.media_type || type }));
-  },
-
-  person_credits: async (params) => {
-    const data = await getPersonCredits(id(params, "person id"));
-    const seen = new Set<string>();
-    return [...(data.cast || []), ...(data.crew || [])]
-      .filter((c) => {
-        const key = `${c.media_type}-${c.id}`;
-        if (seen.has(key)) return false;
-        if (c.media_type !== "movie" && c.media_type !== "tv") return false;
-        if ((c.vote_count || 0) < 10) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0))
-      .slice(0, 20)
-      .map((c) => withPoster(c));
   },
 };
 

@@ -15,8 +15,6 @@ export interface SegmentOption<T extends string> {
   iconOnly?: boolean;
   /** Greys the option out and skips it for keyboard users. */
   disabled?: boolean;
-  /** Tooltip, e.g. why the option is disabled. */
-  hint?: string;
   /** `alert` draws the count in the accent so pending items get noticed. */
   countTone?: "default" | "alert";
 }
@@ -80,7 +78,7 @@ export function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             aria-label={typeof opt.count === "number" ? `${opt.label}, ${opt.count}` : opt.label}
-            title={opt.hint ?? (opt.iconOnly ? opt.label : undefined)}
+            title={opt.iconOnly ? opt.label : undefined}
             tabIndex={i === focusable ? 0 : -1}
             data-active={active}
             disabled={opt.disabled}

@@ -1,6 +1,10 @@
-export const CACHE_DAYS = 7;
+import type { ServerSupabase as Supabase } from "@/lib/api/auth";
+export type CacheMode = "film_explanations" | "music";
+type CacheRow = { recommendations: unknown; expires_at: string; log_count_at_generation: number };
+
+const CACHE_DAYS = 7;
 /** A legitimately empty result is kept this long so page views do not rebuild it. */
-export const EMPTY_CACHE_HOURS = 1;
+const EMPTY_CACHE_HOURS = 1;
 
 export function cacheExpiry(status: "ok" | "empty", now: Date): Date {
   const hours = status === "ok" ? CACHE_DAYS * 24 : EMPTY_CACHE_HOURS;
@@ -37,4 +41,41 @@ export function nextShownHistory(batch: ShownFilm[], previous: ShownFilm[], max 
     if (out.length >= max) break;
   }
   return out;
+}
+
+export async function readCache(supabase: Supabase, userId: string, mode: CacheMode): Promise<CacheRow | null> {
+  const { data, error } = await supabase
+    .from("ai_recommendation_cache")
+    .select("recommendations, expires_at, log_count_at_generation")
+    .eq("user_id", userId)
+    .eq("mode", mode)
+    .maybeSingle();
+  if (error) {
+    console.error("recommendation cache read failed:", error.message);
+    return null;
+  }
+  return (data as CacheRow | null) ?? null;
+}
+
+export async function writeCache(
+  supabase: Supabase,
+  userId: string,
+  mode: CacheMode,
+  recommendations: unknown,
+  logCount: number,
+  status: "ok" | "empty",
+) {
+  const now = new Date();
+  const { error } = await supabase.from("ai_recommendation_cache").upsert(
+    {
+      user_id: userId,
+      mode,
+      recommendations,
+      generated_at: now.toISOString(),
+      log_count_at_generation: logCount,
+      expires_at: cacheExpiry(status, now).toISOString(),
+    },
+    { onConflict: "user_id,mode" },
+  );
+  if (error) console.error("ai_recommendation_cache write failed:", error.message);
 }

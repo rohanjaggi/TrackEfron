@@ -18,8 +18,9 @@ import {
 } from "@/components/ui/page";
 import { TabBar } from "@/components/ui/segmented-control";
 import { useToast } from "@/components/ui/toast";
+import { fallbackProfile, otherParty, splitFriendships } from "@/lib/friendships";
 import { useMode } from "@/lib/mode-context";
-import { escapeIlike } from "@/lib/postgrest";
+import { escapeIlike, PG_UNIQUE_VIOLATION } from "@/lib/postgrest";
 import { createClient } from "@/lib/supabase/client";
 
 type ActiveTab = "friends" | "requests" | "find";
@@ -69,6 +70,45 @@ function PersonRow({ profile, children }: { profile: Profile; children?: React.R
   );
 }
 
+const FRIENDSHIP_COLUMNS = "id, requester_id, addressee_id, status, created_at";
+
+/**
+ * The viewer's friendships with one status (one query), each paired with the other person's
+ * profile (one query, skipped when there are no rows). Throws on either failure.
+ */
+async function loadFriendships(userId: string, status: "accepted" | "pending") {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("friendships")
+    .select(FRIENDSHIP_COLUMNS)
+    .eq("status", status)
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  if (error) throw error;
+
+  const lists = splitFriendships(data || [], userId);
+  const otherIds = [...lists.friends, ...lists.incoming, ...lists.sent].map((f) => otherParty(f, userId));
+  const profileMap = new Map<string, Profile>();
+  if (otherIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, username, full_name, avatar_url")
+      .in("id", otherIds);
+    if (profilesError) throw profilesError;
+    for (const p of profiles || []) profileMap.set(p.id, p);
+  }
+
+  const withProfile = (rows: typeof lists.friends): Friendship[] =>
+    rows.map((f) => {
+      const otherId = otherParty(f, userId);
+      return { ...f, profile: profileMap.get(otherId) || fallbackProfile(otherId) };
+    });
+  return {
+    friends: withProfile(lists.friends),
+    incoming: withProfile(lists.incoming),
+    sent: withProfile(lists.sent),
+  };
+}
+
 export default function FriendsPage() {
   const { mode } = useMode();
   const toast = useToast();
@@ -116,53 +156,8 @@ export default function FriendsPage() {
     try {
       if (showSkeleton) setFriendsLoading(true);
       setFriendsError(false);
-      const supabase = createClient();
-
-      // Get accepted friendships where I'm requester
-      const { data: asRequester, error: requesterError } = await supabase
-        .from("friendships")
-        .select("id, requester_id, addressee_id, status, created_at")
-        .eq("requester_id", userId)
-        .eq("status", "accepted");
-      if (requesterError) throw requesterError;
-
-      // Get accepted friendships where I'm addressee
-      const { data: asAddressee, error: addresseeError } = await supabase
-        .from("friendships")
-        .select("id, requester_id, addressee_id, status, created_at")
-        .eq("addressee_id", userId)
-        .eq("status", "accepted");
-      if (addresseeError) throw addresseeError;
-
-      const allFriendships = [...(asRequester || []), ...(asAddressee || [])];
-
-      // Get friend profile ids
-      const friendIds = allFriendships.map((f) =>
-        f.requester_id === userId ? f.addressee_id : f.requester_id
-      );
-
-      if (friendIds.length === 0) {
-        setFriends([]);
-        return;
-      }
-
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, username, full_name, avatar_url")
-        .in("id", friendIds);
-      if (profilesError) throw profilesError;
-
-      const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
-
-      const result: Friendship[] = allFriendships.map((f) => {
-        const friendId = f.requester_id === userId ? f.addressee_id : f.requester_id;
-        return {
-          ...f,
-          profile: profileMap.get(friendId) || { id: friendId, username: "unknown", full_name: null, avatar_url: null },
-        };
-      });
-
-      setFriends(result);
+      const { friends } = await loadFriendships(userId, "accepted");
+      setFriends(friends);
     } catch (err) {
       console.error("fetchFriends failed:", err);
       setFriendsError(true);
@@ -175,63 +170,9 @@ export default function FriendsPage() {
     try {
       if (showSkeleton) setRequestsLoading(true);
       setRequestsError(false);
-      const supabase = createClient();
-
-      // Incoming
-      const { data: incomingData, error: incomingError } = await supabase
-        .from("friendships")
-        .select("id, requester_id, addressee_id, status, created_at")
-        .eq("addressee_id", userId)
-        .eq("status", "pending");
-      if (incomingError) throw incomingError;
-
-      const incomingIds = (incomingData || []).map((f) => f.requester_id);
-
-      let incomingProfiles: Profile[] = [];
-      if (incomingIds.length > 0) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .in("id", incomingIds);
-        if (error) throw error;
-        incomingProfiles = data || [];
-      }
-
-      const inMap = new Map(incomingProfiles.map((p) => [p.id, p]));
-      setIncoming(
-        (incomingData || []).map((f) => ({
-          ...f,
-          profile: inMap.get(f.requester_id) || { id: f.requester_id, username: "unknown", full_name: null, avatar_url: null },
-        }))
-      );
-
-      // Sent
-      const { data: sentData, error: sentError } = await supabase
-        .from("friendships")
-        .select("id, requester_id, addressee_id, status, created_at")
-        .eq("requester_id", userId)
-        .eq("status", "pending");
-      if (sentError) throw sentError;
-
-      const sentIds = (sentData || []).map((f) => f.addressee_id);
-
-      let sentProfiles: Profile[] = [];
-      if (sentIds.length > 0) {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, username, full_name, avatar_url")
-          .in("id", sentIds);
-        if (error) throw error;
-        sentProfiles = data || [];
-      }
-
-      const sentMap = new Map(sentProfiles.map((p) => [p.id, p]));
-      setSent(
-        (sentData || []).map((f) => ({
-          ...f,
-          profile: sentMap.get(f.addressee_id) || { id: f.addressee_id, username: "unknown", full_name: null, avatar_url: null },
-        }))
-      );
+      const { incoming, sent } = await loadFriendships(userId, "pending");
+      setIncoming(incoming);
+      setSent(sent);
     } catch (err) {
       console.error("fetchRequests failed:", err);
       setRequestsError(true);
@@ -336,7 +277,7 @@ export default function FriendsPage() {
     setSendingTo(null);
 
     // 23505: a request between these two people already exists, which is the outcome we wanted.
-    if (error && error.code !== "23505") {
+    if (error && error.code !== PG_UNIQUE_VIOLATION) {
       console.error("handleSendRequest failed:", error);
       toast({
         mark: "Failed",

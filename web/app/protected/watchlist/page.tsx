@@ -21,7 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import {
   LoadingLine,
   MediaGridSkeleton,
@@ -34,16 +34,19 @@ import {
   Field,
   Notice,
   PageHeader,
-  SectionHeader,
   StatBlock,
 } from "@/components/ui/page";
 import { SegmentedControl, TabBar } from "@/components/ui/segmented-control";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode } from "@/lib/mode-context";
+import { TYPE_META, formatDay, isMusicType } from "@/lib/media";
 import type { WatchlistItem } from "@/lib/types";
 import { resizePoster } from "@/lib/tmdb/poster";
-import { useClickOutside } from "@/hooks/use-click-outside";
+import { useAddDropdown } from "@/hooks/use-add-dropdown";
+import { ListsPanel, type UserList } from "@/components/watchlist/lists-panel";
+import { saveToQueue, saveToWatchlist } from "@/lib/saved-items";
+import { searchSpotify, searchTmdb } from "@/lib/search-client";
 import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ViewType = "grid" | "list";
@@ -102,17 +105,6 @@ type MusicResult = {
 };
 type SearchResult = FilmResult | MusicResult;
 
-type UserList = {
-  id: string;
-  name: string;
-  description: string | null;
-  emoji: string | null;
-  list_type: "film" | "music";
-  created_at: string;
-  updated_at: string;
-  list_items: { count: number }[];
-};
-
 const FILM_EMOJI_OPTIONS = [
   "🎬", "🍿", "🎥", "📺", "🌙", "❤️", "🔥", "⭐",
   "🎭", "👻", "😂", "💀", "🚀", "🧠", "🎄", "🏠",
@@ -125,27 +117,11 @@ const MUSIC_EMOJI_OPTIONS = [
   "🎻", "🎺", "🌍", "🏆"
 ];
 
-const TYPE_META: Record<MediaType, { label: string; icon: LucideIcon }> = {
-  movie: { label: "Film", icon: Film },
-  tv: { label: "TV", icon: Tv },
-  album: { label: "Album", icon: Disc3 },
-  track: { label: "Track", icon: Music2 },
-};
-
 const LOG_HREF = "/protected/log";
 
 function formatDate(iso: string): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function countLabel(count: number, music: boolean): string {
-  if (music) return count === 1 ? "1 album or track" : `${count} albums and tracks`;
-  return count === 1 ? "1 film or show" : `${count} films and shows`;
+  return formatDay(iso);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,10 +134,6 @@ function text(value: unknown): string | null {
 
 function isFilmType(value: unknown): value is FilmType {
   return value === "movie" || value === "tv";
-}
-
-function isMusicType(value: unknown): value is MusicType {
-  return value === "album" || value === "track";
 }
 
 function parseFilmResults(raw: unknown): FilmResult[] {
@@ -245,7 +217,7 @@ function entryHref(entry: Entry): string | undefined {
 }
 
 function entrySubtitle(entry: Entry): string {
-  const label = TYPE_META[entry.mediaType].label;
+  const label = TYPE_META[entry.mediaType].shortLabel;
   return entry.kind === "music" && entry.artist ? `${entry.artist} · ${label}` : label;
 }
 
@@ -277,7 +249,6 @@ function Thumb({
 
 function WatchlistPageContent() {
   const searchParams = useSearchParams();
-  const searchRef = useRef<HTMLDivElement>(null);
   const { mode } = useMode();
   const toast = useToast();
 
@@ -299,7 +270,15 @@ function WatchlistPageContent() {
   const listsRequest = useRef(0);
 
   // Add search state
-  const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const {
+    ref: dropdownRef,
+    open: dropdownOpen,
+    show: showDropdown,
+    hide: hideDropdown,
+    onKeyDown: onDropdownKeyDown,
+    onQueryChange,
+    onFocus: onInputFocus,
+  } = useAddDropdown();
   const {
     query: addQuery,
     setQuery: setAddQuery,
@@ -307,14 +286,8 @@ function WatchlistPageContent() {
     loading: isSearching,
     error: searchError,
   } = useDebouncedSearch<SearchResult>(async (q) => {
-    const url =
-      mode === "music"
-        ? `/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`
-        : `/api?action=search&q=${encodeURIComponent(q)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("Search request failed");
-    const raw: unknown = await res.json();
-    setShowAddDropdown(true);
+    const raw = await (mode === "music" ? searchSpotify(q, "album,track") : searchTmdb(q));
+    showDropdown();
     return mode === "music" ? parseMusicResults(raw) : parseFilmResults(raw);
   }, [mode]);
   const searchFailed = searchError !== null;
@@ -349,7 +322,7 @@ function WatchlistPageContent() {
       if (forMode === "music") {
         const { data, error } = await supabase
           .from("music_queue")
-          .select("*")
+          .select("id, spotify_id, media_type, title, artist, image_url, added_at")
           .eq("user_id", user.id)
           .order("added_at", { ascending: false });
         if (!current()) return;
@@ -362,7 +335,7 @@ function WatchlistPageContent() {
       } else {
         const { data, error } = await supabase
           .from("watchlist")
-          .select("*")
+          .select("id, tmdb_id, media_type, title, poster_url, added_at")
           .eq("user_id", user.id)
           .in("media_type", ["movie", "tv"])
           .order("added_at", { ascending: false });
@@ -423,7 +396,7 @@ function WatchlistPageContent() {
     setNewListEmoji(mode === "music" ? "🎵" : "🎬");
     setSearchQuery("");
     setAddQuery("");
-    setShowAddDropdown(false);
+    hideDropdown();
     setShowCreateForm(false);
     setEntries([]);
     setEntriesLoading(true);
@@ -431,9 +404,7 @@ function WatchlistPageContent() {
     setListsLoading(true);
     void loadEntries(mode);
     void fetchLists(mode);
-  }, [mode, loadEntries, fetchLists, setAddQuery]);
-
-  useClickOutside(searchRef, () => setShowAddDropdown(false));
+  }, [mode, loadEntries, fetchLists, setAddQuery, hideDropdown]);
 
   async function handleAdd(result: SearchResult) {
     const noun = result.kind === "music" ? "queue" : "watchlist";
@@ -447,9 +418,23 @@ function WatchlistPageContent() {
 
     setAddingKey(resultKey(result));
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const status =
+        result.kind === "music"
+          ? await saveToQueue({
+              spotify_id: result.spotifyId,
+              media_type: result.mediaType,
+              title: result.title,
+              artist: result.artist,
+              image_url: result.image,
+            })
+          : await saveToWatchlist({
+              tmdb_id: result.tmdbId,
+              title: result.title,
+              media_type: result.mediaType,
+              poster_url: result.image,
+            });
+
+      if (status === "signed_out") {
         toast({
           mark: "Failed",
           tone: "error",
@@ -458,33 +443,12 @@ function WatchlistPageContent() {
         });
         return;
       }
-
-      const { error } =
-        result.kind === "music"
-          ? await supabase.from("music_queue").insert({
-              user_id: user.id,
-              spotify_id: result.spotifyId,
-              media_type: result.mediaType,
-              title: result.title,
-              artist: result.artist,
-              image_url: result.image,
-            })
-          : await supabase.from("watchlist").insert({
-              user_id: user.id,
-              tmdb_id: result.tmdbId,
-              title: result.title,
-              media_type: result.mediaType,
-              poster_url: result.image,
-            });
-
-      // 23505: it is already there, which is what the user wanted.
-      const duplicate = error?.code === "23505";
-      if (error && !duplicate) {
+      if (status === "failed" || status === "unreachable") {
         failed();
         return;
       }
 
-      if (duplicate) {
+      if (status === "duplicate") {
         toast({ tone: "info", title: `${result.title} is already in your ${noun}` });
       } else {
         toast({ mark: "Added", title: `${result.title} added to your ${noun}` });
@@ -493,7 +457,7 @@ function WatchlistPageContent() {
       await loadEntries(mode);
 
       setAddQuery("");
-      setShowAddDropdown(false);
+      hideDropdown();
     } catch {
       failed();
     } finally {
@@ -707,11 +671,9 @@ function WatchlistPageContent() {
           <div>
             <Field label={`Add to your ${listNoun}`} htmlFor="watchlist-add" className="max-w-xl">
               <div
-                ref={searchRef}
+                ref={dropdownRef}
                 className="relative"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setShowAddDropdown(false);
-                }}
+                onKeyDown={onDropdownKeyDown}
               >
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -725,13 +687,13 @@ function WatchlistPageContent() {
                   value={addQuery}
                   onChange={(e) => {
                     setAddQuery(e.target.value);
-                    if (!e.target.value.trim()) setShowAddDropdown(false);
+                    onQueryChange(e.target.value);
                   }}
-                  onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
+                  onFocus={() => onInputFocus(addResults.length > 0)}
                   className="pl-9"
                 />
 
-                {showAddDropdown && !searchFailed && (
+                {dropdownOpen && !searchFailed && (
                   <div className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
                     {addResults.length === 0 ? (
                       <p className="t-meta px-3 py-4">
@@ -744,7 +706,7 @@ function WatchlistPageContent() {
                           const meta = TYPE_META[result.mediaType];
                           const details = [
                             result.kind === "music" ? result.artist : null,
-                            meta.label,
+                            meta.shortLabel,
                             result.year || null,
                             result.kind === "film" && result.voteAverage != null && result.voteAverage > 0
                               ? `TMDB ${result.voteAverage.toFixed(1)}`
@@ -993,154 +955,25 @@ function WatchlistPageContent() {
 
       {/* ============ LISTS TAB ============ */}
       {activeTab === "lists" && (
-        <div
-          role="tabpanel"
-          id="watchlist-panel-lists"
-          aria-labelledby="watchlist-tab-lists"
-          className="mt-8"
-        >
-          <SectionHeader
-            title="Your lists"
-            meta={listsLoading || listsFailed ? undefined : `${lists.length} ${lists.length === 1 ? "list" : "lists"}`}
-            action={
-              !showCreateForm && lists.length > 0 ? (
-                <Button variant="outline" size="sm" onClick={() => setShowCreateForm(true)}>
-                  <Plus aria-hidden="true" /> New list
-                </Button>
-              ) : undefined
-            }
-          />
-
-          {/* Create list */}
-          {showCreateForm && (
-            <form
-              className="frame frame-accent drawer-in mb-8 flex max-w-2xl flex-col gap-5 p-5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleCreateList();
-              }}
-            >
-              <h3 className="t-card">New list</h3>
-
-              <fieldset className="flex flex-col gap-2">
-                <legend className="t-label mb-2">Pick an icon</legend>
-                <div className="flex flex-wrap gap-2">
-                  {emojiOptions.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      aria-pressed={newListEmoji === emoji}
-                      aria-label={`Use ${emoji} as the icon`}
-                      onClick={() => setNewListEmoji(emoji)}
-                      className={`flex h-10 w-10 items-center justify-center border text-[18px] transition-colors duration-cut ease-mech ${
-                        newListEmoji === emoji
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-background hover:border-border-strong"
-                      }`}
-                    >
-                      <span aria-hidden="true">{emoji}</span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <Field label="Name" htmlFor="list-name">
-                <Input
-                  id="list-name"
-                  required
-                  placeholder={isMusicMode ? "e.g. Chill Vibes Playlist" : "e.g. Movie Night with Friends"}
-                  value={newListName}
-                  onChange={(e) => setNewListName(e.target.value)}
-                />
-              </Field>
-
-              <Field label="Description (optional)" htmlFor="list-description">
-                <Textarea
-                  id="list-description"
-                  placeholder="What's this list about?"
-                  value={newListDescription}
-                  onChange={(e) => setNewListDescription(e.target.value)}
-                  rows={2}
-                  className="min-h-[72px]"
-                />
-              </Field>
-
-              <div className="flex flex-wrap gap-2.5">
-                <Button type="submit" disabled={!newListName.trim() || creatingList}>
-                  <Plus aria-hidden="true" /> {creatingList ? "Creating" : "Create list"}
-                </Button>
-                <Button type="button" variant="outline" onClick={closeCreateForm}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {/* Lists */}
-          {listsLoading ? (
-            <RowListSkeleton count={3} />
-          ) : listsFailed ? (
-            <Notice tone="error" title="Couldn't load your lists">
-              Check your connection and reload the page.
-            </Notice>
-          ) : lists.length === 0 ? (
-            !showCreateForm && (
-              <EmptyState
-                icon={isMusicMode ? ListMusic : ListChecks}
-                title="No lists yet."
-                description={
-                  isMusicMode
-                    ? "Create lists to organise albums and tracks by genre, mood, or vibe."
-                    : "Create lists to organise films and shows by genre, mood, or occasion."
-                }
-                action={
-                  <Button onClick={() => setShowCreateForm(true)}>
-                    <Plus aria-hidden="true" /> Create your first list
-                  </Button>
-                }
-              />
-            )
-          ) : (
-            <ul className="advance">
-              {lists.map((list) => {
-                const itemCount = list.list_items?.[0]?.count ?? 0;
-                return (
-                  <li key={list.id} className="row-item relative flex items-center gap-4 px-2 py-4">
-                    <span
-                      aria-hidden="true"
-                      className="flex h-11 w-11 shrink-0 items-center justify-center border border-border bg-surface-2 text-[20px]"
-                    >
-                      {list.emoji || (list.list_type === "music" ? "🎵" : "🎬")}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="t-card truncate">
-                        <Link
-                          href={`/protected/lists/${list.id}`}
-                          className="after:absolute after:inset-0 after:content-['']"
-                        >
-                          {list.name}
-                        </Link>
-                      </h3>
-                      {list.description && (
-                        <p className="t-meta mt-1 line-clamp-2">{list.description}</p>
-                      )}
-                      <p className="t-meta mt-1">
-                        {countLabel(itemCount, isMusicMode)} · Created {formatDate(list.created_at)}
-                      </p>
-                    </div>
-                    <ConfirmButton
-                      iconOnly
-                      label={`Delete ${list.name}`}
-                      confirmLabel="Delete list"
-                      className="relative z-[2] shrink-0"
-                      onConfirm={() => handleDeleteList(list)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        <ListsPanel
+          lists={lists}
+          loading={listsLoading}
+          failed={listsFailed}
+          isMusicMode={isMusicMode}
+          showCreateForm={showCreateForm}
+          newListName={newListName}
+          newListDescription={newListDescription}
+          newListEmoji={newListEmoji}
+          emojiOptions={emojiOptions}
+          creatingList={creatingList}
+          onOpenForm={() => setShowCreateForm(true)}
+          onCloseForm={closeCreateForm}
+          onNameChange={setNewListName}
+          onDescriptionChange={setNewListDescription}
+          onEmojiChange={setNewListEmoji}
+          onCreate={handleCreateList}
+          onDelete={handleDeleteList}
+        />
       )}
     </div>
   );

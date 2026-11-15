@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { escapeIlike } from "./postgrest";
+import { PG_UNIQUE_VIOLATION, escapeIlike } from "./postgrest";
 
 describe("escapeIlike", () => {
   test("strips commas so a value cannot add a filter clause", () => {
@@ -26,5 +26,11 @@ describe("escapeIlike", () => {
 
   test("leaves plain text unchanged", () => {
     expect(escapeIlike("Zac Efron")).toBe("Zac Efron");
+  });
+});
+
+describe("PG_UNIQUE_VIOLATION", () => {
+  test("is the Postgres unique-violation SQLSTATE", () => {
+    expect(PG_UNIQUE_VIOLATION).toBe("23505");
   });
 });

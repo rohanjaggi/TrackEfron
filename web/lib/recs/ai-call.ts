@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Tool } from "@anthropic-ai/sdk/resources/messages";
 import { callAI } from "@/lib/ai/provider";
+import type { Tool } from "@/lib/ai/tools";
 
 export class AIError extends Error {
   constructor(
@@ -26,7 +26,6 @@ export function makeAI<T>(opts: {
       maxTokens: 16000,
       system,
       tool: opts.tool,
-      toolName: opts.tool.name,
       userMessage: user,
     });
     if ("error" in result) throw new AIError(result.error, result.code);

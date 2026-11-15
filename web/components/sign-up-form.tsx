@@ -3,15 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { AuthLink, AuthShell, PasswordInput, authErrorMessage } from "@/components/auth-shell";
+import {
+  AuthLink,
+  AuthShell,
+  PASSWORD_HINT,
+  PASSWORD_MIN,
+  authErrorMessage,
+} from "@/components/auth-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, PasswordInput } from "@/components/ui/input";
 import { Field, Notice } from "@/components/ui/page";
 import { createClient } from "@/lib/supabase/client";
 
 const USERNAME_MIN = 3;
-const PASSWORD_MIN = 6;
 
 // Only lowercase letters, numbers and underscores.
 const validateUsername = (value: string) => /^[a-z0-9_]+$/.test(value);
@@ -123,8 +128,6 @@ export function SignUpForm() {
             type="text"
             autoComplete="name"
             required
-            aria-invalid={nameError ? true : undefined}
-            aria-describedby={nameError ? "fullName-error" : undefined}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
           />
@@ -144,8 +147,6 @@ export function SignUpForm() {
             autoCorrect="off"
             spellCheck={false}
             required
-            aria-invalid={usernameError ? true : undefined}
-            aria-describedby={usernameError ? "username-error" : "username-hint"}
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
             onBlur={() => setUsernameTouched(true)}
@@ -165,18 +166,13 @@ export function SignUpForm() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </Field>
-        <Field
-          label="Password"
-          htmlFor="password"
-          hint={`At least ${PASSWORD_MIN} characters.`}
-        >
+        <Field label="Password" htmlFor="password" hint={PASSWORD_HINT}>
           <PasswordInput
             id="password"
             name="password"
             autoComplete="new-password"
             required
             minLength={PASSWORD_MIN}
-            aria-describedby="password-hint"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -187,8 +183,6 @@ export function SignUpForm() {
             name="repeat-password"
             autoComplete="new-password"
             required
-            aria-invalid={repeatError ? true : undefined}
-            aria-describedby={repeatError ? "repeat-password-error" : undefined}
             value={repeatPassword}
             onChange={(e) => setRepeatPassword(e.target.value)}
             onBlur={() => setRepeatTouched(true)}

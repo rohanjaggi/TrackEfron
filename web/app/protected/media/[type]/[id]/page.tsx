@@ -17,6 +17,16 @@ import {
   RotateCw,
   Tv,
 } from "lucide-react";
+import {
+  buildFilmInfo,
+  buildLogView,
+  buildMusicInfo,
+  buildWhereToWatch,
+  formatDate,
+  type MediaDetail,
+  type MusicDetail,
+  type WatchProviders,
+} from "@/components/media/media-info";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -29,114 +39,10 @@ import {
 import { Skeleton } from "@/components/ui/loading";
 import { EmptyState, LeaderRow, Notice, SectionHeader } from "@/components/ui/page";
 import { Stars } from "@/components/ui/stars";
-import { useToast } from "@/components/ui/toast";
+import { useMediaUserData } from "@/hooks/use-media-user-data";
+import { isMusicType } from "@/lib/media";
 import { useSyncMode } from "@/lib/mode-context";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-
-type Genre = { id: number; name: string };
-
-type MediaDetail = {
-  id: number;
-  overview: string;
-  poster_url: string | null;
-  backdrop_url: string | null;
-  genres: Genre[];
-  vote_average: number;
-  vote_count: number;
-  tagline?: string;
-  status: string;
-  credits?: {
-    cast: {
-      id: number;
-      name: string;
-      character: string;
-      profile_path: string | null;
-    }[];
-  };
-  title?: string;
-  release_date?: string;
-  runtime?: number;
-  name?: string;
-  first_air_date?: string;
-  last_air_date?: string;
-  number_of_seasons?: number;
-  number_of_episodes?: number;
-  episode_run_time?: number[];
-  created_by?: { id: number; name: string }[];
-  networks?: { id: number; name: string; logo_path: string | null }[];
-};
-
-type MusicDetail = {
-  id: string;
-  name: string;
-  artist: string;
-  album_name: string;
-  image_url: string | null;
-  release_date: string;
-  type: "album" | "track";
-};
-
-type UserWatchLog = {
-  id: string;
-  rating: number;
-  review: string | null;
-  watched_date: string | null;
-  plot_rating: number | null;
-  cinematography_rating: number | null;
-  acting_rating: number | null;
-  soundtrack_rating: number | null;
-  pacing_rating: number | null;
-  casting_rating: number | null;
-};
-
-type UserListenLog = {
-  id: string;
-  rating: number;
-  review: string | null;
-  listened_date: string | null;
-  lyrics_rating: number | null;
-  production_rating: number | null;
-  vocals_rating: number | null;
-  melody_rating: number | null;
-  replay_rating: number | null;
-  energy_rating: number | null;
-};
-
-type UserListInfo = {
-  id: string;
-  name: string;
-  emoji: string | null;
-  hasItem: boolean;
-};
-
-type WatchProvider = {
-  logo_path: string;
-  provider_id: number;
-  provider_name: string;
-};
-
-type WatchProviders = {
-  flatrate?: WatchProvider[];
-  rent?: WatchProvider[];
-  buy?: WatchProvider[];
-  link?: string;
-};
-
-type Fact = { label: string; value: React.ReactNode };
-
-/** "2024-03-01" → "1 Mar 2024". Copes with year-only and year-month release dates. */
-function formatDate(value: string): string {
-  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
-  if (!year) return value;
-  if (!month) return String(year);
-  return new Date(Date.UTC(year, month - 1, day || 1)).toLocaleDateString("en-GB", {
-    day: day ? "numeric" : undefined,
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 function SpotifyMark({ className }: { className?: string }) {
   return (
@@ -211,11 +117,10 @@ export default function MediaDetailPage() {
 
 function MediaDetailContent() {
   const params = useParams();
-  const toast = useToast();
   const type = params.type as string;
   const id = params.id as string;
 
-  const isMusic = type === "album" || type === "track";
+  const isMusic = isMusicType(type);
   const isFilm = type === "movie" || type === "tv";
   const invalidType = !isFilm && !isMusic;
 
@@ -227,22 +132,6 @@ function MediaDetailContent() {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-
-  // The user's own log: a watch for film and TV, a listen for albums and tracks.
-  const [watchLog, setWatchLog] = useState<UserWatchLog | null>(null);
-  const [listenLog, setListenLog] = useState<UserListenLog | null>(null);
-  const [userDataLoading, setUserDataLoading] = useState(true);
-  // The user's own rows could not be read, so "logged", "saved" and list state are unknown.
-  const [userDataFailed, setUserDataFailed] = useState(false);
-
-  // Watchlist (film) or queue (music) membership.
-  const [isSaved, setIsSaved] = useState(false);
-  const [savedItemId, setSavedItemId] = useState<string | null>(null);
-  const [saveBusy, setSaveBusy] = useState(false);
-
-  // Lists
-  const [userLists, setUserLists] = useState<UserListInfo[]>([]);
-  const [togglingListId, setTogglingListId] = useState<string | null>(null);
 
   // Watch providers (film only)
   const [providers, setProviders] = useState<WatchProviders | null>(null);
@@ -284,350 +173,25 @@ function MediaDetailContent() {
     fetchDetail();
   }, [type, id, isFilm, isMusic, reloadKey]);
 
-  // Fetch user data
-  useEffect(() => {
-    async function fetchUserData() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setUserDataLoading(false); return; }
-
-        const listMode = isMusic ? "music" : "film";
-
-        if (isMusic) {
-          const [logRes, queueRes] = await Promise.all([
-            supabase
-              .from("listen_logs")
-              .select("id, rating, review, listened_date, lyrics_rating, production_rating, vocals_rating, melody_rating, replay_rating, energy_rating")
-              .eq("user_id", user.id)
-              .eq("spotify_id", id)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            supabase
-              .from("music_queue")
-              .select("id")
-              .eq("user_id", user.id)
-              .eq("spotify_id", id)
-              .limit(1)
-              .maybeSingle(),
-          ]);
-
-          if (logRes.error) throw logRes.error;
-          if (queueRes.error) throw queueRes.error;
-          if (logRes.data) setListenLog(logRes.data);
-          if (queueRes.data) {
-            setIsSaved(true);
-            setSavedItemId(queueRes.data.id);
-          }
-        } else {
-          const tmdbId = Number(id);
-          const [logRes, wlRes] = await Promise.all([
-            supabase
-              .from("watch_logs")
-              .select("id, rating, review, watched_date, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating")
-              .eq("user_id", user.id)
-              .eq("tmdb_id", tmdbId)
-              .eq("media_type", type)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
-            supabase
-              .from("watchlist")
-              .select("id")
-              .eq("user_id", user.id)
-              .eq("tmdb_id", tmdbId)
-              .eq("media_type", type)
-              .limit(1)
-              .maybeSingle(),
-          ]);
-
-          if (logRes.error) throw logRes.error;
-          if (wlRes.error) throw wlRes.error;
-          if (logRes.data) setWatchLog(logRes.data);
-          if (wlRes.data) {
-            setIsSaved(true);
-            setSavedItemId(wlRes.data.id);
-          }
-        }
-
-        // Fetch lists filtered by mode
-        const { data: allLists, error: listsError } = await supabase
-          .from("lists")
-          .select("id, name, emoji")
-          .eq("user_id", user.id)
-          .eq("list_type", listMode)
-          .order("updated_at", { ascending: false });
-
-        if (listsError) throw listsError;
-        if (allLists) {
-          // Check which lists already contain this item
-          const listIds = allLists.map((l) => l.id);
-          let itemQuery = supabase
-            .from("list_items")
-            .select("list_id, media_type, tmdb_id, spotify_id")
-            .in("list_id", listIds);
-          itemQuery = isMusic
-            ? itemQuery.eq("spotify_id", id)
-            : itemQuery.eq("tmdb_id", Number(id)).eq("media_type", type);
-          const { data: listItemsData, error: listItemsError } =
-            listIds.length > 0 ? await itemQuery : { data: [], error: null };
-          if (listItemsError) throw listItemsError;
-
-          // Membership is keyed on the full identity of the item, never a bare id.
-          const itemKey = isMusic ? `${type}:${id}` : `${type}:${Number(id)}`;
-          const listsWithItem = new Set(
-            (listItemsData || [])
-              .filter(
-                (li: { media_type: string; tmdb_id: number | null; spotify_id: string | null }) =>
-                  `${li.media_type}:${isMusic ? li.spotify_id : li.tmdb_id}` === itemKey
-              )
-              .map((li: { list_id: string }) => li.list_id)
-          );
-
-          setUserLists(
-            allLists.map((l) => ({
-              id: l.id,
-              name: l.name,
-              emoji: l.emoji,
-              hasItem: listsWithItem.has(l.id),
-            }))
-          );
-        }
-      } catch {
-        // The page still works without the user's own data, but say so: the buttons below depend on it.
-        setUserDataFailed(true);
-      } finally {
-        setUserDataLoading(false);
-      }
-    }
-    fetchUserData();
-  }, [id, type, isMusic]);
-
   const displayTitle = isMusic
     ? musicDetail?.name || "Unknown"
     : detail?.title || detail?.name || "Unknown";
-  const savedPlace = isMusic ? "queue" : "watchlist";
 
-  // Add to the watchlist (film) or the queue (music)
-  async function handleSave() {
-    if (isMusic ? !musicDetail : !detail) return;
-    setSaveBusy(true);
-    const failed = () =>
-      toast({
-        mark: "Failed",
-        tone: "error",
-        title: `Couldn't add ${displayTitle} to your ${savedPlace}`,
-        description: "Check your connection and try again.",
-      });
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({ mark: "Failed", tone: "error", title: `Sign in to add this to your ${savedPlace}` });
-        return;
-      }
-      const { data, error } = isMusic
-        ? await supabase
-            .from("music_queue")
-            .insert({
-              user_id: user.id,
-              spotify_id: id,
-              media_type: type,
-              title: musicDetail!.name,
-              artist: musicDetail!.artist,
-              image_url: musicDetail!.image_url,
-            })
-            .select("id")
-            .single()
-        : await supabase
-            .from("watchlist")
-            .insert({
-              user_id: user.id,
-              tmdb_id: Number(id),
-              title: displayTitle,
-              media_type: type,
-              poster_url: detail!.poster_url,
-            })
-            .select("id")
-            .single();
-
-      // 23505: it was already there. Anything else is a real failure.
-      if (error && error.code !== "23505") {
-        failed();
-        return;
-      }
-
-      let itemId: string | null = data?.id ?? null;
-      if (!itemId) {
-        const existing = isMusic
-          ? await supabase
-              .from("music_queue")
-              .select("id")
-              .eq("user_id", user.id)
-              .eq("spotify_id", id)
-              .limit(1)
-              .maybeSingle()
-          : await supabase
-              .from("watchlist")
-              .select("id")
-              .eq("user_id", user.id)
-              .eq("tmdb_id", Number(id))
-              .eq("media_type", type)
-              .limit(1)
-              .maybeSingle();
-        itemId = existing.data?.id ?? null;
-      }
-      setIsSaved(true);
-      setSavedItemId(itemId);
-      toast({
-        mark: "Added",
-        title: isMusic ? `${displayTitle} is in your queue` : `${displayTitle} is on your watchlist`,
-      });
-    } catch {
-      failed();
-    } finally {
-      setSaveBusy(false);
-    }
-  }
-
-  async function handleUnsave() {
-    const failed = () =>
-      toast({
-        mark: "Failed",
-        tone: "error",
-        title: `Couldn't remove ${displayTitle} from your ${savedPlace}`,
-        description: "Try again in a moment.",
-      });
-    if (!savedItemId) {
-      failed();
-      return;
-    }
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        failed();
-        return;
-      }
-      const { error } = await supabase
-        .from(isMusic ? "music_queue" : "watchlist")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("id", savedItemId);
-      if (error) {
-        failed();
-        return;
-      }
-      setIsSaved(false);
-      setSavedItemId(null);
-      toast({ mark: "Removed", title: `${displayTitle} removed from your ${savedPlace}` });
-    } catch {
-      failed();
-    }
-  }
-
-  // Delete log
-  async function handleDeleteLog() {
-    const logId = isMusic ? listenLog?.id : watchLog?.id;
-    if (!logId) return;
-    const failed = () =>
-      toast({
-        mark: "Failed",
-        tone: "error",
-        title: "Couldn't delete your log",
-        description: "Nothing was removed. Try again in a moment.",
-      });
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        failed();
-        return;
-      }
-      const { error } = await supabase
-        .from(isMusic ? "listen_logs" : "watch_logs")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("id", logId);
-      if (error) {
-        failed();
-        return;
-      }
-      if (isMusic) setListenLog(null);
-      else setWatchLog(null);
-      toast({ mark: "Removed", title: `Your log of ${displayTitle} was deleted` });
-    } catch {
-      failed();
-    }
-  }
-
-  async function handleToggleList(list: UserListInfo) {
-    setTogglingListId(list.id);
-    const failed = () =>
-      toast({
-        mark: "Failed",
-        tone: "error",
-        title: list.hasItem
-          ? `Couldn't remove ${displayTitle} from ${list.name}`
-          : `Couldn't add ${displayTitle} to ${list.name}`,
-        description: "Try again in a moment.",
-      });
-    try {
-      const supabase = createClient();
-      if (list.hasItem) {
-        const { error } = isMusic
-          ? await supabase
-              .from("list_items")
-              .delete()
-              .eq("list_id", list.id)
-              .eq("spotify_id", id)
-          : await supabase
-              .from("list_items")
-              .delete()
-              .eq("list_id", list.id)
-              .eq("tmdb_id", Number(id))
-              .eq("media_type", type);
-        if (error) {
-          failed();
-          return;
-        }
-      } else {
-        const { error } = isMusic
-          ? await supabase.from("list_items").insert({
-              list_id: list.id,
-              spotify_id: id,
-              title: musicDetail?.name || "Unknown",
-              artist: musicDetail?.artist || null,
-              media_type: type,
-              image_url: musicDetail?.image_url || null,
-            })
-          : await supabase.from("list_items").insert({
-              list_id: list.id,
-              tmdb_id: Number(id),
-              title: displayTitle,
-              media_type: type,
-              poster_url: detail?.poster_url || null,
-            });
-        if (error && error.code !== "23505") {
-          failed();
-          return;
-        }
-      }
-      setUserLists((prev) =>
-        prev.map((l) => (l.id === list.id ? { ...l, hasItem: !list.hasItem } : l))
-      );
-      toast(
-        list.hasItem
-          ? { mark: "Removed", title: `${displayTitle} removed from ${list.name}` }
-          : { mark: "Added", title: `${displayTitle} added to ${list.name}` }
-      );
-    } catch {
-      failed();
-    } finally {
-      setTogglingListId(null);
-    }
-  }
+  const {
+    watchLog,
+    listenLog,
+    userDataLoading,
+    userDataFailed,
+    isSaved,
+    savedPlace,
+    saveBusy,
+    userLists,
+    togglingListId,
+    handleSave,
+    handleUnsave,
+    handleDeleteLog,
+    handleToggleList,
+  } = useMediaUserData({ type, id, isMusic, displayTitle, detail, musicDetail });
 
   if (invalidType) {
     return (
@@ -687,103 +251,11 @@ function MediaDetailContent() {
   const topCast = isMusic ? [] : detail!.credits?.cast?.slice(0, 6) ?? [];
   const typeLabel = isMusic ? (isAlbum ? "Album" : "Track") : isMovie ? "Film" : "TV";
 
-  const meta: string[] = [];
-  const facts: Fact[] = [];
+  const { meta, facts } = isMusic ? buildMusicInfo(musicDetail!, isAlbum) : buildFilmInfo(detail!, isMovie);
+  const whereToWatch = !isMusic && providers ? buildWhereToWatch(providers) : [];
 
-  if (isMusic) {
-    const m = musicDetail!;
-    const year = (m.release_date || "").slice(0, 4);
-    if (year) meta.push(year);
-    if (isAlbum && m.album_name && m.album_name !== m.name) meta.push(m.album_name);
-    if (!isAlbum && m.album_name) meta.push(`from ${m.album_name}`);
-
-    if (m.artist) facts.push({ label: "Artist", value: m.artist });
-    if (!isAlbum && m.album_name) facts.push({ label: "Album", value: m.album_name });
-    if (m.release_date) facts.push({ label: "Released", value: formatDate(m.release_date) });
-  } else {
-    const d = detail!;
-    const released = d.release_date || d.first_air_date || "";
-    const year = released.slice(0, 4);
-    const runtime = isMovie
-      ? d.runtime
-        ? `${d.runtime} min`
-        : null
-      : d.episode_run_time?.length
-        ? `${d.episode_run_time[0]} min/ep`
-        : null;
-    if (year) meta.push(year);
-    if (runtime) meta.push(runtime);
-    if (!isMovie && d.number_of_seasons != null) {
-      meta.push(`${d.number_of_seasons} season${d.number_of_seasons !== 1 ? "s" : ""}`);
-      if (d.number_of_episodes != null) meta.push(`${d.number_of_episodes} episodes`);
-    }
-
-    if (released) {
-      facts.push({ label: isMovie ? "Released" : "First aired", value: formatDate(released) });
-    }
-    if (!isMovie && d.last_air_date) {
-      facts.push({ label: "Last aired", value: d.last_air_date.slice(0, 4) });
-    }
-    if (!isMovie && d.created_by?.length) {
-      facts.push({ label: "Created by", value: d.created_by.map((c) => c.name).join(", ") });
-    }
-    if (!isMovie && d.networks?.length) {
-      facts.push({ label: "Network", value: d.networks.map((n) => n.name).join(", ") });
-    }
-    if (d.vote_average > 0) {
-      facts.push({
-        label: "TMDB score",
-        value: `${d.vote_average.toFixed(1)} / 10 (${d.vote_count.toLocaleString("en-GB")} votes)`,
-      });
-    }
-  }
-
-  // Where to watch: one logo per service, first category wins.
-  const whereToWatch: (WatchProvider & { category: string })[] = [];
-  if (!isMusic && providers) {
-    const seen = new Set<number>();
-    for (const [category, list] of [
-      ["Stream", providers.flatrate],
-      ["Rent", providers.rent],
-      ["Buy", providers.buy],
-    ] as [string, WatchProvider[] | undefined][]) {
-      for (const p of list ?? []) {
-        if (seen.has(p.provider_id)) continue;
-        seen.add(p.provider_id);
-        whereToWatch.push({ ...p, category });
-      }
-    }
-  }
-
-  const log = isMusic
-    ? listenLog && {
-        id: listenLog.id,
-        rating: listenLog.rating,
-        review: listenLog.review,
-        date: listenLog.listened_date,
-        categories: [
-          { label: "Lyrics", value: listenLog.lyrics_rating },
-          { label: "Production", value: listenLog.production_rating },
-          { label: "Vocals", value: listenLog.vocals_rating },
-          { label: "Melody", value: listenLog.melody_rating },
-          { label: "Replay value", value: listenLog.replay_rating },
-          { label: "Energy", value: listenLog.energy_rating },
-        ],
-      }
-    : watchLog && {
-        id: watchLog.id,
-        rating: watchLog.rating,
-        review: watchLog.review,
-        date: watchLog.watched_date,
-        categories: [
-          { label: "Plot", value: watchLog.plot_rating },
-          { label: "Cinematography", value: watchLog.cinematography_rating },
-          { label: "Acting", value: watchLog.acting_rating },
-          { label: "Soundtrack", value: watchLog.soundtrack_rating },
-          { label: "Pacing", value: watchLog.pacing_rating },
-          { label: "Casting", value: watchLog.casting_rating },
-        ],
-      };
+  const logRow = isMusic ? listenLog : watchLog;
+  const log = logRow && buildLogView(logRow, isMusic);
   const categoryRatings = (log?.categories ?? []).filter((c) => c.value && c.value > 0);
 
   return (

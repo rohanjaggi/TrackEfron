@@ -3,7 +3,7 @@ export interface TasteObservation {
   cited_title: string;
 }
 
-export interface TasteIdentity {
+interface TasteIdentity {
   core: string;
   aspect_lens: string;
 }
@@ -22,7 +22,7 @@ export interface MusicRecommendation {
   title: string;
   type: "album" | "track";
   explanation: string;
-  confidence: "high" | "medium" | "discovery";
+  confidence: Confidence;
   spotify_id?: string | null;
   image_url?: string | null;
   album_name?: string | null;

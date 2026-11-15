@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Archivo, Sofia_Sans_Extra_Condensed, Young_Serif } from "next/font/google";
-import { ThemeProvider } from "next-themes";
 import { Analytics } from "@vercel/analytics/next";
 import { ToastProvider } from "@/components/ui/toast";
 import { MODE_BOOT_SCRIPT } from "@/lib/mode-boot";
@@ -59,15 +58,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: MODE_BOOT_SCRIPT }} />
       </head>
       <body className="antialiased">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-          disableTransitionOnChange
-        >
-          <ToastProvider>{children}</ToastProvider>
-          <Analytics />
-        </ThemeProvider>
+        <ToastProvider>{children}</ToastProvider>
+        <Analytics />
       </body>
     </html>
   );

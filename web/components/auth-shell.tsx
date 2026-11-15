@@ -3,11 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 
-import { PasswordInput } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/page";
 import { cn } from "@/lib/utils";
 
-/** One implementation lives in `ui/input`; forms keep importing it from here. */
-export { PasswordInput };
+/** The shortest password the sign-up and reset forms accept, and the hint that says so. */
+export const PASSWORD_MIN = 6;
+export const PASSWORD_HINT = `At least ${PASSWORD_MIN} characters.`;
 
 /**
  * The one composition every auth page shares: wordmark linking home, then a
@@ -62,6 +64,32 @@ export function AuthLink({
       )}
       {...props}
     />
+  );
+}
+
+/** The email row shared by the sign-in and reset forms. */
+export function EmailField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label="Email" htmlFor="email">
+      <Input
+        id="email"
+        name="email"
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        autoCapitalize="none"
+        spellCheck={false}
+        required
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </Field>
   );
 }
 

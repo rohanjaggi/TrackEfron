@@ -7,19 +7,16 @@ import { cn } from "@/lib/utils";
  * Page title block. One per page.
  * `title` may contain <strong> (a name) and <em> (the italic accent clause):
  *   <PageHeader title={<>Your <em>library</em></>} />
- * `media` puts artwork or an avatar to the left of the title.
  */
 export function PageHeader({
   title,
   description,
   actions,
-  media,
   className,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
-  media?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -27,7 +24,6 @@ export function PageHeader({
       className={cn("mb-10 flex flex-wrap items-end justify-between gap-x-8 gap-y-5", className)}
     >
       <div className="flex min-w-0 items-end gap-5">
-        {media && <div className="shrink-0">{media}</div>}
         <div className="min-w-0">
           <h1 className="t-display">{title}</h1>
           {description && <div className="t-meta mt-3 max-w-[62ch]">{description}</div>}
@@ -117,20 +113,17 @@ export function StatBlock({
 export function LeaderRow({
   label,
   value,
-  truncate = false,
   className,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
-  /** Keep the row on one line and cut a long label with an ellipsis. */
-  truncate?: boolean;
   className?: string;
 }) {
   return (
     <div className={cn("flex items-baseline py-1.5 text-[13px]", className)}>
-      <span className={cn("text-muted-foreground", truncate && "min-w-0 truncate")}>{label}</span>
+      <span className="text-muted-foreground">{label}</span>
       <i className="leader" aria-hidden="true" />
-      <span className={cn("text-foreground", truncate ? "shrink-0" : "text-right")}>{value}</span>
+      <span className="text-foreground text-right">{value}</span>
     </div>
   );
 }
@@ -141,15 +134,12 @@ export function EmptyState({
   title,
   description,
   action,
-  titleAs: Title = "p",
   className,
 }: {
   icon?: LucideIcon;
   title: React.ReactNode;
   description?: React.ReactNode;
   action?: React.ReactNode;
-  /** Use "h1" when the empty state is the whole page (not found, error). */
-  titleAs?: "p" | "h1" | "h2";
   className?: string;
 }) {
   return (
@@ -159,9 +149,9 @@ export function EmptyState({
           <Icon className="size-6 text-muted-foreground" aria-hidden="true" />
         </div>
       )}
-      <Title className="t-voice">
+      <p className="t-voice">
         {title}
-      </Title>
+      </p>
       {description && <p className="t-meta mx-auto mt-2 max-w-[46ch]">{description}</p>}
       {action && <div className="mt-6 flex flex-wrap justify-center gap-2.5">{action}</div>}
     </div>
@@ -216,9 +206,6 @@ export function Field({
   htmlFor,
   hint,
   error,
-  optional = false,
-  hideLabel = false,
-  labelAction,
   children,
   className,
 }: {
@@ -226,12 +213,6 @@ export function Field({
   htmlFor?: string;
   hint?: React.ReactNode;
   error?: React.ReactNode;
-  /** Appends "optional" to the label. */
-  optional?: boolean;
-  /** Keep the label for assistive tech but hide it visually (toolbars). */
-  hideLabel?: boolean;
-  /** A small link or button on the label's line, e.g. "Forgot your password?". */
-  labelAction?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -251,12 +232,10 @@ export function Field({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <div className={cn("flex items-baseline justify-between gap-3", hideLabel && "sr-only")}>
+      <div className="flex items-baseline justify-between gap-3">
         <label htmlFor={htmlFor} className="t-label">
           {label}
-          {optional && <span className="ml-1.5 font-normal text-dim">optional</span>}
         </label>
-        {labelAction}
       </div>
       {control}
       {error ? (

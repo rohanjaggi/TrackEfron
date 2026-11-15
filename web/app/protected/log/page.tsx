@@ -2,28 +2,43 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Check, Disc3, Film, Music2, Search, Tv } from "lucide-react";
+import { ArrowLeft, Check, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { PreviewCard } from "@/components/log/preview-card";
 import { RecentPlays } from "@/components/log/recent-plays";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { LoadingLine, PageLoading } from "@/components/ui/loading";
 import { Field, Notice, PageHeader } from "@/components/ui/page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { StarInput, Stars } from "@/components/ui/stars";
+import { StarInput } from "@/components/ui/stars";
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useMode, useSyncMode } from "@/lib/mode-context";
+import {
+  FILM_TYPES,
+  LISTBOX_ID,
+  MEDIA_TYPES,
+  MUSIC_TYPES,
+  detailsFor,
+  detailsFromRow,
+  detailsPayload,
+  hasDetail,
+  labelOf,
+  optionId,
+  today,
+  yearOf,
+} from "@/lib/log-options";
+import { TYPE_META, isMusicType, type MediaType } from "@/lib/media";
+import { FILM_CATEGORIES, MUSIC_CATEGORIES, categoriesFor, hasCategoryRating, ratingsFromRow, ratingsPayload } from "@/lib/rating-categories";
+import { asRows, searchSpotify, searchTmdb } from "@/lib/search-client";
 import { localDay, type RecentCandidate } from "@/lib/spotify/recent";
 import type { SpotifySearchResult } from "@/lib/spotify/spotify";
-import { resizePoster } from "@/lib/tmdb/poster";
 import type { MediaSearchResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-type MediaType = "movie" | "tv" | "album" | "track";
 
 type OtherType = { type: MediaType; count: number };
 type SearchState = {
@@ -38,71 +53,6 @@ type Prefill = { type: MediaType; id: string; title: string };
 type Domain = "film" | "music";
 type SaveIntent = "done" | "another";
 type FormError = { title?: string; message: string };
-type Choice = { value: string; label: string };
-
-const TYPE_META: Record<MediaType, { label: string; plural: string; icon: LucideIcon }> = {
-  movie: { label: "Film", plural: "films", icon: Film },
-  tv: { label: "TV show", plural: "TV shows", icon: Tv },
-  album: { label: "Album", plural: "albums", icon: Disc3 },
-  track: { label: "Track", plural: "tracks", icon: Music2 },
-};
-
-const FILM_TYPES = [
-  { value: "movie", label: TYPE_META.movie.label, icon: Film },
-  { value: "tv", label: TYPE_META.tv.label, icon: Tv },
-] as const;
-
-const MUSIC_TYPES = [
-  { value: "album", label: TYPE_META.album.label, icon: Disc3 },
-  { value: "track", label: TYPE_META.track.label, icon: Music2 },
-] as const;
-
-const same = (values: string[]): Choice[] => values.map((v) => ({ value: v, label: v }));
-
-const LISTENED_ON = same(["Spotify", "Apple Music", "YouTube Music", "SoundCloud", "Vinyl", "CD", "Other"]);
-const LISTENING_CONTEXT = same(["Chill", "Workout", "Study", "Commute", "Party", "Sleep", "Other"]);
-const WATCHED_ON = same([
-  "Netflix",
-  "Disney+",
-  "Prime Video",
-  "Hulu",
-  "HBO Max",
-  "Apple TV+",
-  "Paramount+",
-  "Peacock",
-  "Streaming Site",
-  "Cinema",
-  "Other",
-]);
-const WATCH_DURATION = same(["One sitting", "A few days", "About a week", "A few weeks", "Over a month"]);
-// Stored values are unchanged; only the labels are tidied.
-const DISCOVERED_VIA: Choice[] = [
-  { value: "Friend/Family", label: "Friend or family" },
-  { value: "Social Media", label: "Social media" },
-  { value: "Streaming Recommendation", label: "Streaming recommendation" },
-  { value: "Trailer", label: "Trailer" },
-  { value: "Review/Article", label: "Review or article" },
-  { value: "Just Browsing", label: "Just browsing" },
-  { value: "Other", label: "Other" },
-];
-const REWATCHABILITY = same(["Definitely", "Probably", "Maybe", "Unlikely", "No way"]);
-const WATCHED_WITH = same(["Solo", "Partner", "Friends", "Family", "Group"]);
-const TIMES_WATCHED = same(["1", "2", "3", "4", "5", "6+"]);
-
-const LISTBOX_ID = "log-title-results";
-const optionId = (index: number) => `log-title-option-${index}`;
-
-/** Today's date as YYYY-MM-DD in the user's own timezone. */
-function today() {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-const isMusicType = (type: MediaType | null) => type === "album" || type === "track";
-const labelOf = (item: MediaSearchResult) => item.title || item.name || "Untitled";
-const yearOf = (item: MediaSearchResult) => (item.release_date || item.first_air_date || "").slice(0, 4);
-
 export default function LogWatchPage() {
   return (
     <Suspense fallback={<PageLoading />}>
@@ -111,7 +61,6 @@ export default function LogWatchPage() {
   );
 }
 
-const MEDIA_TYPES: readonly MediaType[] = ["movie", "tv", "album", "track"];
 const domainOf = (type: MediaType): Domain => (isMusicType(type) ? "music" : "film");
 
 function parsePrefill(params: URLSearchParams): Prefill | null {
@@ -123,11 +72,8 @@ function parsePrefill(params: URLSearchParams): Prefill | null {
 
 /** Spotify search for one music type. Throws when the server reports an error. */
 async function searchMusic(query: string, type: MediaType): Promise<MediaSearchResult[]> {
-  const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(query)}&type=${type}`);
-  if (!res.ok) throw new Error("Search failed");
-  const raw: unknown = await res.json();
-  if (!Array.isArray(raw)) return [];
-  return (raw as SpotifySearchResult[]).map((r, idx) => ({
+  const raw = asRows<SpotifySearchResult>(await searchSpotify(query, type));
+  return raw.map((r, idx) => ({
     id: idx + 1,
     media_type: type as "album" | "track",
     spotify_id: r.id,
@@ -201,30 +147,16 @@ function LogWatchForm() {
   const [selectedMovie, setSelectedMovie] = useState<MediaSearchResult | null>(null);
   const [showCategories, setShowCategories] = useState(false);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
-  const [watchedOn, setWatchedOn] = useState("");
-  const [watchDuration, setWatchDuration] = useState("");
-  const [discoveredVia, setDiscoveredVia] = useState("");
-  const [rewatchability, setRewatchability] = useState("");
-  const [watchedWith, setWatchedWith] = useState("");
-  const [timesWatched, setTimesWatched] = useState("");
-  const [plotRating, setPlotRating] = useState(0);
-  const [cinematographyRating, setCinematographyRating] = useState(0);
-  const [actingRating, setActingRating] = useState(0);
-  const [soundtrackRating, setSoundtrackRating] = useState(0);
-  const [pacingRating, setPacingRating] = useState(0);
-  const [castingRating, setCastingRating] = useState(0);
+  // Optional category ratings and dropdown details, keyed by their database column.
+  const [ratings, setRatings] = useState<Record<string, number>>({});
+  const [details, setDetails] = useState<Record<string, string>>({});
   // Music-specific state
   const [spotifyId, setSpotifyId] = useState<string | null>(null);
   const [artist, setArtist] = useState("");
   const [albumName, setAlbumName] = useState("");
-  const [lyricsRating, setLyricsRating] = useState(0);
-  const [productionRating, setProductionRating] = useState(0);
-  const [vocalsRating, setVocalsRating] = useState(0);
-  const [melodyRating, setMelodyRating] = useState(0);
-  const [replayRating, setReplayRating] = useState(0);
-  const [energyRating, setEnergyRating] = useState(0);
-  const [listenedOn, setListenedOn] = useState("");
-  const [listeningContext, setListeningContext] = useState("");
+
+  const setCategoryRating = (col: string, value: number) => setRatings((prev) => ({ ...prev, [col]: value }));
+  const setDetail = (col: string, value: string) => setDetails((prev) => ({ ...prev, [col]: value }));
 
   // The date and "listened on" a recent Spotify play replaced, put back when that pick is dropped.
   const [beforeRecent, setBeforeRecent] = useState<{ date: string; listenedOn: string } | null>(null);
@@ -236,7 +168,7 @@ function LogWatchForm() {
     setAlbumName("");
     if (beforeRecent) {
       setWatchedDate(beforeRecent.date);
-      setListenedOn(beforeRecent.listenedOn);
+      setDetail("listened_on", beforeRecent.listenedOn);
       setBeforeRecent(null);
     }
   };
@@ -292,10 +224,7 @@ function LogWatchForm() {
             }
           }
         } else {
-          const res = await fetch(`/api?action=search&q=${encodeURIComponent(query)}`);
-          if (!res.ok) throw new Error("Search failed");
-          const raw: unknown = await res.json();
-          const all = Array.isArray(raw) ? (raw as MediaSearchResult[]) : [];
+          const all = asRows<MediaSearchResult>(await searchTmdb(query));
           // The film search returns films and shows together: keep the chosen type.
           data = all.filter((r) => !r.media_type || r.media_type === type);
           const sibling: MediaType = type === "movie" ? "tv" : "movie";
@@ -369,18 +298,8 @@ function LogWatchForm() {
           setRating(filmData.rating);
           setReview(filmData.review || "");
           setWatchedDate(filmData.watched_date || today());
-          setWatchedOn(filmData.watched_on || "");
-          setWatchDuration(filmData.watch_duration || "");
-          setDiscoveredVia(filmData.discovered_via || "");
-          setRewatchability(filmData.rewatchability || "");
-          setWatchedWith(filmData.watched_with || "");
-          setTimesWatched(filmData.times_watched || "");
-          setPlotRating(filmData.plot_rating || 0);
-          setCinematographyRating(filmData.cinematography_rating || 0);
-          setActingRating(filmData.acting_rating || 0);
-          setSoundtrackRating(filmData.soundtrack_rating || 0);
-          setPacingRating(filmData.pacing_rating || 0);
-          setCastingRating(filmData.casting_rating || 0);
+          setDetails((prev) => ({ ...prev, ...detailsFromRow(detailsFor(false), filmData) }));
+          setRatings((prev) => ({ ...prev, ...ratingsFromRow(FILM_CATEGORIES, filmData) }));
           if (filmData.tmdb_id) {
             setSelectedMovie({
               id: filmData.tmdb_id,
@@ -389,14 +308,8 @@ function LogWatchForm() {
               poster_url: filmData.poster_url,
             });
           }
-          if (filmData.plot_rating || filmData.cinematography_rating || filmData.acting_rating ||
-              filmData.soundtrack_rating || filmData.pacing_rating || filmData.casting_rating) {
-            setShowCategories(true);
-          }
-          if (filmData.watched_on || filmData.watch_duration || filmData.discovered_via ||
-              filmData.rewatchability || filmData.watched_with || filmData.times_watched) {
-            setShowMoreDetails(true);
-          }
+          if (hasCategoryRating(FILM_CATEGORIES, filmData)) setShowCategories(true);
+          if (hasDetail(detailsFor(false), filmData)) setShowMoreDetails(true);
         } else {
           let musicData = null;
           if (editKind !== "film") {
@@ -420,14 +333,8 @@ function LogWatchForm() {
             setSpotifyId(musicData.spotify_id || null);
             setArtist(musicData.artist || "");
             setAlbumName(musicData.album_name || "");
-            setListenedOn(musicData.listened_on || "");
-            setListeningContext(musicData.listening_context || "");
-            setLyricsRating(musicData.lyrics_rating || 0);
-            setProductionRating(musicData.production_rating || 0);
-            setVocalsRating(musicData.vocals_rating || 0);
-            setMelodyRating(musicData.melody_rating || 0);
-            setReplayRating(musicData.replay_rating || 0);
-            setEnergyRating(musicData.energy_rating || 0);
+            setDetails((prev) => ({ ...prev, ...detailsFromRow(detailsFor(true), musicData) }));
+            setRatings((prev) => ({ ...prev, ...ratingsFromRow(MUSIC_CATEGORIES, musicData) }));
             if (musicData.spotify_id) {
               setSelectedMovie({
                 id: 0,
@@ -439,13 +346,8 @@ function LogWatchForm() {
                 release_date: musicData.release_date,
               });
             }
-            if (musicData.lyrics_rating || musicData.production_rating || musicData.vocals_rating ||
-                musicData.melody_rating || musicData.replay_rating || musicData.energy_rating) {
-              setShowCategories(true);
-            }
-            if (musicData.listened_on || musicData.listening_context) {
-              setShowMoreDetails(true);
-            }
+            if (hasCategoryRating(MUSIC_CATEGORIES, musicData)) setShowCategories(true);
+            if (hasDetail(detailsFor(true), musicData)) setShowMoreDetails(true);
           } else {
             setLoadFailed(true);
           }
@@ -473,26 +375,8 @@ function LogWatchForm() {
     setActiveIndex(-1);
     setShowCategories(false);
     setShowMoreDetails(false);
-    setWatchedOn("");
-    setWatchDuration("");
-    setDiscoveredVia("");
-    setRewatchability("");
-    setWatchedWith("");
-    setTimesWatched("");
-    setPlotRating(0);
-    setCinematographyRating(0);
-    setActingRating(0);
-    setSoundtrackRating(0);
-    setPacingRating(0);
-    setCastingRating(0);
-    setLyricsRating(0);
-    setProductionRating(0);
-    setVocalsRating(0);
-    setMelodyRating(0);
-    setReplayRating(0);
-    setEnergyRating(0);
-    setListenedOn("");
-    setListeningContext("");
+    setRatings({});
+    setDetails({});
   };
 
   /** Writes the log. "ok" only when Supabase reports no error. */
@@ -501,61 +385,38 @@ function LogWatchForm() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return "signed-out";
 
-    if (isMusicType(mediaType)) {
-      const musicData = {
-        spotify_id: spotifyId || null,
-        media_type: mediaType,
-        title,
-        artist: artist || null,
-        album_name: albumName || null,
-        image_url: selectedMovie?.poster_url || null,
-        release_date: selectedMovie?.release_date || null,
-        rating,
-        review: review || null,
-        listened_date: watchedDate || null,
-        listened_on: listenedOn || null,
-        listening_context: listeningContext || null,
-        lyrics_rating: lyricsRating || null,
-        production_rating: productionRating || null,
-        vocals_rating: vocalsRating || null,
-        melody_rating: melodyRating || null,
-        replay_rating: replayRating || null,
-        energy_rating: energyRating || null,
-      };
-      const { data: saved, error: saveError } =
-        isEditMode && editId
-          ? await supabase.from("listen_logs").update(musicData).eq("id", editId).eq("user_id", user.id).select("id")
-          : await supabase.from("listen_logs").insert({ user_id: user.id, ...musicData }).select("id");
-      if (saveError) return "failed";
-      if (!saved || saved.length === 0) return isEditMode ? "missing" : "failed";
-      return "ok";
-    }
-
-    const logData = {
-      tmdb_id: selectedMovie?.id || null,
-      title,
-      media_type: mediaType,
-      poster_url: selectedMovie?.poster_url || null,
-      rating,
-      review: review || null,
-      watched_date: watchedDate || null,
-      watched_on: watchedOn || null,
-      watch_duration: watchDuration || null,
-      discovered_via: discoveredVia || null,
-      rewatchability: rewatchability || null,
-      watched_with: watchedWith || null,
-      times_watched: timesWatched || null,
-      plot_rating: plotRating || null,
-      cinematography_rating: cinematographyRating || null,
-      acting_rating: actingRating || null,
-      soundtrack_rating: soundtrackRating || null,
-      pacing_rating: pacingRating || null,
-      casting_rating: castingRating || null,
-    };
+    const music = isMusicType(mediaType);
+    const row = music
+      ? {
+          spotify_id: spotifyId || null,
+          media_type: mediaType,
+          title,
+          artist: artist || null,
+          album_name: albumName || null,
+          image_url: selectedMovie?.poster_url || null,
+          release_date: selectedMovie?.release_date || null,
+          rating,
+          review: review || null,
+          listened_date: watchedDate || null,
+          ...detailsPayload(detailsFor(true), details),
+          ...ratingsPayload(MUSIC_CATEGORIES, ratings),
+        }
+      : {
+          tmdb_id: selectedMovie?.id || null,
+          title,
+          media_type: mediaType,
+          poster_url: selectedMovie?.poster_url || null,
+          rating,
+          review: review || null,
+          watched_date: watchedDate || null,
+          ...detailsPayload(detailsFor(false), details),
+          ...ratingsPayload(FILM_CATEGORIES, ratings),
+        };
+    const table = music ? "listen_logs" : "watch_logs";
     const { data: saved, error: saveError } =
       isEditMode && editId
-        ? await supabase.from("watch_logs").update(logData).eq("id", editId).eq("user_id", user.id).select("id")
-        : await supabase.from("watch_logs").insert({ user_id: user.id, ...logData }).select("id");
+        ? await supabase.from(table).update(row).eq("id", editId).eq("user_id", user.id).select("id")
+        : await supabase.from(table).insert({ user_id: user.id, ...row }).select("id");
     if (saveError) return "failed";
     if (!saved || saved.length === 0) return isEditMode ? "missing" : "failed";
     return "ok";
@@ -670,9 +531,9 @@ function LogWatchForm() {
     setAlbumName(c.album_name);
     setSearchOpen(false);
     setActiveIndex(-1);
-    setBeforeRecent({ date: watchedDate, listenedOn });
+    setBeforeRecent({ date: watchedDate, listenedOn: details.listened_on ?? "" });
     setWatchedDate(localDay(c.last_played_at));
-    setListenedOn("Spotify");
+    setDetail("listened_on", "Spotify");
     // The list unmounts on pick: keep keyboard focus in the form.
     titleRef.current?.focus();
   };
@@ -739,41 +600,11 @@ function LogWatchForm() {
   };
   const isSaving = savingIntent !== null;
 
-  const categories: { key: string; label: string; value: number; setter: (v: number) => void }[] = isSelectedMusic
-    ? [
-        { key: "lyrics", label: "Lyrics", value: lyricsRating, setter: setLyricsRating },
-        { key: "production", label: "Production", value: productionRating, setter: setProductionRating },
-        { key: "vocals", label: "Vocals", value: vocalsRating, setter: setVocalsRating },
-        { key: "melody", label: "Melody", value: melodyRating, setter: setMelodyRating },
-        { key: "replay", label: "Replay value", value: replayRating, setter: setReplayRating },
-        { key: "energy", label: "Energy", value: energyRating, setter: setEnergyRating },
-      ]
-    : [
-        { key: "plot", label: "Plot", value: plotRating, setter: setPlotRating },
-        { key: "cinematography", label: "Cinematography", value: cinematographyRating, setter: setCinematographyRating },
-        { key: "acting", label: "Acting", value: actingRating, setter: setActingRating },
-        { key: "soundtrack", label: "Soundtrack", value: soundtrackRating, setter: setSoundtrackRating },
-        { key: "pacing", label: "Pacing", value: pacingRating, setter: setPacingRating },
-        { key: "casting", label: "Casting", value: castingRating, setter: setCastingRating },
-      ];
+  const categories = categoriesFor(isSelectedMusic);
+  const detailFields = detailsFor(isSelectedMusic);
 
-  const details: { key: string; label: string; value: string; setter: (v: string) => void; options: Choice[] }[] =
-    isSelectedMusic
-      ? [
-          { key: "listened-on", label: "Where did you listen?", value: listenedOn, setter: setListenedOn, options: LISTENED_ON },
-          { key: "context", label: "What was the context?", value: listeningContext, setter: setListeningContext, options: LISTENING_CONTEXT },
-        ]
-      : [
-          { key: "watched-on", label: "Where did you watch?", value: watchedOn, setter: setWatchedOn, options: WATCHED_ON },
-          { key: "duration", label: "How long did it take to finish?", value: watchDuration, setter: setWatchDuration, options: WATCH_DURATION },
-          { key: "discovered", label: "How did you discover this?", value: discoveredVia, setter: setDiscoveredVia, options: DISCOVERED_VIA },
-          { key: "rewatch", label: "Would you rewatch?", value: rewatchability, setter: setRewatchability, options: REWATCHABILITY },
-          { key: "with", label: "Who did you watch with?", value: watchedWith, setter: setWatchedWith, options: WATCHED_WITH },
-          { key: "times", label: "How many times have you watched this?", value: timesWatched, setter: setTimesWatched, options: TIMES_WATCHED },
-        ];
-
-  const ratedCount = categories.filter((c) => c.value > 0).length;
-  const detailCount = details.filter((d) => d.value !== "").length;
+  const ratedCount = categories.filter((c) => (ratings[c.col] ?? 0) > 0).length;
+  const detailCount = detailFields.filter((d) => (details[d.col] ?? "") !== "").length;
 
   const typeLabel = isEditMode ? "Type" : isSelectedMusic ? "What did you listen to?" : "What did you watch?";
 
@@ -966,10 +797,16 @@ function LogWatchForm() {
               onOpenChange={setShowCategories}
             >
               <div className="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
-                {categories.map(({ key, label, value, setter }) => (
-                  <div key={key} className="flex items-center justify-between gap-3">
+                {categories.map(({ col, label }) => (
+                  <div key={col} className="flex items-center justify-between gap-3">
                     <span className="text-[13px] text-muted-foreground">{label}</span>
-                    <StarInput label={`${label} rating`} value={value} onChange={setter} step={1} size={18} />
+                    <StarInput
+                      label={`${label} rating`}
+                      value={ratings[col] ?? 0}
+                      onChange={(v) => setCategoryRating(col, v)}
+                      step={1}
+                      size={18}
+                    />
                   </div>
                 ))}
               </div>
@@ -983,9 +820,9 @@ function LogWatchForm() {
               onOpenChange={setShowMoreDetails}
             >
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                {details.map(({ key, label, value, setter, options }) => (
+                {detailFields.map(({ col, key, label, options }) => (
                   <Field key={key} label={label} htmlFor={`log-${key}`}>
-                    <Select id={`log-${key}`} value={value} onChange={(e) => setter(e.target.value)}>
+                    <Select id={`log-${key}`} value={details[col] ?? ""} onChange={(e) => setDetail(col, e.target.value)}>
                       <option value="">Not set</option>
                       {options.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -1026,70 +863,13 @@ function LogWatchForm() {
           </div>
         </form>
 
-        {/* Preview: the page's one feature object. Sticky beside the form on wide
-            screens; below it, and only once something is chosen, on small ones. */}
-        <aside
-          aria-label="Preview"
-          className={cn(
-            "w-full lg:sticky lg:top-20",
-            isSelectedMusic ? "max-w-[260px]" : "max-w-[240px]",
-            !selectedMovie && "hidden lg:block",
-          )}
-        >
-          <div className="frame frame-accent frame-raised ticks">
-            {selectedMovie ? (
-              <>
-                <div
-                  className={cn(
-                    "relative overflow-hidden bg-surface-2",
-                    isSelectedMusic ? "aspect-square" : "aspect-[2/3]",
-                  )}
-                >
-                  {selectedMovie.poster_url ? (
-                     
-                    <img
-                      src={resizePoster(selectedMovie.poster_url, "w780") ?? selectedMovie.poster_url}
-                      alt=""
-                      className="artwork-live h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <ArtIcon className="size-12 text-dim" aria-hidden="true" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4">
-                  <h2 className="t-card line-clamp-3">{labelOf(selectedMovie)}</h2>
-                  {selectedMovie.artist && (
-                    <p className="mt-1 truncate text-[13px] text-primary">{selectedMovie.artist}</p>
-                  )}
-                  <p className="t-label mt-2">
-                    {[yearOf(selectedMovie), meta.label].filter(Boolean).join(" · ")}
-                  </p>
-                  {selectedMovie.overview && (
-                    <p className="t-meta mt-3 line-clamp-5">{selectedMovie.overview}</p>
-                  )}
-                </div>
-
-                {rating > 0 && (
-                  <div className="border-t border-border p-4">
-                    <p className="t-label mb-2">Your rating</p>
-                    <Stars value={rating} size={16} showValue />
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                <div className="well mb-4 flex h-14 w-14 items-center justify-center">
-                  <ArtIcon className="size-6 text-dim" aria-hidden="true" />
-                </div>
-                <p className="t-label mb-1">Preview</p>
-                <p className="text-[13px] text-muted-foreground">Choose a title to see its artwork here.</p>
-              </div>
-            )}
-          </div>
-        </aside>
+        <PreviewCard
+          selected={selectedMovie}
+          music={isSelectedMusic}
+          rating={rating}
+          typeLabel={meta.label}
+          Icon={ArtIcon}
+        />
       </div>
     </div>
   );

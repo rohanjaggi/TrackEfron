@@ -1,5 +1,6 @@
 "use client";
 
+import { PG_UNIQUE_VIOLATION } from "@/lib/postgrest";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
@@ -26,10 +27,12 @@ import { EmptyState, Field, Notice, PageHeader, SectionHeader } from "@/componen
 import { useToast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { useSyncMode } from "@/lib/mode-context";
+import { countLabel, formatDay, isMusicType, mediaHref } from "@/lib/media";
 import type { MediaSearchResult } from "@/lib/types";
 import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 import { resizePoster } from "@/lib/tmdb/poster";
-import { useClickOutside } from "@/hooks/use-click-outside";
+import { useAddDropdown } from "@/hooks/use-add-dropdown";
+import { asRows, searchSpotify, searchTmdb } from "@/lib/search-client";
 import { useDebouncedSearch } from "@/hooks/use-debounced-search";
 
 type ListMeta = {
@@ -65,14 +68,6 @@ const RETRY_HINT = "Check your connection and try again.";
 // and Postgres "invalid uuid" (a mangled link) both mean there is no list to show.
 const MISSING_CODES = new Set(["PGRST116", "22P02"]);
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function isMusicType(mediaType: string): boolean {
-  return mediaType === "album" || mediaType === "track";
-}
-
 function typeLabel(mediaType: string): string {
   if (mediaType === "album") return "Album";
   if (mediaType === "track") return "Track";
@@ -83,14 +78,6 @@ function typeLabel(mediaType: string): string {
 function itemKey(mediaType: string, tmdbId: number | string | null, spotifyId?: string | null): string {
   if (isMusicType(mediaType)) return `spotify:${spotifyId || tmdbId}`;
   return `${mediaType}:${tmdbId}`;
-}
-
-/** "3 films and shows", "1 album or track". */
-function countLabel(count: number, music: boolean): string {
-  const noun = music
-    ? count === 1 ? "album or track" : "albums and tracks"
-    : count === 1 ? "film or show" : "films and shows";
-  return `${count} ${noun}`;
 }
 
 function BackLink() {
@@ -116,7 +103,6 @@ function ListDetailContent() {
   const params = useParams();
   const toast = useToast();
   const listId = params.id as string;
-  const searchRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [list, setList] = useState<ListMeta | null>(null);
@@ -134,7 +120,15 @@ function ListDetailContent() {
   const [saving, setSaving] = useState(false);
 
   // Add items search state
-  const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const {
+    ref: dropdownRef,
+    open: dropdownOpen,
+    show: showDropdown,
+    hide: hideDropdown,
+    onKeyDown: onDropdownKeyDown,
+    onQueryChange,
+    onFocus: onInputFocus,
+  } = useAddDropdown();
   const {
     query: addQuery,
     setQuery: setAddQuery,
@@ -143,29 +137,24 @@ function ListDetailContent() {
     error: searchError,
   } = useDebouncedSearch<MediaSearchResult>(async (q) => {
     if (isMusic) {
-      const res = await fetch(`/api/spotify?action=search&q=${encodeURIComponent(q)}&type=album,track`);
-      if (!res.ok) throw new Error("Search failed");
-      const raw: unknown = await res.json();
-      const data: MediaSearchResult[] = Array.isArray(raw)
-        ? (raw as SpotifySearchResult[]).map((r) => ({
-            id: r.id,
-            spotify_id: r.id,
-            name: r.name,
-            artist: r.artist,
-            album_name: r.album_name,
-            media_type: r.type,
-            release_date: r.release_date,
-            image_url: r.image_url,
-          }))
-        : [];
-      setShowAddDropdown(true);
+      const data = asRows<SpotifySearchResult>(await searchSpotify(q, "album,track")).map(
+        (r): MediaSearchResult => ({
+          id: r.id,
+          spotify_id: r.id,
+          name: r.name,
+          artist: r.artist,
+          album_name: r.album_name,
+          media_type: r.type,
+          release_date: r.release_date,
+          image_url: r.image_url,
+        }),
+      );
+      showDropdown();
       return data;
     }
-    const res = await fetch(`/api?action=search&q=${encodeURIComponent(q)}`);
-    if (!res.ok) throw new Error("Search failed");
-    const data: unknown = await res.json();
-    setShowAddDropdown(true);
-    return Array.isArray(data) ? (data as MediaSearchResult[]) : [];
+    const data = asRows<MediaSearchResult>(await searchTmdb(q));
+    showDropdown();
+    return data;
   }, [isMusic]);
   const searchFailed = searchError !== null;
   const [addingId, setAddingId] = useState<number | string | null>(null);
@@ -223,8 +212,6 @@ function ListDetailContent() {
     fetchListData();
   }
 
-  useClickOutside(searchRef, () => setShowAddDropdown(false));
-
   async function handleAddItem(result: MediaSearchResult) {
     if (!isOwner) return;
     const label = result.title || result.name || "Untitled";
@@ -251,7 +238,7 @@ function ListDetailContent() {
             position: items.length,
           });
       // 23505 = already on the list, which is the outcome the user asked for.
-      const alreadyOnList = error?.code === "23505";
+      const alreadyOnList = error?.code === PG_UNIQUE_VIOLATION;
       if (error && !alreadyOnList) throw error;
 
       // Bumps the list's "last updated" time. Only its place in the lists overview
@@ -262,7 +249,7 @@ function ListDetailContent() {
         .eq("id", listId);
 
       setAddQuery("");
-      setShowAddDropdown(false);
+      hideDropdown();
       const refreshed = await fetchListData();
       if (refreshed) {
         toast(
@@ -423,7 +410,7 @@ function ListDetailContent() {
           <>
             {list.description && <span className="mb-2 block">{list.description}</span>}
             <span className="t-label">
-              {countLabel(items.length, isMusic)} · Created {formatDate(list.created_at)}
+              {countLabel(items.length, isMusic)} · Created {formatDay(list.created_at)}
             </span>
             {!isOwner && (
               <span className="mt-2 block">
@@ -490,11 +477,9 @@ function ListDetailContent() {
       {/* Add items search */}
       {isOwner && (
         <div
-          ref={searchRef}
+          ref={dropdownRef}
           className="relative max-w-xl"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setShowAddDropdown(false);
-          }}
+          onKeyDown={onDropdownKeyDown}
         >
           <Field label="Add to this list" htmlFor="list-add-search">
             <div className="relative">
@@ -511,9 +496,9 @@ function ListDetailContent() {
                 value={addQuery}
                 onChange={(e) => {
                   setAddQuery(e.target.value);
-                  if (!e.target.value.trim()) setShowAddDropdown(false);
+                  onQueryChange(e.target.value);
                 }}
-                onFocus={() => addResults.length > 0 && setShowAddDropdown(true)}
+                onFocus={() => onInputFocus(addResults.length > 0)}
                 className="pl-9"
               />
             </div>
@@ -527,13 +512,13 @@ function ListDetailContent() {
             </Notice>
           )}
 
-          {showAddDropdown && !searchFailed && !isSearching && query && addResults.length === 0 && (
+          {dropdownOpen && !searchFailed && !isSearching && query && addResults.length === 0 && (
             <p className="t-meta mt-3" role="status">
               Nothing found for &ldquo;{query}&rdquo;. Try a different spelling.
             </p>
           )}
 
-          {showAddDropdown && !searchFailed && addResults.length > 0 && (
+          {dropdownOpen && !searchFailed && addResults.length > 0 && (
             <ul className="drawer-in absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-auto border border-border-strong bg-popover">
               {addResults.slice(0, 8).map((result) => {
                 const label = result.title || result.name || "Untitled";
@@ -626,12 +611,7 @@ function ListDetailContent() {
           <MediaGrid dense={isMusic}>
             {items.map((item) => {
               const itemIsMusic = isMusicType(item.media_type);
-              const href =
-                itemIsMusic && item.spotify_id
-                  ? `/protected/media/${item.media_type}/${item.spotify_id}`
-                  : item.tmdb_id
-                    ? `/protected/media/${item.media_type}/${item.tmdb_id}`
-                    : undefined;
+              const href = mediaHref(item.media_type, { tmdbId: item.tmdb_id, spotifyId: item.spotify_id });
               return (
                 <MediaCard
                   key={item.id}

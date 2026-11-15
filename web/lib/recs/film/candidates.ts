@@ -1,10 +1,9 @@
 import type { FilmCandidate } from "@/lib/ai/types";
 import {
   discoverFiltered,
-  getMovieDetails,
+  getDetails,
   getPoster,
   getRecommendations,
-  getTvDetails,
   type TmdbResult,
 } from "@/lib/tmdb/tmdb";
 import type { WatchLogRow } from "./select-logs";
@@ -127,10 +126,7 @@ export async function gatherFilmCandidates(
     Promise.all(seeds.map((s) => tolerate(getRecommendations(s.media_type, s.tmdb_id), [] as TmdbResult[]))),
     Promise.all(
       seeds.map((s) =>
-        tolerate(
-          s.media_type === "movie" ? getMovieDetails(s.tmdb_id) : getTvDetails(s.tmdb_id),
-          null,
-        ),
+        tolerate(getDetails(s.media_type, s.tmdb_id), null),
       ),
     ),
   ]);

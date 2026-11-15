@@ -50,7 +50,6 @@ function options(storedKey: string | null, overrides: Partial<Parameters<typeof 
     maxTokens: 3000,
     system: "system prompt",
     tool,
-    toolName: tool.name,
     userMessage: "user message",
     ...overrides,
   };
@@ -134,13 +133,6 @@ describe("callAI", () => {
     expect(mocks.anthropicCreate).not.toHaveBeenCalled();
   });
 
-  test("anthropic tiers map to sonnet 5.5 and haiku 5.5", () =>
-    expect(MODEL_MAP.anthropic).toEqual({
-      powerful: "claude-sonnet-5-5",
-      fast: "claude-haiku-5-5",
-      fastest: "claude-haiku-5-5",
-    }));
-
   test("anthropic request has no tool_choice, max_tokens >= 16000, effort medium for powerful", async () => {
     mocks.anthropicCreate.mockResolvedValue(
       anthropicMessage("end_turn", [{ type: "text", text: JSON.stringify(validOutput) }]),
@@ -160,14 +152,12 @@ describe("callAI", () => {
       expect(powerful).not.toHaveProperty(key);
     }
 
-    await callAI(options("sk-ant-user", { tier: "fast", maxTokens: 20000 }));
-    const fast = mocks.anthropicCreate.mock.calls[1][0];
-    expect(fast.model).toBe("claude-haiku-5-5");
-    expect(fast.max_tokens).toBe(20000);
-    expect(fast.output_config.effort).toBe("low");
+    await callAI(options("sk-ant-user", { tier: "fastest", maxTokens: 20000 }));
+    const fastest = mocks.anthropicCreate.mock.calls[1][0];
+    expect(fastest.model).toBe("claude-haiku-5-5");
+    expect(fastest.max_tokens).toBe(20000);
+    expect(fastest.output_config.effort).toBe("low");
 
-    await callAI(options("sk-ant-user", { tier: "fastest" }));
-    expect(mocks.anthropicCreate.mock.calls[2][0].output_config.effort).toBe("low");
   });
 
   test("anthropic stop_reason refusal returns PROVIDER_ERROR", async () => {
@@ -202,7 +192,7 @@ describe("callAI", () => {
         { type: "text", text: JSON.stringify(validOutput) },
       ]),
     );
-    const result = await callAI(options("sk-ant-user", { tier: "fast" }));
+    const result = await callAI(options("sk-ant-user", { tier: "fastest" }));
     expect(result).toEqual({ data: validOutput, model: "claude-haiku-5-5" });
   });
 
@@ -221,7 +211,6 @@ describe("openai path", () => {
   test("openai tiers all use gpt-6-luna", () => {
     expect(MODEL_MAP.openai).toEqual({
       powerful: "gpt-6-luna",
-      fast: "gpt-6-luna",
       fastest: "gpt-6-luna",
     });
   });
@@ -264,7 +253,6 @@ describe("gemini path", () => {
   test("gemini uses gemini-2.5-flash-lite and sends the schema as JSON Schema", async () => {
     expect(MODEL_MAP.gemini).toEqual({
       powerful: "gemini-2.5-flash-lite",
-      fast: "gemini-2.5-flash-lite",
       fastest: "gemini-2.5-flash-lite",
     });
 

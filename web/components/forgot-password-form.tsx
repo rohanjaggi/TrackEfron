@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { AuthLink, AuthShell, authErrorMessage } from "@/components/auth-shell";
+import { AuthLink, AuthShell, EmailField, authErrorMessage } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Field, Notice } from "@/components/ui/page";
+import { Notice } from "@/components/ui/page";
 import { createClient } from "@/lib/supabase/client";
 
 export function ForgotPasswordForm() {
@@ -82,20 +81,7 @@ export function ForgotPasswordForm() {
       }
     >
       <form onSubmit={handleForgotPassword} className="flex flex-col gap-5">
-        <Field label="Email" htmlFor="email">
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            autoCapitalize="none"
-            spellCheck={false}
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </Field>
+        <EmailField value={email} onChange={setEmail} />
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
           {isLoading ? "Sending…" : "Send reset link"}

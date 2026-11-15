@@ -8,14 +8,13 @@ import { cn } from "@/lib/utils";
 /**
  * A ruled row that opens a panel beneath it. Use for optional form sections
  * and collapsible groups. Works controlled (`open` + `onOpenChange`) or
- * uncontrolled (`defaultOpen`). The panel arrives with the drawer cut.
+ * uncontrolled (closed to start). The panel arrives with the drawer cut.
  */
 export function Disclosure({
   id,
   title,
   summary,
   open: openProp,
-  defaultOpen = false,
   onOpenChange,
   children,
   className,
@@ -26,12 +25,11 @@ export function Disclosure({
   /** Short right-hand note shown while closed, e.g. "3 of 6 rated". */
   summary?: React.ReactNode;
   open?: boolean;
-  defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
 }) {
-  const [inner, setInner] = React.useState(defaultOpen);
+  const [inner, setInner] = React.useState(false);
   const open = openProp ?? inner;
   const toggle = () => {
     const next = !open;

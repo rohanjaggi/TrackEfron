@@ -1,4 +1,5 @@
 import type { FilmCandidate, FilmRecommendation, RawFilmPick } from "@/lib/ai/types";
+import { mapBounded } from "../map-bounded";
 
 export type Lookup = (
   type: "movie" | "tv",
@@ -7,20 +8,6 @@ export type Lookup = (
 ) => Promise<FilmCandidate | null>;
 
 const LOOKUP_CONCURRENCY = 5;
-
-/** Runs `fn` over `items` with at most `limit` in flight, returning results in input order. */
-async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
 
 export async function matchFilmPicks(
   raw: RawFilmPick[],

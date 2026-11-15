@@ -7,8 +7,7 @@ import type { WatchLogRow } from "./select-logs";
 vi.mock("@/lib/tmdb/tmdb", async (orig) => ({
   ...(await orig<typeof import("@/lib/tmdb/tmdb")>()),
   getRecommendations: vi.fn(),
-  getMovieDetails: vi.fn(),
-  getTvDetails: vi.fn(),
+  getDetails: vi.fn(),
   discoverFiltered: vi.fn(),
 }));
 
@@ -62,19 +61,19 @@ describe("gatherFilmCandidates tmdbDown", () => {
   beforeEach(() => vi.resetAllMocks());
   test("is true when every TMDB call fails", async () => {
     vi.mocked(tmdb.getRecommendations).mockRejectedValue(new Error("down"));
-    vi.mocked(tmdb.getMovieDetails).mockRejectedValue(new Error("down"));
+    vi.mocked(tmdb.getDetails).mockRejectedValue(new Error("down"));
     const r = await gatherFilmCandidates([seedLog(1), seedLog(2)], new Set());
     expect(r).toEqual({ candidates: [], tmdbDown: true });
   });
   test("is false when TMDB answers but nothing survives", async () => {
     vi.mocked(tmdb.getRecommendations).mockResolvedValue([]);
-    vi.mocked(tmdb.getMovieDetails).mockResolvedValue({ id: 1, genres: [] });
+    vi.mocked(tmdb.getDetails).mockResolvedValue({ id: 1, genres: [] });
     const r = await gatherFilmCandidates([seedLog(1)], new Set());
     expect(r).toEqual({ candidates: [], tmdbDown: false });
   });
   test("is false when only some calls fail", async () => {
     vi.mocked(tmdb.getRecommendations).mockRejectedValue(new Error("down"));
-    vi.mocked(tmdb.getMovieDetails).mockResolvedValue({ id: 1, genres: [] });
+    vi.mocked(tmdb.getDetails).mockResolvedValue({ id: 1, genres: [] });
     const r = await gatherFilmCandidates([seedLog(1)], new Set());
     expect(r.tmdbDown).toBe(false);
   });

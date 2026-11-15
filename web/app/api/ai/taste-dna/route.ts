@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/api/auth";
+import { aiErrorStatus } from "@/lib/api/ai-status";
 import { NextResponse } from "next/server";
 import { callAI } from "@/lib/ai/provider";
 import { tasteDNATool } from "@/lib/ai/tools";
@@ -9,11 +10,9 @@ import { validateObservations, limitTasteDNA } from "@/lib/taste/validate";
 export const maxDuration = 300;
 
 export async function POST() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   const [watchRes, listenRes, watchlistRes, queueRes] = await Promise.all([
     supabase.from("watch_logs").select("title, rating, review, media_type, plot_rating, cinematography_rating, acting_rating, soundtrack_rating, pacing_rating, casting_rating, rewatchability").eq("user_id", user.id),
@@ -43,35 +42,31 @@ export async function POST() {
     maxTokens: 2000,
     system: TASTE_DNA_SYSTEM,
     tool: tasteDNATool,
-    toolName: "generate_taste_dna",
     userMessage: userPrompt,
   });
 
   if ("error" in result) {
-    const status = result.code === "NO_API_KEY" ? 402 : 500;
-    return NextResponse.json({ error: result.error, code: result.code }, { status });
+    return NextResponse.json({ error: result.error, code: result.code }, { status: aiErrorStatus(result.code) });
   }
 
   // Validate against the logs first, then de-duplicate and trim to 3, so a valid fourth can replace a dropped one.
   const raw = result.data as TasteDNA;
   const loggedTitles = [...watchLogs, ...listenLogs].map((l) => l.title);
   const validObservations = validateObservations(Array.isArray(raw.observations) ? raw.observations : [], loggedTitles);
-  const limited = limitTasteDNA({ ...raw, observations: validObservations });
-  if (!limited) {
+  const dna = limitTasteDNA({ ...raw, observations: validObservations });
+  if (!dna) {
     return NextResponse.json(
       { error: "The model returned an incomplete Taste DNA. Try again.", code: "PROVIDER_ERROR" },
       { status: 500 }
     );
   }
 
-  const observations = limited.observations;
-  if (observations.length === 0) {
+  if (dna.observations.length === 0) {
     return NextResponse.json(
       { error: "The model returned no observations that match your logs. Try again.", code: "PROVIDER_ERROR" },
       { status: 500 }
     );
   }
-  const dna: TasteDNA = { ...limited, observations };
 
   const { error: upsertError } = await supabase.from("taste_dna").upsert(
     {
@@ -100,11 +95,9 @@ export async function POST() {
 }
 
 export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+  const { supabase, user } = auth;
 
   const [dnaRes, watchRes, listenRes] = await Promise.all([
     supabase.from("taste_dna").select("*").eq("user_id", user.id).maybeSingle(),

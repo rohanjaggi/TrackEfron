@@ -34,7 +34,6 @@
     /* ── Rules ── */
     --border-raw: #35342c;    /* hairline */
     --border-strong: #605e50; /* emphasis, hover, input edge */
-    --border-hover: var(--border-strong);
 
     /* ── Ink ── */
     --text: #e8e4da;          /* primary  */
@@ -47,8 +46,6 @@
     --mode-accent: var(--film);
     --mode-accent-dim: color-mix(in srgb, var(--mode-accent) 13%, transparent);
     --mode-accent-glow: color-mix(in srgb, var(--mode-accent) 26%, transparent);
-    --film-dim: color-mix(in srgb, var(--film) 13%, transparent);
-    --music-dim: color-mix(in srgb, var(--music) 13%, transparent);
 
     /* ── Status, tuned to the palette ── */
     --success: #93b88a;
@@ -65,19 +62,11 @@
     /* ── Tailwind/shadcn HSL bridge ── */
     --background: 60 11% 4%;
     --foreground: 43 23% 88%;
-    --card: 60 7% 8%;
-    --card-foreground: 43 23% 88%;
     --popover: 60 7% 16%;
     --popover-foreground: 43 23% 88%;
-    --secondary: 60 8% 12%;
-    --secondary-foreground: 43 23% 88%;
-    --muted: 60 8% 12%;
     --muted-foreground: 49 10% 58%;
-    --destructive: 9 68% 62%;
-    --destructive-foreground: 60 11% 4%;
     --border: 53 9% 19%;
     --input: 53 9% 35%;
-    --radius: 0px;
 
     /* ── Motion ── */
     --dur-tick: 80ms;         /* press, tick */
@@ -261,7 +250,6 @@ body::before {
      Title roles read their face, weight and scale from the mode
      variables below, so a heading changes voice with the mode.
      Young Serif has ONE weight: never put a bold class on a title role. */
-  .font-display { font-family: var(--display-face); }
 
   /* The logo's lettering. Fixed: it does not change with the mode. */
   .wordmark {
@@ -505,11 +493,6 @@ body::before {
     background: var(--surface);
   }
 
-  /* Same hairline, no hover wash: for lists that are not interactive. */
-  .row-static {
-    border-bottom: 1px solid var(--border-raw);
-  }
-
   /* ═══ Posters and covers ═════════════════════════════════════ */
   /* Artwork rests slightly drained so it comes up to full colour under the cursor. */
   .artwork {
@@ -614,7 +597,7 @@ body::before {
     animation: scan 1.6s steps(16, end) infinite;
   }
 
-  /* Block cursor after a line of mono text. */
+  /* Block cursor after a line of text. */
   .cursor-blink::after {
     content: "";
     display: inline-block;
@@ -671,7 +654,6 @@ body::before {
   to   { opacity: 0; }
 }
 .drawer-in { animation: drawerIn 160ms var(--ease-mech) backwards; }
-.drawer-out { animation: drawerOut var(--dur-tick) linear forwards; }
 
 /* Reel change: on film ↔ music, a highlight sweeps the accent bar and a cue mark blinks twice. */
 @keyframes reelSweep {

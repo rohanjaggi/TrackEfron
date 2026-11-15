@@ -3,12 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { AuthLink, AuthShell, PasswordInput, authErrorMessage } from "@/components/auth-shell";
+import {
+  AuthLink,
+  AuthShell,
+  PASSWORD_HINT,
+  PASSWORD_MIN,
+  authErrorMessage,
+} from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/input";
 import { Field, Notice } from "@/components/ui/page";
 import { createClient } from "@/lib/supabase/client";
-
-const PASSWORD_MIN = 6;
 
 export function UpdatePasswordForm() {
   const [password, setPassword] = useState("");
@@ -49,18 +54,13 @@ export function UpdatePasswordForm() {
       }
     >
       <form onSubmit={handleUpdatePassword} className="flex flex-col gap-5">
-        <Field
-          label="New password"
-          htmlFor="password"
-          hint={`At least ${PASSWORD_MIN} characters.`}
-        >
+        <Field label="New password" htmlFor="password" hint={PASSWORD_HINT}>
           <PasswordInput
             id="password"
             name="password"
             autoComplete="new-password"
             required
             minLength={PASSWORD_MIN}
-            aria-describedby="password-hint"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />

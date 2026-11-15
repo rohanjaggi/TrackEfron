@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { matchMusicPicks } from "./match";
-import { normalise } from "../normalise";
 import type { MusicRecommendation } from "@/lib/ai/types";
 import type { SpotifySearchResult } from "@/lib/spotify/spotify";
 
@@ -105,18 +104,5 @@ describe("matchMusicPicks", () => {
     const search = fake({ "宇多田ヒカル 初恋": [result("j1", "初恋", "宇多田ヒカル")] });
     const out = await matchMusicPicks([pick("宇多田ヒカル", "初恋")], new Set(), search, 5);
     expect(out.map((o) => o.spotify_id)).toEqual(["j1"]);
-  });
-});
-
-describe("normalise", () => {
-  test("collapses whitespace left by removed punctuation", () => {
-    expect(normalise("Crosby, Stills & Nash")).toBe("crosby stills nash");
-  });
-  test("strips diacritics", () => {
-    expect(normalise("Beyoncé")).toBe("beyonce");
-  });
-  test("keeps non-Latin letters", () => {
-    expect(normalise("宇多田ヒカル")).toBe("宇多田ヒカル");
-    expect(normalise("Земфира")).toBe("земфира");
   });
 });

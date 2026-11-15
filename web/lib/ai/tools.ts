@@ -1,6 +1,6 @@
 import type { Anthropic } from "@anthropic-ai/sdk";
 
-type Tool = Anthropic.Messages.Tool;
+export type Tool = Anthropic.Messages.Tool;
 
 export const tasteDNATool: Tool = {
   name: "generate_taste_dna",

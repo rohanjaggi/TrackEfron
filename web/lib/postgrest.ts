@@ -6,3 +6,6 @@
 export function escapeIlike(q: string): string {
   return q.replace(/[,()*]/g, "").replace(/[\\%_]/g, "\\$&");
 }
+
+/** Postgres SQLSTATE for a unique-constraint violation (the row already exists). */
+export const PG_UNIQUE_VIOLATION = "23505";
