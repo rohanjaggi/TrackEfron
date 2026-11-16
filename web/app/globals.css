@@ -560,7 +560,8 @@ body::before {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -1px;
+    /* Inside the tab: anything below the box would make the scrolling tab list scroll vertically. */
+    bottom: 0;
     height: 2px;
     background: var(--mode-accent);
     transform: scaleX(0);

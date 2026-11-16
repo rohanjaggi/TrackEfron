@@ -143,7 +143,7 @@ export function TabBar<T extends string>({
     <div
       role="tablist"
       aria-label={label}
-      className={cn("hairline flex max-w-full gap-7 overflow-x-auto", className)}
+      className={cn("hairline flex max-w-full gap-7 overflow-x-auto overflow-y-hidden", className)}
     >
       {tabs.map((tab, i) => {
         const active = tab.value === value;
